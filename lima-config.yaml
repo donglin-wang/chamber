@@ -1,0 +1,31 @@
+images:
+- location: https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img
+  arch: aarch64
+- location: https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img
+  arch: x86_64
+
+mounts:
+- location: /Users/donglinwang/Projects/chamber
+  writable: true
+
+provision:
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux
+
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      skopeo \
+      umoci \
+      runc \
+      python3 \
+      uidmap \
+      util-linux
+
+    sysctl -w kernel.unprivileged_userns_clone=1 || true
+    sysctl -w user.max_user_namespaces=28633 || true
+
+    if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+      sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+    fi
