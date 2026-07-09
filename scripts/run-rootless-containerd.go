@@ -1,8 +1,12 @@
+// This spike keeps its historical filename so the existing go run command
+// continues to work, but it no longer starts or imports containerd.
 package main
 
 import (
-	"archive/tar"
-	"compress/gzip"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,12 +17,21 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/layout"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/opencontainers/umoci"
+	"github.com/opencontainers/umoci/oci/layer"
 )
 
 const (
-	containerdVersion  = "2.3.2"
-	rootlessKitVersion = "2.3.1"
-	runcVersion        = "1.5.0"
+	runcVersion = "1.5.0"
+	imageTag    = "pulled"
 )
 
 func main() {
@@ -34,7 +47,7 @@ func run() error {
 		return nil
 	}
 	if runtime.GOOS != "linux" {
-		return errors.New("this script must run on Linux; containerd/runc need Linux namespaces")
+		return errors.New("this program must run on Linux; runc needs Linux namespaces")
 	}
 	if os.Geteuid() == 0 {
 		return errors.New("refusing to run as root; this spike is for rootless execution")
@@ -43,31 +56,55 @@ func run() error {
 		return err
 	}
 
-	layout, err := newLayout()
+	l, err := newLayout()
 	if err != nil {
 		return err
 	}
-	if err := layout.mkdirAll(); err != nil {
+	if err := l.mkdirAll(); err != nil {
 		return err
 	}
-	if err := ensureTools(layout); err != nil {
+	runcPath, err := ensureRunc(l)
+	if err != nil {
 		return err
 	}
 
-	image := "docker.io/library/alpine:latest"
-	command := []string{"/bin/sh"}
+	imageRef := "docker.io/library/alpine:latest"
+	var command []string
 	interactive := true
 	if len(os.Args) > 1 {
-		image = os.Args[1]
+		imageRef = os.Args[1]
 	}
 	if len(os.Args) > 2 {
 		command = os.Args[2:]
 		interactive = false
 	}
 
+	workdir, err := os.MkdirTemp(l.tmp, "run-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(workdir)
+
+	ociLayout := filepath.Join(workdir, "image")
+	bundle := filepath.Join(workdir, "bundle")
+	runcRoot := filepath.Join(workdir, "runc-state")
 	containerID := fmt.Sprintf("chamber-rootless-%d", os.Getpid())
-	platform := "linux/" + runtime.GOARCH
-	return runContainerdPipeline(layout, platform, image, containerID, command, interactive)
+
+	fmt.Printf("Pulling %s with a Go registry client...\n", imageRef)
+	if err := pullToOCILayout(context.Background(), imageRef, ociLayout); err != nil {
+		return err
+	}
+
+	fmt.Println("Unpacking the OCI image layout into a rootless runtime bundle...")
+	if err := unpackBundle(ociLayout, bundle); err != nil {
+		return err
+	}
+	if err := patchRuntimeSpec(filepath.Join(bundle, "config.json"), command, interactive); err != nil {
+		return err
+	}
+
+	fmt.Printf("Running %s as %s with rootless runc...\n", imageRef, containerID)
+	return runRunc(runcPath, runcRoot, bundle, containerID)
 }
 
 func usage() {
@@ -79,86 +116,58 @@ Examples:
   go run scripts/run-rootless-containerd.go docker.io/library/busybox:latest echo hi
 
 What this does:
-  - Downloads containerd, ctr, containerd-shim-runc-v2, runc, and rootlesskit.
-  - Stores them under a user-private Chamber spike directory.
-  - Starts containerd through rootlesskit without sudo.
-  - Uses the downloaded ctr to pull the image and run a one-shot container.
-  - Defaults to docker.io/library/alpine:latest and an interactive /bin/sh.
+  - Pulls an OCI image using a pure-Go registry client.
+  - Writes the registry manifest, config, and layers into an OCI image layout.
+  - Uses umoci as a Go library to create rootfs/ and config.json.
+  - Downloads and verifies a pinned runc release when it is not cached.
+  - Runs the resulting OCI runtime bundle as the current user, without sudo.
+  - Defaults to docker.io/library/alpine:latest and its interactive /bin/sh.
+
+Host requirements:
+  - Linux with unprivileged user namespaces enabled.
+  - Go and outbound HTTPS access. No preinstalled container tools are required.
 
 Environment:
-  CHAMBER_CONTAINERD_SPIKE_HOME  Override the storage directory.
-  CHAMBER_CONTAINERD_VERSION     Override containerd version. Default: 2.3.2
-  CHAMBER_ROOTLESSKIT_VERSION    Override RootlessKit version. Default: 2.3.1
-  CHAMBER_RUNC_VERSION           Override runc version. Default: 1.5.0
+  CHAMBER_RUNC_SPIKE_HOME  Override the user-private storage directory.
+  CHAMBER_RUNC_VERSION     Override runc version. Default: 1.5.0
 `)
 }
 
-type layout struct {
-	home             string
-	bin              string
-	downloads        string
-	containerdRoot   string
-	containerdState  string
-	tmp              string
-	rootlessKitState string
-	socket           string
-	fifo             string
-	log              string
-	runcRoot         string
+type spikeLayout struct {
+	home      string
+	bin       string
+	downloads string
+	tmp       string
 }
 
-func newLayout() (layout, error) {
-	home := os.Getenv("CHAMBER_CONTAINERD_SPIKE_HOME")
+func newLayout() (spikeLayout, error) {
+	home := os.Getenv("CHAMBER_RUNC_SPIKE_HOME")
 	if home == "" {
 		dataHome := os.Getenv("XDG_DATA_HOME")
 		if dataHome == "" {
 			userHome, err := os.UserHomeDir()
 			if err != nil {
-				return layout{}, err
+				return spikeLayout{}, err
 			}
 			dataHome = filepath.Join(userHome, ".local", "share")
 		}
-		home = filepath.Join(dataHome, "chamber", "rootless-containerd-spike")
+		home = filepath.Join(dataHome, "chamber", "rootless-runc-spike")
 	}
+
 	home, err := filepath.Abs(home)
 	if err != nil {
-		return layout{}, err
+		return spikeLayout{}, err
 	}
-
-	runBase := os.Getenv("XDG_RUNTIME_DIR")
-	if runBase == "" {
-		runBase = filepath.Join(home, "run")
-	}
-	runBase = filepath.Join(runBase, "chamber-rootless-containerd-spike")
-
-	return layout{
-		home:             home,
-		bin:              filepath.Join(home, "bin"),
-		downloads:        filepath.Join(home, "downloads"),
-		containerdRoot:   filepath.Join(home, "containerd-root"),
-		containerdState:  filepath.Join(runBase, "containerd-state"),
-		tmp:              filepath.Join(home, "tmp"),
-		rootlessKitState: filepath.Join(runBase, "rootlesskit-state"),
-		socket:           filepath.Join(runBase, "containerd.sock"),
-		fifo:             filepath.Join(runBase, "fifo"),
-		log:              filepath.Join(runBase, "containerd.log"),
-		runcRoot:         filepath.Join(runBase, "runc-root"),
+	return spikeLayout{
+		home:      home,
+		bin:       filepath.Join(home, "bin"),
+		downloads: filepath.Join(home, "downloads"),
+		tmp:       filepath.Join(home, "tmp"),
 	}, nil
 }
 
-func (l layout) mkdirAll() error {
-	for _, dir := range []string{
-		l.home,
-		l.bin,
-		l.downloads,
-		l.containerdRoot,
-		l.containerdState,
-		l.tmp,
-		l.rootlessKitState,
-		l.fifo,
-		l.runcRoot,
-		filepath.Dir(l.socket),
-	} {
+func (l spikeLayout) mkdirAll() error {
+	for _, dir := range []string{l.home, l.bin, l.downloads, l.tmp} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
@@ -169,227 +178,253 @@ func (l layout) mkdirAll() error {
 	return nil
 }
 
-func ensureTools(l layout) error {
-	if err := ensureContainerd(l); err != nil {
+func pullToOCILayout(ctx context.Context, imageRef, destination string) error {
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return fmt.Errorf("parse image reference: %w", err)
+	}
+
+	platform := v1.Platform{
+		OS:           "linux",
+		Architecture: runtime.GOARCH,
+	}
+	image, err := remote.Image(
+		ref,
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithPlatform(platform),
+	)
+	if err != nil {
+		return fmt.Errorf("pull image: %w", err)
+	}
+
+	path, err := layout.Write(destination, empty.Index)
+	if err != nil {
+		return fmt.Errorf("create OCI image layout: %w", err)
+	}
+	if err := path.AppendImage(
+		image,
+		layout.WithAnnotations(map[string]string{
+			"org.opencontainers.image.ref.name": imageTag,
+		}),
+		layout.WithPlatform(platform),
+	); err != nil {
+		return fmt.Errorf("write OCI image layout: %w", err)
+	}
+	return nil
+}
+
+func unpackBundle(ociLayout, bundle string) error {
+	engine, err := umoci.OpenLayout(ociLayout)
+	if err != nil {
+		return fmt.Errorf("open OCI image layout: %w", err)
+	}
+	defer engine.Close()
+
+	uid := uint32(os.Geteuid())
+	gid := uint32(os.Getegid())
+	mapOptions := layer.MapOptions{
+		UIDMappings: []specs.LinuxIDMapping{{
+			ContainerID: 0,
+			HostID:      uid,
+			Size:        1,
+		}},
+		GIDMappings: []specs.LinuxIDMapping{{
+			ContainerID: 0,
+			HostID:      gid,
+			Size:        1,
+		}},
+		Rootless: true,
+	}
+	options := layer.UnpackOptions{
+		OnDiskFormat: layer.DirRootfs{MapOptions: mapOptions},
+	}
+	if err := umoci.Unpack(engine, imageTag, bundle, options); err != nil {
+		return fmt.Errorf("unpack OCI image: %w", err)
+	}
+	return nil
+}
+
+func patchRuntimeSpec(path string, command []string, interactive bool) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return err
 	}
-	if err := ensureRootlessKit(l); err != nil {
+
+	var spec specs.Spec
+	if err := json.Unmarshal(data, &spec); err != nil {
+		return fmt.Errorf("decode runtime config: %w", err)
+	}
+	if spec.Process == nil || spec.Linux == nil {
+		return errors.New("umoci produced an incomplete runtime config")
+	}
+
+	spec.Process.Terminal = interactive
+	if len(command) > 0 {
+		spec.Process.Args = command
+	}
+
+	spec.Linux.Namespaces = withoutNamespaces(
+		spec.Linux.Namespaces,
+		specs.NetworkNamespace,
+		specs.CgroupNamespace,
+	)
+	spec.Linux.CgroupsPath = ""
+	spec.Linux.Resources = nil
+	spec.Mounts = withoutCgroupMounts(spec.Mounts)
+
+	data, err = json.MarshalIndent(&spec, "", "  ")
+	if err != nil {
 		return err
 	}
-	if err := ensureRunc(l); err != nil {
+	data = append(data, '\n')
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return err
 	}
 	return nil
 }
 
-func ensureContainerd(l layout) error {
-	if exists(filepath.Join(l.bin, "containerd")) &&
-		exists(filepath.Join(l.bin, "ctr")) &&
-		exists(filepath.Join(l.bin, "containerd-shim-runc-v2")) {
-		return nil
+func withoutNamespaces(namespaces []specs.LinuxNamespace, unwanted ...specs.LinuxNamespaceType) []specs.LinuxNamespace {
+	blocked := make(map[specs.LinuxNamespaceType]bool, len(unwanted))
+	for _, namespaceType := range unwanted {
+		blocked[namespaceType] = true
 	}
-
-	version := envDefault("CHAMBER_CONTAINERD_VERSION", containerdVersion)
-	arch, err := containerdArch()
-	if err != nil {
-		return err
+	filtered := namespaces[:0]
+	for _, namespace := range namespaces {
+		if !blocked[namespace.Type] {
+			filtered = append(filtered, namespace)
+		}
 	}
-	url := fmt.Sprintf(
-		"https://github.com/containerd/containerd/releases/download/v%s/containerd-%s-linux-%s.tar.gz",
-		version,
-		version,
-		arch,
-	)
-	dst := filepath.Join(l.downloads, fmt.Sprintf("containerd-%s-linux-%s.tar.gz", version, arch))
-	fmt.Printf("Downloading containerd %s...\n", version)
-	if err := downloadFile(url, dst, 0o600); err != nil {
-		return err
-	}
-	return extractTarGz(dst, l.bin, func(name string) bool {
-		base := filepath.Base(name)
-		return strings.HasPrefix(name, "bin/") && (base == "containerd" || base == "ctr" || strings.HasPrefix(base, "containerd-shim"))
-	})
+	return filtered
 }
 
-func ensureRootlessKit(l layout) error {
-	if exists(filepath.Join(l.bin, "rootlesskit")) {
-		return nil
+func withoutCgroupMounts(mounts []specs.Mount) []specs.Mount {
+	filtered := mounts[:0]
+	for _, mount := range mounts {
+		if mount.Type == "cgroup" || mount.Type == "cgroup2" || mount.Destination == "/sys/fs/cgroup" {
+			continue
+		}
+		filtered = append(filtered, mount)
 	}
-
-	version := envDefault("CHAMBER_ROOTLESSKIT_VERSION", rootlessKitVersion)
-	arch, err := rootlessKitArch()
-	if err != nil {
-		return err
-	}
-	url := fmt.Sprintf(
-		"https://github.com/rootless-containers/rootlesskit/releases/download/v%s/rootlesskit-%s.tar.gz",
-		version,
-		arch,
-	)
-	dst := filepath.Join(l.downloads, fmt.Sprintf("rootlesskit-%s-%s.tar.gz", version, arch))
-	fmt.Printf("Downloading RootlessKit %s...\n", version)
-	if err := downloadFile(url, dst, 0o600); err != nil {
-		return err
-	}
-	return extractTarGz(dst, l.bin, func(name string) bool {
-		base := filepath.Base(name)
-		return base == "rootlesskit" || base == "rootlessctl"
-	})
+	return filtered
 }
 
-func ensureRunc(l layout) error {
-	if exists(filepath.Join(l.bin, "runc")) {
-		return nil
-	}
-
-	version := envDefault("CHAMBER_RUNC_VERSION", runcVersion)
-	arch, err := runcArch()
-	if err != nil {
+func runRunc(runcPath, runcRoot, bundle, containerID string) error {
+	if err := os.MkdirAll(runcRoot, 0o700); err != nil {
 		return err
 	}
-	url := fmt.Sprintf("https://github.com/opencontainers/runc/releases/download/v%s/runc.%s", version, arch)
-	dst := filepath.Join(l.bin, "runc")
-	fmt.Printf("Downloading runc %s...\n", version)
-	return downloadFile(url, dst, 0o755)
-}
 
-func runContainerdPipeline(l layout, platform, image, containerID string, command []string, interactive bool) error {
-	rootlesskit := filepath.Join(l.bin, "rootlesskit")
-	ttyFlag := ""
-	if interactive {
-		ttyFlag = "--tty"
-	}
-	script := `
-set -eu
+	defer func() {
+		cleanup := exec.Command(runcPath, "--root", runcRoot, "delete", "--force", containerID)
+		_ = cleanup.Run()
+	}()
 
-image="$1"
-platform="$2"
-container_id="$3"
-tty_flag="$4"
-shift 4
-
-export PATH=` + shellQuote(l.bin) + `:$PATH
-export TMPDIR=` + shellQuote(l.tmp) + `
-
-mkdir -p ` + shellQuote(l.containerdRoot) + ` ` + shellQuote(l.containerdState) + ` ` + shellQuote(l.fifo) + ` ` + shellQuote(l.runcRoot) + `
-rm -f ` + shellQuote(l.socket) + `
-
-containerd \
-  --log-level info \
-  --root ` + shellQuote(l.containerdRoot) + ` \
-  --state ` + shellQuote(l.containerdState) + ` \
-  --address ` + shellQuote(l.socket) + ` \
-  >` + shellQuote(l.log) + ` 2>&1 &
-
-containerd_pid="$!"
-cleanup() {
-  kill "$containerd_pid" >/dev/null 2>&1 || true
-  wait "$containerd_pid" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT INT TERM
-
-i=0
-while [ ! -S ` + shellQuote(l.socket) + ` ]; do
-  i=$((i + 1))
-  if [ "$i" -gt 100 ]; then
-    echo "containerd did not create its socket in time" >&2
-    echo "containerd log:" >&2
-    cat ` + shellQuote(l.log) + ` >&2 || true
-    exit 1
-  fi
-  sleep 0.1
-done
-
-echo "Pulling $image with rootless containerd..."
-ctr --address ` + shellQuote(l.socket) + ` --namespace chamber images pull --local --platform "$platform" --snapshotter native "$image"
-
-echo "Running $image as $container_id..."
-ctr --address ` + shellQuote(l.socket) + ` --namespace chamber run \
-  --rm \
-  $tty_flag \
-  --snapshotter native \
-  --fifo-dir ` + shellQuote(l.fifo) + ` \
-  --cgroup= \
-  --cpu-shares 0 \
-  --runc-root ` + shellQuote(l.runcRoot) + ` \
-  "$image" "$container_id" "$@"
-`
-
-	args := []string{
-		"--state-dir", l.rootlessKitState,
-		"--net=host",
-		"--copy-up=/etc",
-		"--copy-up=/run",
-		"/bin/sh",
-		"-c",
-		script,
-		"chamber-containerd-pipeline",
-		image,
-		platform,
-		containerID,
-		ttyFlag,
-	}
-	args = append(args, command...)
-
-	fmt.Printf("Starting rootless containerd through RootlessKit...\n")
-	fmt.Printf("State root: %s\n", l.home)
-	fmt.Printf("Runtime root: %s\n", filepath.Dir(l.socket))
-	cmd := exec.Command(rootlesskit, args...)
+	cmd := exec.Command(runcPath, "--root", runcRoot, "run", containerID)
+	cmd.Dir = bundle
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	cmd.Env = append(os.Environ(), "PATH="+l.bin+":"+os.Getenv("PATH"))
 	return cmd.Run()
 }
 
-func checkRootlessHost() error {
-	checks := []struct {
-		path string
-		bad  string
-		msg  string
-	}{
-		{
-			path: "/proc/sys/kernel/unprivileged_userns_clone",
-			bad:  "0",
-			msg:  "unprivileged user namespaces are disabled; try a Linux VM with user namespaces enabled",
-		},
-		{
-			path: "/proc/sys/user/max_user_namespaces",
-			bad:  "0",
-			msg:  "this host allows zero user namespaces; try a Linux VM with user namespaces enabled",
-		},
-		{
-			path: "/proc/sys/kernel/apparmor_restrict_unprivileged_userns",
-			bad:  "1",
-			msg:  "AppArmor is restricting unprivileged user namespaces; use a permissive local VM or configure an AppArmor policy",
-		},
+func ensureRunc(l spikeLayout) (string, error) {
+	version := envDefault("CHAMBER_RUNC_VERSION", runcVersion)
+	arch, err := runcArch()
+	if err != nil {
+		return "", err
 	}
-	for _, check := range checks {
-		value, err := os.ReadFile(check.path)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
+
+	dst := filepath.Join(l.bin, "runc")
+	checksums := filepath.Join(l.downloads, "runc-"+version+".sha256sum")
+	checksumURL := fmt.Sprintf(
+		"https://github.com/opencontainers/runc/releases/download/v%s/runc.sha256sum",
+		version,
+	)
+	if !exists(checksums) {
+		fmt.Printf("Downloading runc %s checksums...\n", version)
+		if err := downloadFile(checksumURL, checksums, 0o600); err != nil {
+			return "", err
 		}
+	}
+
+	expected, err := expectedChecksum(checksums, "runc."+arch)
+	if err != nil {
+		return "", err
+	}
+	if exists(dst) {
+		ok, err := fileHasChecksum(dst, expected)
 		if err != nil {
-			return err
+			return "", err
 		}
-		if strings.TrimSpace(string(value)) == check.bad {
-			return errors.New(check.msg)
+		if ok {
+			if err := os.Chmod(dst, 0o755); err != nil {
+				return "", err
+			}
+			return dst, nil
 		}
 	}
-	return nil
+
+	url := fmt.Sprintf(
+		"https://github.com/opencontainers/runc/releases/download/v%s/runc.%s",
+		version,
+		arch,
+	)
+	fmt.Printf("Downloading runc %s...\n", version)
+	if err := downloadFile(url, dst, 0o755); err != nil {
+		return "", err
+	}
+	ok, err := fileHasChecksum(dst, expected)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		_ = os.Remove(dst)
+		return "", errors.New("downloaded runc binary did not match the release checksum")
+	}
+	return dst, nil
+}
+
+func expectedChecksum(path, filename string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && strings.TrimPrefix(fields[len(fields)-1], "*") == filename {
+			if len(fields[0]) != sha256.Size*2 {
+				break
+			}
+			return strings.ToLower(fields[0]), nil
+		}
+	}
+	return "", fmt.Errorf("release checksums do not contain %s", filename)
+}
+
+func fileHasChecksum(path, expected string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, f); err != nil {
+		return false, err
+	}
+	actual := hex.EncodeToString(hash.Sum(nil))
+	return actual == strings.ToLower(expected), nil
 }
 
 func downloadFile(url, dst string, mode os.FileMode) error {
-	if exists(dst) {
-		return os.Chmod(dst, mode)
-	}
-
 	tmp := dst + ".tmp"
+	_ = os.Remove(tmp)
+
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "chamber-rootless-containerd-spike")
+	req.Header.Set("User-Agent", "chamber-rootless-runc-spike")
 
 	client := &http.Client{Timeout: 10 * time.Minute}
 	resp, err := client.Do(req)
@@ -407,65 +442,64 @@ func downloadFile(url, dst string, mode os.FileMode) error {
 	}
 	if _, err := io.Copy(out, resp.Body); err != nil {
 		out.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := out.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Chmod(tmp, mode); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, dst)
 }
 
-func extractTarGz(src, dst string, include func(string) bool) error {
-	f, err := os.Open(src)
-	if err != nil {
-		return err
+func checkRootlessHost() error {
+	checks := []struct {
+		path string
+		bad  string
+		msg  string
+	}{
+		{
+			path: "/proc/sys/kernel/unprivileged_userns_clone",
+			bad:  "0",
+			msg:  "unprivileged user namespaces are disabled",
+		},
+		{
+			path: "/proc/sys/user/max_user_namespaces",
+			bad:  "0",
+			msg:  "this host allows zero user namespaces",
+		},
+		{
+			path: "/proc/sys/kernel/apparmor_restrict_unprivileged_userns",
+			bad:  "1",
+			msg:  "AppArmor is restricting unprivileged user namespaces",
+		},
 	}
-	defer f.Close()
-
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-
-	tr := tar.NewReader(gz)
-	extracted := 0
-	for {
-		hdr, err := tr.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if hdr.Typeflag != tar.TypeReg || !include(hdr.Name) {
+	for _, check := range checks {
+		value, err := os.ReadFile(check.path)
+		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
-
-		target := filepath.Join(dst, filepath.Base(hdr.Name))
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(out, tr); err != nil {
-			out.Close()
-			return err
+		if strings.TrimSpace(string(value)) == check.bad {
+			return fmt.Errorf("%s; use a Linux host or VM configured for rootless containers", check.msg)
 		}
-		if err := out.Close(); err != nil {
-			return err
-		}
-		if err := os.Chmod(target, 0o755); err != nil {
-			return err
-		}
-		extracted++
-	}
-	if extracted == 0 {
-		return fmt.Errorf("no matching binaries found in %s", src)
 	}
 	return nil
+}
+
+func runcArch() (string, error) {
+	switch runtime.GOARCH {
+	case "amd64", "arm64":
+		return runtime.GOARCH, nil
+	default:
+		return "", fmt.Errorf("unsupported runc architecture %q", runtime.GOARCH)
+	}
 }
 
 func envDefault(key, fallback string) string {
@@ -478,37 +512,4 @@ func envDefault(key, fallback string) string {
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-func containerdArch() (string, error) {
-	switch runtime.GOARCH {
-	case "amd64", "arm64":
-		return runtime.GOARCH, nil
-	default:
-		return "", fmt.Errorf("unsupported containerd arch %q", runtime.GOARCH)
-	}
-}
-
-func runcArch() (string, error) {
-	switch runtime.GOARCH {
-	case "amd64", "arm64":
-		return runtime.GOARCH, nil
-	default:
-		return "", fmt.Errorf("unsupported runc arch %q", runtime.GOARCH)
-	}
-}
-
-func rootlessKitArch() (string, error) {
-	switch runtime.GOARCH {
-	case "amd64":
-		return "x86_64", nil
-	case "arm64":
-		return "aarch64", nil
-	default:
-		return "", fmt.Errorf("unsupported RootlessKit arch %q", runtime.GOARCH)
-	}
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
