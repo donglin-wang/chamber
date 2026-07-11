@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"context"
 	"errors"
 	"time"
 )
@@ -125,4 +126,42 @@ func isContainerTransitionValid(from, to ContainerState) bool {
 
 func isOperationTransitionValid(from, to OperationState) bool {
 	return validOperationTransitions[StateTransition[OperationState]{from, to}]
+}
+
+type Store interface {
+	PutImage(ctx context.Context, image Image) error
+	GetImage(ctx context.Context, reference string) (Image, error)
+
+	CreateOperation(ctx context.Context, operation Operation) error
+	GetOperation(ctx context.Context, id string) (Operation, error)
+	TransitionOperation(
+		ctx context.Context,
+		id string,
+		from OperationState,
+		update OperationUpdate,
+	) (Operation, error)
+
+	CreateContainer(ctx context.Context, container Container) error
+	GetContainer(ctx context.Context, id string) (Container, error)
+	TransitionContainer(
+		ctx context.Context,
+		id string,
+		from ContainerState,
+		update ContainerUpdate,
+	) (Container, error)
+
+	Close() error
+}
+
+type ContainerUpdate struct {
+	State     ContainerState
+	At        time.Time
+	ExitCode  *int
+	ErrorCode string
+}
+
+type OperationUpdate struct {
+	State     OperationState
+	At        time.Time
+	ErrorCode string
 }

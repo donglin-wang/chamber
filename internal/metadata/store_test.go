@@ -1,6 +1,8 @@
 package metadata
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestContainerValidTransition(t *testing.T) {
 	tests := map[StateTransition[ContainerState]]bool{
@@ -56,5 +58,18 @@ func TestOperationValidTransition(t *testing.T) {
 		if result != expected {
 			t.Fatalf("ValidOperationTransition(%q, %q) returned %v, expected %v", transition.From, transition.To, result, expected)
 		}
+	}
+}
+
+func TestStoreContract(t *testing.T) {
+	tests := map[string]func(t *testing.T) Store{
+		// Add implementations as you build them.
+	}
+	for name, newStore := range tests {
+		t.Run(name, func(t *testing.T) {
+			store := newStore(t)
+			t.Cleanup(func() { _ = store.Close() })
+			// TODO: shared behavior assertions.
+		})
 	}
 }

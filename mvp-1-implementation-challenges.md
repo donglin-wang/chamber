@@ -360,32 +360,57 @@ package config
 import "time"
 
 type Config struct {
-	SocketPath     string
-	Root           string
-	RunRoot        string
-	TmpRoot        string
-	ImagesRoot     string
-	ContainersRoot string
-	RuntimeRoot    string
-	RuntimeBinDir  string
-	MetadataRoot   string
+	SocketPath    string
+	TmpRoot       string
+	ImageRoot     string
+	ContainerRoot string
+	RuntimeRoot   string
+	RuntimeBinDir string
+	MetadataRoot  string
 
 	RuntimeName    string
 	RuntimeVersion string
 	RuntimeURL     string
 	RuntimeSHA256  string
 
-	OTLPEndpoint          string
-	OTLPInsecure          bool
-	TraceSampleRatio      float64
-	MetricsExportInterval time.Duration
+	OpenTelemetryEndpoint              string
+	OpenTelemetryInsecure              bool
+	OpenTelemetryTraceSampleRatio      float64
+	OpenTelemetryMetricsExportInterval time.Duration
 	LogLevel              string
 	LogFormat             string
 }
 
-func Load(args []string, getenv func(string) string) (Config, error) {
-	// TODO: define flags, derive defaults, convert every path to absolute,
-	// validate path relationships, and return the result without touching disk.
+type Override struct {
+	SocketPath    *string
+	TmpRoot       *string
+	ImageRoot     *string
+	ContainerRoot *string
+	RuntimeRoot   *string
+	RuntimeBinDir *string
+	MetadataRoot  *string
+
+	RuntimeName    *string
+	RuntimeVersion *string
+	RuntimeURL     *string
+	RuntimeSHA256  *string
+
+	OpenTelemetryEndpoint              *string
+	OpenTelemetryInsecure              *bool
+	OpenTelemetryTraceSampleRatio      *float64
+	OpenTelemetryMetricsExportInterval *time.Duration
+	LogLevel                           *string
+	LogFormat                          *string
+}
+
+func Load(override Override, getenv func(string) string) (Config, error) {
+	// TODO: derive defaults from getenv, then call Resolve.
+	panic("TODO")
+}
+
+func Resolve(defaultConfig Config, override Override) (Config, error) {
+	// TODO: apply typed overrides, convert every path to absolute, validate
+	// values, and return the result without touching disk.
 	panic("TODO")
 }
 
@@ -400,29 +425,37 @@ Use these defaults:
 
 | Field | Default |
 | --- | --- |
-| `Root` | `$XDG_DATA_HOME/chamber`, else `$HOME/.local/share/chamber` |
-| `RunRoot` | `$XDG_RUNTIME_DIR/chamber`, else `$Root/run` |
-| `TmpRoot` | `$RunRoot/tmp` |
-| `ImagesRoot` | `$Root/images` |
-| `ContainersRoot` | `$Root/containers` |
-| `RuntimeRoot` | `$RunRoot/runtime` |
-| `RuntimeBinDir` | `$Root/bin` |
-| `MetadataRoot` | `$Root/metadata/etcd` |
-| `SocketPath` | `$RunRoot/chamber.sock` |
-| `OTLPEndpoint` | empty; traces and metrics use no-op providers |
-| `TraceSampleRatio` | `1.0` for the learning MVP |
-| `MetricsExportInterval` | `10s` |
+| Root path used for defaults | `$XDG_DATA_HOME/chamber`, else `$HOME/.local/share/chamber` |
+| `ImageRoot` | `<root>/images` |
+| `ContainerRoot` | `<root>/containers` |
+| `RuntimeBinDir` | `<root>/bin` |
+| `MetadataRoot` | `<root>/metadata/etcd` |
+| `SocketPath` | `<root>/run/chamber.sock` |
+| `TmpRoot` | `<root>/run/tmp` |
+| `RuntimeRoot` | `<root>/run/runtime` |
+| `OpenTelemetryEndpoint` | empty; traces and metrics use no-op providers |
+| `OpenTelemetryTraceSampleRatio` | `1.0` for the learning MVP |
+| `OpenTelemetryMetricsExportInterval` | `10s` |
 | `LogLevel` | `info` |
 | `LogFormat` | `json` |
 
-Expose at least these flags:
+`Override` is the typed boundary between parsing and resolution. A nil pointer
+means no user override. A non-nil pointer means the user explicitly supplied the
+value, even when that value is an empty string, `false`, or `0`.
+
+Do not parse CLI flags, JSON, YAML, or any other external config format inside
+`Load`. Parsing, unknown-key rejection, duplicate-key handling, and
+format-specific type errors belong near the entrypoint or parser for that
+format. Those parsers should produce `Override`; this package should only turn
+defaults plus `Override` plus `getenv` into a fully resolved `Config`.
+
+The daemon entrypoint should eventually accept at least these override keys or
+flags and translate them into `Override` fields:
 
 ```text
---root
---run-root
 --tmp-root
---images-root
---containers-root
+--image-root
+--container-root
 --runtime-root
 --runtime-bin-dir
 --metadata-root
@@ -439,32 +472,27 @@ Expose at least these flags:
 --log-format
 ```
 
-Derived defaults must be recomputed after parent flags are parsed. For example,
-`chamberd --root /work/chamber` should default the image directory to
-`/work/chamber/images`, not to an earlier XDG-derived path.
-
 Do not use `os.TempDir()` for pull or bundle work. Every temporary artifact
-must be created below `TmpRoot`, an images-root staging directory, or a
-containers-root staging directory.
+must be created below `TmpRoot`, an image-root staging directory, or a
+container-root staging directory.
 
 Test:
 
 - XDG variables present;
 - XDG variables absent;
-- `--root` changing all persistent child defaults;
-- explicit child overrides;
+- explicit path overrides;
 - relative paths becoming absolute;
 - unsafe permissions being rejected;
 - invalid sample ratios and export intervals;
 - supported log levels and formats;
-- telemetry disabled when the OTLP endpoint is empty.
+- telemetry disabled when `OpenTelemetryEndpoint` is empty.
 
-Use `t.TempDir()` as the fake root in tests. Do not inspect the real user's home
-directory.
+Use `t.TempDir()` for fake home and data directories in tests. Do not inspect
+the real user's home directory.
 
 You are practicing:
 
-- `flag.FlagSet`;
+- representing partial user input separately from resolved config;
 - dependency injection through `getenv`;
 - filesystem modes and ownership;
 - pure calculation before side effects.
@@ -498,10 +526,10 @@ type Config struct {
 	ServiceName           string
 	ServiceVersion        string
 	ServiceInstanceID     string
-	OTLPEndpoint          string
-	OTLPInsecure          bool
-	TraceSampleRatio      float64
-	MetricsExportInterval time.Duration
+	OpenTelemetryEndpoint              string
+	OpenTelemetryInsecure              bool
+	OpenTelemetryTraceSampleRatio      float64
+	OpenTelemetryMetricsExportInterval time.Duration
 	LogLevel              slog.Level
 	LogJSON               bool
 }
@@ -520,7 +548,7 @@ func New(
 ) (Providers, error) {
 	// TODO:
 	// 1. construct the slog handler;
-	// 2. return no-op OTel providers when OTLPEndpoint is empty;
+	// 2. return no-op OTel providers when OpenTelemetryEndpoint is empty;
 	// 3. otherwise construct OTLP trace and metric exporters;
 	// 4. use parent-based ratio sampling and periodic metric export;
 	// 5. return one idempotent Shutdown that flushes metrics, then traces.
@@ -948,7 +976,7 @@ Create the concrete bundle preparer in `internal/runtime/runc/runtime.go`:
 
 ```go
 type RuncBundlePreparer struct {
-	ContainersRoot string
+	ContainerRoot string
 	UID            uint32
 	GID            uint32
 }
@@ -959,7 +987,7 @@ func (p RuncBundlePreparer) Prepare(
 ) (bundlePath string, err error) {
 	// TODO:
 	// 1. reject an unsafe container ID;
-	// 2. create a temporary directory below ContainersRoot;
+	// 2. create a temporary directory below ContainerRoot;
 	// 3. unpack the selected image with umoci's Go API;
 	// 4. decode config.json into specs.Spec;
 	// 5. apply the rootless changes listed below;
@@ -1109,7 +1137,7 @@ type Service struct {
 	Tracer      trace.Tracer
 	Metrics     observability.Metrics
 	Logger      *slog.Logger
-	ImagesRoot  string
+	ImageRoot   string
 	RuntimeRoot string
 	Platform    string
 }
@@ -1220,8 +1248,8 @@ For this phase, write stdout and stderr to files inside the container
 directory:
 
 ```text
-<ContainersRoot>/<container-id>/stdout.log
-<ContainersRoot>/<container-id>/stderr.log
+<ContainerRoot>/<container-id>/stdout.log
+<ContainerRoot>/<container-id>/stderr.log
 ```
 
 Test against fakes first. Assert call order and durable states for:
@@ -1470,7 +1498,7 @@ successful initialization must not make the daemon unhealthy.
 HTTP over a Unix socket can be tested with:
 
 ```sh
-curl --unix-socket "$XDG_RUNTIME_DIR/chamber/chamber.sock" \
+curl --unix-socket "$HOME/.local/share/chamber/run/chamber.sock" \
   -H 'Content-Type: application/json' \
   -d '{"reference":"docker.io/library/alpine:latest"}' \
   http://localhost/v1/images/pull
