@@ -120,11 +120,11 @@ var validOperationTransitions = map[StateTransition[OperationState]]bool{
 	{OperationRunning, OperationAborted}:   true,
 }
 
-func isContainerTransitionValid(from, to ContainerState) bool {
+func IsContainerTransitionValid(from, to ContainerState) bool {
 	return validContainerTransitions[StateTransition[ContainerState]{from, to}]
 }
 
-func isOperationTransitionValid(from, to OperationState) bool {
+func IsOperationTransitionValid(from, to OperationState) bool {
 	return validOperationTransitions[StateTransition[OperationState]{from, to}]
 }
 
