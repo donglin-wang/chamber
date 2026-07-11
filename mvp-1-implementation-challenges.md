@@ -68,10 +68,6 @@ Durable records must still explain what Chamber was doing after a restart.
 Commit after each challenge if the tests are green. The intended package layout
 will emerge as you go:
 
-There is intentionally no Challenge 4. OpenTelemetry remains future-facing
-configuration and context scaffolding in this phase, not an implementation
-exercise.
-
 ```text
 cmd/chamberd/main.go
 internal/api/http.go
@@ -504,7 +500,7 @@ You are practicing:
 
 ---
 
-## Challenge 5: build the first metadata implementation in memory
+## Challenge 4: build the first metadata implementation in memory
 
 Before etcd enters the picture, build a small in-memory store. This gives you a
 fast target for service tests and lets the store contract prove the behavior
@@ -541,7 +537,7 @@ You are practicing:
 
 ---
 
-## Challenge 6: make etcd one metadata implementation detail
+## Challenge 5: make etcd one metadata implementation detail
 
 Now implement the real MVP metadata backend. The rest of Chamber should still
 know only about `metadata.Store`; etcd revisions, clients, transactions, and
@@ -627,7 +623,7 @@ You are practicing:
 
 ---
 
-## Challenge 7: pull an image atomically
+## Challenge 6: pull an image atomically
 
 Pulling an image is not an OCI runtime responsibility. An OCI runtime consumes a
 bundle containing `config.json` and `rootfs/`; it does not speak to image
@@ -700,7 +696,7 @@ You are practicing:
 
 ---
 
-## Challenge 8: define the OCI runtime boundary and verify `runc`
+## Challenge 7: define the OCI runtime boundary and verify `runc`
 
 The runtime adapter has exactly two responsibilities in Phase 1: ensure the
 configured runtime binary exists and start a container from a prepared runtime
@@ -807,7 +803,7 @@ You are practicing:
 
 ---
 
-## Challenge 9: turn an image into a rootless runtime bundle
+## Challenge 8: turn an image into a rootless runtime bundle
 
 The pulled OCI image layout is not yet something `runc` can execute:
 
@@ -887,7 +883,7 @@ You are practicing:
 
 ---
 
-## Challenge 10: start and observe the runtime process
+## Challenge 9: start and observe the runtime process
 
 Now implement `Runtime.Run` for a process-based OCI runtime. The subtle part is
 that `exec.Cmd.Start` proves the host launched the `runc` process, but it does
@@ -942,7 +938,7 @@ You are practicing:
 
 ---
 
-## Challenge 11: orchestrate pull and run in the daemon service
+## Challenge 10: orchestrate pull and run in the daemon service
 
 This is where the earlier interfaces become useful. The service owns ordering:
 durable record first, external side effect second, terminal transition last.
@@ -1131,7 +1127,7 @@ You are practicing:
 
 ---
 
-## Challenge 12: expose the two HTTP endpoints
+## Challenge 11: expose the two HTTP endpoints
 
 HTTP is a transport adapter. It should decode, validate, call the service,
 choose a public status code, and encode a response. It should not know how to
@@ -1274,7 +1270,7 @@ You are practicing:
 
 ---
 
-## Challenge 13: compose and stop the daemon
+## Challenge 12: compose and stop the daemon
 
 Write `cmd/chamberd/main.go` last. It is the composition root and may import
 every concrete adapter. Inner packages should depend only on interfaces.
@@ -1350,7 +1346,7 @@ You are practicing:
 
 ---
 
-## Challenge 14: prove the real rootless path on Linux
+## Challenge 13: prove the real rootless path on Linux
 
 macOS can compile packages and run unit tests, but it cannot prove `runc`
 namespace behavior. Use the existing `lima-config.yaml` Linux VM for the final
