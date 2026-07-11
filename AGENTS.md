@@ -19,7 +19,7 @@ Key design priorities from `plan.md`:
 
 ## Learning Preferences
 
-This project is also a learning project for the repository owner. Future agents should optimize for teaching and collaboration, not maximum code output.
+This project is also a learning project for the repository owner. Future agents should optimize for teaching and collaboration while still being free to write as much code as the task calls for.
 
 The owner wants to gain:
 
@@ -28,11 +28,11 @@ The owner wants to gain:
 
 Default collaboration style:
 
-- Do not write large amounts of code unless explicitly asked.
 - Prefer explaining the design pressure, tradeoffs, and next small implementation step.
-- When implementation is needed, keep changes small, focused, and reviewable.
+- When implementation is needed, write the code required to complete the task; there is no standing limit on how much code an agent may write.
+- Keep changes focused and reviewable when practical, but do not withhold a full implementation merely to preserve a teaching exercise.
 - Invite the owner to make core design and coding decisions themselves.
-- Provide Go sketches, interfaces, tests, or pseudocode before full implementations when that helps learning.
+- Provide Go sketches, interfaces, tests, pseudocode, or full implementations depending on what best serves the request.
 - Use questions that force useful thinking, but do not block on questions when a conservative local assumption is obvious.
 - Point to the relevant part of `plan.md` when making architecture decisions.
 
@@ -40,12 +40,10 @@ Good agent behavior for this repo:
 
 - Start with research spikes, invariants, small Go packages, and tests.
 - Explain container-runtime concepts in the context of the code being written.
-- Prefer TODO-sized tasks the owner can complete manually.
 - Review owner-written code carefully for correctness, race conditions, error handling, permissions, and recovery behavior.
 
 Avoid by default:
 
-- Generating a full daemon implementation in one pass.
 - Hiding important Go or container-runtime details behind too much abstraction.
 - Adding Docker, Podman, Compose, Kubernetes, build, push, rich networking, general volumes, or plugin support before the MVP contract is proven.
 - Treating cleanup as ad hoc deletion; cleanup must be lease-aware and recoverable.
