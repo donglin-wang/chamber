@@ -22,7 +22,8 @@ When the daemon starts, it:
 5. accepts one pull endpoint and one run endpoint;
 6. records operation, image, and container state durably;
 7. correlates each request, store call, image action, and runtime action through
-   structured logs, OpenTelemetry traces, and bounded-cardinality metrics.
+   durable correlation fields and structured logs, with config and context
+   seams that can support OpenTelemetry later.
 
 This phase deliberately excludes container-log retrieval, cancellation,
 removal, garbage collection, networking, recovery of live processes, and Docker
@@ -52,20 +53,24 @@ Keep these separate throughout the implementation:
   transitions. Phase 1 uses embedded etcd for this.
 - Filesystem artifacts: OCI image layouts, unpacked root filesystems, runtime
   bundles, runtime binaries, socket files, logs, and temporary files.
-- Diagnostic signals: traces, metrics, and daemon logs.
+- Diagnostic signals: trace-correlation fields, future metrics, and daemon logs.
 
 etcd stores metadata only. It should contain paths, digests, timestamps, states,
 and stable error codes. It should not contain image layers, runtime bundles, log
-files, or telemetry.
+files, or diagnostic output.
 
-Diagnostic signals are not the source of truth. A collector can be unavailable,
-a trace can be sampled away, and a metric point can be dropped. Durable records
-must still explain what Chamber was doing after a restart.
+Diagnostic signals are not the source of truth. A future collector can be
+unavailable, a trace can be sampled away, and a metric point can be dropped.
+Durable records must still explain what Chamber was doing after a restart.
 
 ## Work through the challenges in order
 
 Commit after each challenge if the tests are green. The intended package layout
 will emerge as you go:
+
+There is intentionally no Challenge 4. OpenTelemetry remains future-facing
+configuration and context scaffolding in this phase, not an implementation
+exercise.
 
 ```text
 cmd/chamberd/main.go
@@ -75,7 +80,6 @@ internal/daemon/service.go
 internal/image/puller.go
 internal/metadata/store.go
 internal/metadata/etcd/store.go
-internal/observability/observability.go
 internal/runtime/runtime.go
 internal/runtime/runc/runtime.go
 internal/testutil/memorystore.go
@@ -433,7 +437,7 @@ Use these defaults:
 | `SocketPath` | `<root>/run/chamber.sock` |
 | `TmpRoot` | `<root>/run/tmp` |
 | `RuntimeRoot` | `<root>/run/runtime` |
-| `OpenTelemetryEndpoint` | empty; traces and metrics use no-op providers |
+| `OpenTelemetryEndpoint` | empty; future observability setup should treat telemetry as disabled |
 | `OpenTelemetryTraceSampleRatio` | `1.0` for the learning MVP |
 | `OpenTelemetryMetricsExportInterval` | `10s` |
 | `LogLevel` | `info` |
@@ -485,7 +489,8 @@ Test:
 - unsafe permissions being rejected;
 - invalid sample ratios and export intervals;
 - supported log levels and formats;
-- telemetry disabled when `OpenTelemetryEndpoint` is empty.
+- telemetry configuration values can be represented without initializing any
+  telemetry provider.
 
 Use `t.TempDir()` for fake home and data directories in tests. Do not inspect
 the real user's home directory.
@@ -496,164 +501,6 @@ You are practicing:
 - dependency injection through `getenv`;
 - filesystem modes and ownership;
 - pure calculation before side effects.
-
----
-
-## Challenge 4: establish observability without making it the source of truth
-
-Observability is a first-class part of the daemon, but it must never determine
-whether a pull or run succeeds. Use OpenTelemetry for traces and metrics, and
-Go's `log/slog` for structured daemon logs. Do not use the OpenTelemetry Logs
-SDK in this phase; keep the logging boundary small enough that an OTel log
-bridge can be added later.
-
-Create `internal/observability/observability.go`:
-
-```go
-package observability
-
-import (
-	"context"
-	"io"
-	"log/slog"
-	"time"
-
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
-)
-
-type Config struct {
-	ServiceName           string
-	ServiceVersion        string
-	ServiceInstanceID     string
-	OpenTelemetryEndpoint              string
-	OpenTelemetryInsecure              bool
-	OpenTelemetryTraceSampleRatio      float64
-	OpenTelemetryMetricsExportInterval time.Duration
-	LogLevel              slog.Level
-	LogJSON               bool
-}
-
-type Providers struct {
-	TracerProvider trace.TracerProvider
-	MeterProvider  metric.MeterProvider
-	Logger         *slog.Logger
-	Shutdown       func(context.Context) error
-}
-
-func New(
-	ctx context.Context,
-	cfg Config,
-	logWriter io.Writer,
-) (Providers, error) {
-	// TODO:
-	// 1. construct the slog handler;
-	// 2. return no-op OTel providers when OpenTelemetryEndpoint is empty;
-	// 3. otherwise construct OTLP trace and metric exporters;
-	// 4. use parent-based ratio sampling and periodic metric export;
-	// 5. return one idempotent Shutdown that flushes metrics, then traces.
-	panic("TODO")
-}
-
-func ContextLogger(ctx context.Context, base *slog.Logger) *slog.Logger {
-	// TODO: when SpanContext is valid, add trace_id and span_id.
-	// Return base unchanged when tracing is disabled.
-	panic("TODO")
-}
-
-type Metrics struct {
-	PullDuration      metric.Float64Histogram
-	PullBytes         metric.Int64Histogram
-	ContainerStarts   metric.Int64Counter
-	StartDuration     metric.Float64Histogram
-	RunningContainers metric.Int64UpDownCounter
-	ContainerExits    metric.Int64Counter
-	MetadataDuration  metric.Float64Histogram
-}
-
-func NewMetrics(meter metric.Meter) (Metrics, error) {
-	// TODO: create the instruments named below, with descriptions and units.
-	panic("TODO")
-}
-```
-
-Use these instrument names:
-
-```text
-chamber.image.pull.duration         seconds
-chamber.image.pull.bytes            bytes
-chamber.container.starts            {container}
-chamber.container.start.duration    seconds
-chamber.container.running           {container}
-chamber.container.exits             {container}
-chamber.metadata.operation.duration seconds
-```
-
-Use only bounded metric attributes:
-
-- `operation.kind`: `pull` or `run`;
-- `outcome`: `success`, `client_error`, `conflict`, or `internal_error`;
-- `runtime.name`: configured runtime name;
-- `container.exit_class`: `zero`, `nonzero`, or `runtime_error`;
-- `metadata.method`: one of the methods on `metadata.Store`.
-
-Never attach operation IDs, container IDs, image references, digests, command
-arguments, paths, URLs, error strings, usernames, or trace IDs to metrics.
-Those values create unbounded series or leak sensitive context. They are useful
-on sampled spans and logs.
-
-Use this span shape:
-
-```text
-HTTP server span (created by otelhttp)
-  chamber.pull
-    metadata.create_operation
-    registry.pull
-    metadata.put_image
-    metadata.transition_operation
-
-HTTP server span (created by otelhttp)
-  chamber.run
-    metadata.create_operation
-    metadata.get_image
-    metadata.create_container
-    oci.bundle.prepare
-    metadata.transition_container
-    oci.runtime.start
-```
-
-The HTTP and service spans end when the response is written. Do not keep a span
-open for the entire container lifetime. Persist the original trace ID with the
-operation and container. When the wait goroutine observes exit, start a short
-`oci.runtime.exit` span from `Service.Lifetime` and add a `trace.Link` to the
-original run span.
-
-Every meaningful log call should use `ContextLogger` and include the stable
-`operation_id`. Add `container_id`, image digest, state, or runtime name only
-when relevant. Never log registry credentials, container environment variables,
-requested commands, raw request bodies, whole OCI specs, or unfiltered external
-errors that may contain credential-bearing URLs.
-
-Test in process:
-
-- no endpoint produces functioning no-op trace and metric providers;
-- a valid incoming `traceparent` becomes the parent of the HTTP span;
-- parent-based ratio sampling preserves a sampled parent;
-- JSON logs contain `trace_id` and `span_id` when the context has a valid span;
-- logs omit those fields when tracing is disabled;
-- every metric has the documented name and unit;
-- `Shutdown` is idempotent and uses the caller's deadline;
-- a failing or backpressured exporter reports a diagnostic but does not fail a
-  simulated operation.
-
-You are practicing:
-
-- context propagation;
-- OTel API versus SDK responsibilities;
-- no-op implementations;
-- counters, histograms, and up/down counters;
-- structured logging and trace correlation;
-- bounded shutdown and failure isolation.
 
 ---
 
@@ -839,11 +686,10 @@ fake lower-level fetch function. Cover:
 - rename failure is returned;
 - a successful pull returns a digest, byte count, and UTC pull time.
 
-Give the concrete puller a `trace.Tracer`. Create `registry.pull` and
-`oci.layout.commit` child spans, but keep duration and byte metrics in the
-service so all future puller implementations share identical metric semantics.
-Span attributes may contain the registry host, resolved digest, and platform;
-never record registry credentials or credential-bearing URLs.
+Keep the `context.Context` parameter on the boundary even before telemetry is
+implemented. It will eventually carry cancellation, deadlines, and trace
+context into registry calls. Do not log registry credentials or
+credential-bearing URLs.
 
 You are practicing:
 
@@ -947,8 +793,8 @@ Test with `httptest.Server`:
 - existing valid binary;
 - existing invalid binary being replaced.
 
-Create an `oci.runtime.ensure` span. Record whether the binary came from cache
-as a span attribute, not a metric dimension.
+Keep cache-hit versus download decisions visible through return values, errors,
+or structured logs later, but do not add tracing or metrics in this challenge.
 
 You are practicing:
 
@@ -1027,9 +873,10 @@ func patchRootlessSpec(
 
 Assertions should inspect the decoded struct, not compare pretty-printed JSON.
 
-Create an `oci.bundle.prepare` span containing the container ID and image
-digest. Record an exception and error status before returning a preparation
-failure, but do not serialize `config.json` into a span event.
+Keep the `context.Context` parameter on bundle preparation so later
+instrumentation can correlate unpack and spec-patching work. Do not log or emit
+the whole `config.json`; it may contain environment variables or command
+arguments.
 
 You are practicing:
 
@@ -1112,9 +959,7 @@ import (
 
 	chimage "github.com/donglinwang/chamber/internal/image"
 	"github.com/donglinwang/chamber/internal/metadata"
-	"github.com/donglinwang/chamber/internal/observability"
 	chruntime "github.com/donglinwang/chamber/internal/runtime"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type Clock interface {
@@ -1123,6 +968,10 @@ type Clock interface {
 
 type IDGenerator interface {
 	New() string
+}
+
+type Correlator interface {
+	TraceIDs(ctx context.Context) (traceID string, spanID string)
 }
 
 type Service struct {
@@ -1134,8 +983,7 @@ type Service struct {
 	Clock       Clock
 	IDs         IDGenerator
 	Lifetime    context.Context
-	Tracer      trace.Tracer
-	Metrics     observability.Metrics
+	Correlator  Correlator
 	Logger      *slog.Logger
 	ImageRoot   string
 	RuntimeRoot string
@@ -1174,8 +1022,8 @@ func (s *Service) Pull(
 	ctx context.Context,
 	request PullRequest,
 ) (PullResult, error) {
-	// TODO: create the operation and span, validate, pull, persist image
-	// metadata, transition the operation, and record telemetry.
+	// TODO: create the operation, validate, pull, persist image metadata,
+	// transition the operation, and write correlated logs.
 	panic("TODO")
 }
 
@@ -1190,23 +1038,22 @@ func (s *Service) Run(
 
 `Pull` performs this exact sequence:
 
-1. start `chamber.pull` from the request context;
+1. read trace and span IDs from `Correlator` when it is present;
 2. generate an operation ID and create a `running` pull operation containing
-   the span's trace and span IDs;
+   the correlation IDs, if any;
 3. log `pull started` with the operation ID;
 4. validate and pull into a staging path;
 5. persist the resolved image metadata;
 6. transition the operation to `succeeded`;
-7. record pull duration, bytes, and outcome;
-8. set span status and log completion;
-9. on any error after operation creation, transition the operation to `failed`
+7. log completion without credentials or raw external errors;
+8. on any error after operation creation, transition the operation to `failed`
    with a stable error code before returning.
 
 `Run` performs this exact sequence:
 
-1. start `chamber.run` from the request context;
+1. read trace and span IDs from `Correlator` when it is present;
 2. generate operation and container IDs;
-3. create a `running` operation containing the trace and span IDs;
+3. create a `running` operation containing the correlation IDs, if any;
 4. validate the image reference and command;
 5. load the pulled image or fail the operation with `image_not_found`;
 6. create a durable container record in `creating`, copying operation and trace
@@ -1221,8 +1068,7 @@ func (s *Service) Run(
     `starting -> exited`;
 14. return the operation and latest container records to the HTTP handler;
 15. for a running process, call `Process.Wait` in a goroutine;
-16. start a linked `oci.runtime.exit` span when the wait completes;
-17. transition `running -> exited`, record the exit code, update metrics, and
+16. transition `running -> exited`, record the exit code, and
     finish the operation as `succeeded` for zero or `failed` for non-zero or
     runtime failure.
 
@@ -1232,7 +1078,7 @@ delete the durable record.
 Use `Service.Lifetime`, not the HTTP request context, when calling
 `Runtime.Run`. The server cancels the request context as soon as the response
 finishes, while the child process belongs to the daemon. Preserve trace
-correlation by copying the request's span context into the durable operation
+correlation by copying the request's correlation IDs into the durable operation
 and container records.
 
 Return `*daemon.Error` after an operation exists. Its stable `Code` drives the
@@ -1241,8 +1087,8 @@ Wrap the original error for server-side logging, but never send `Err.Error()`
 directly to the client.
 
 If recording a terminal operation or container state also fails, preserve both
-errors with `errors.Join`, mark the span as failed, and emit one correlated
-daemon log. Do not pretend the terminal record is durable.
+errors with `errors.Join` and emit one correlated daemon log. Do not pretend the
+terminal record is durable.
 
 For this phase, write stdout and stderr to files inside the container
 directory:
@@ -1268,13 +1114,10 @@ For each case, also assert:
 - an operation record exists before the first fake side effect;
 - the operation reaches the correct terminal state and stable error code;
 - the operation ID appears in the container record and correlated log;
-- the service span has the expected child spans, status, and outcome;
-- pull/start duration is recorded exactly once;
-- the running gauge increments and decrements exactly once;
-- zero, non-zero, and runtime-error exits use the documented metric classes;
-- asynchronous exit creates a new span linked to the original run span;
-- command arguments and injected fake credentials appear in no log, span
-  attribute, event, or metric attribute.
+- request contexts reach the puller, bundle preparer, runtime, and store fakes;
+- fake correlation IDs, when supplied, are copied to operation and container
+  records;
+- command arguments and injected fake credentials appear in no log.
 
 Use channels in fakes to signal that `Wait` was called and to release it from
 the test. Sleeps make concurrency tests slow and nondeterministic.
@@ -1403,14 +1246,9 @@ and return a stable public message.
 
 Set `X-Chamber-Operation-ID` on every response for which an operation was
 created, including failures. Do not set it for malformed requests rejected
-before service entry. The `traceparent` header remains the trace propagation
-mechanism and is not replaced by the operation ID.
-
-Wrap the final handler with `otelhttp` in the composition root. Apply
-`otelhttp.WithRouteTag` inside each registered handler so HTTP telemetry
-contains `/v1/images/pull` or `/v1/containers/run`, never a raw
-request-derived value. `otelhttp` already supplies standard HTTP server
-measurements, so do not create parallel Chamber-specific HTTP metrics.
+before service entry. If a future trace propagation layer reads headers such as
+`traceparent`, keep that separate from the operation ID; the operation ID is a
+durable Chamber identifier, not a tracing protocol.
 
 Test with `httptest.NewRecorder` and a fake service:
 
@@ -1425,8 +1263,7 @@ Test with `httptest.NewRecorder` and a fake service:
 - success response bodies;
 - `X-Chamber-Operation-ID` on successes and post-creation failures;
 - no operation header for malformed requests rejected before service entry;
-- incoming `traceparent` creates the expected parent-child relationship;
-- HTTP spans use the route template, never the raw image reference.
+- request contexts are passed through to the service.
 
 You are practicing:
 
@@ -1458,23 +1295,22 @@ Build startup in this order:
 ```text
 parse configuration
   -> prepare and verify directories
-  -> initialize slog and OTel providers
+  -> initialize slog
   -> reject non-Linux or effective UID 0
   -> check rootless user-namespace prerequisites
   -> open embedded etcd
   -> ensure and verify the runtime binary
   -> construct puller, bundle preparer, service, and HTTP handler
-  -> wrap the handler with otelhttp
   -> remove only a stale socket owned by this user
   -> net.Listen("unix", SocketPath)
   -> chmod socket 0600
   -> http.Server.Serve(listener)
 ```
 
-Generate a fresh random `service.instance.id` for each daemon process. Attach
-`service.name=chamberd`, the build version, the instance ID, and the numeric
-effective UID as OTel resource attributes. Do not attach the username, home
-directory, command arguments, or configured storage paths.
+Generate a fresh random service instance ID for each daemon process and include
+it in startup logs. Keep the value available to a future observability adapter,
+but do not initialize OpenTelemetry in this phase. Do not log the username,
+home directory, command arguments, or configured storage paths.
 
 Do not remove an existing socket merely because `net.Listen` reports that the
 path exists. First attempt to connect. If a server answers, another daemon owns
@@ -1487,13 +1323,10 @@ Handle `SIGINT` and `SIGTERM`. On shutdown:
 2. wait for in-flight handlers up to a configured timeout;
 3. close the metadata store;
 4. close the Unix listener;
-5. remove the socket path;
-6. flush metrics and traces with a separate bounded context.
+5. remove the socket path.
 
 Verify socket mode, signal shutdown, stale-socket behavior, failure cleanup,
-provider initialization, handler wrapping, and telemetry flush order. An invalid
-telemetry configuration must fail startup; an unreachable collector after
-successful initialization must not make the daemon unhealthy.
+logger initialization, and handler construction.
 
 HTTP over a Unix socket can be tested with:
 
@@ -1523,38 +1356,6 @@ macOS can compile packages and run unit tests, but it cannot prove `runc`
 namespace behavior. Use the existing `lima-config.yaml` Linux VM for the final
 smoke test.
 
-Run a local OTel Collector as test infrastructure with an OTLP gRPC receiver
-and debug exporters:
-
-```yaml
-receivers:
-  otlp:
-    protocols:
-      grpc:
-        endpoint: 127.0.0.1:4317
-
-exporters:
-  debug:
-    verbosity: detailed
-
-service:
-  pipelines:
-    traces:
-      receivers: [otlp]
-      exporters: [debug]
-    metrics:
-      receivers: [otlp]
-      exporters: [debug]
-```
-
-Start Chamber with:
-
-```sh
-chamberd --otel-endpoint 127.0.0.1:4317 --otel-insecure
-```
-
-The Collector is a smoke-test harness, not a Chamber runtime dependency.
-
 Test this sequence as a normal user:
 
 1. start `chamberd`;
@@ -1564,14 +1365,9 @@ Test this sequence as a normal user:
 5. inspect the container record in etcd;
 6. confirm the state becomes `exited` and exit code becomes `0`;
 7. confirm every created file is below the configured roots;
-8. send one request with a known `traceparent`;
-9. confirm a local OTel Collector receives the HTTP, service, metadata, image,
-   bundle, runtime-start, and linked runtime-exit spans;
-10. confirm metrics contain the expected counts without operation, container,
-    image, or trace IDs as attributes;
-11. stop the collector, repeat a pull/run, and confirm Chamber still succeeds;
-12. stop the daemon, confirm telemetry flush is bounded, and confirm the socket
-    is removed.
+8. confirm operation and container records contain the expected correlation
+   fields, even if trace and span IDs are empty in this phase;
+9. stop the daemon and confirm the socket is removed.
 
 Also run:
 
@@ -1598,8 +1394,8 @@ apply:
 5. Which path does every created file use?
 6. What can be recovered after the daemon crashes at this exact line?
 7. Which identifiers correlate the durable record, trace, and log?
-8. Could any metric attribute create an unbounded number of time series?
-9. Does telemetry failure alter the operation's result or latency?
+8. Which context value or durable field would a future observability adapter
+   need here?
 
 These questions connect the small Go exercises to the larger design pressures
 in `plan.md`: a single authority, explicit state transitions, controlled paths,
@@ -1626,13 +1422,10 @@ concurrency, and eventual crash recovery.
   temporary files all use explicit configurable paths.
 - Unit tests do not require Docker Hub or a real runtime.
 - The real pull-to-rootless-run path is verified on Linux without `sudo`.
-- Traces connect HTTP, service, metadata, image, bundle, and runtime work.
-- Asynchronous exit spans link back to the originating run trace.
-- Metrics use only the documented bounded-cardinality attributes.
 - Structured logs carry operation and trace correlation without secrets,
   commands, environment variables, or request bodies.
-- Chamber behaves correctly with telemetry disabled or its collector
-  unavailable.
+- OpenTelemetry config fields exist, but Phase 1 does not initialize
+  OpenTelemetry providers or require a collector.
 
 At that point, stop. Logs, cancellation, deletion, leases, garbage collection,
 and crash reconciliation are the next reliability layer; adding them here would
