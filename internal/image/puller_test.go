@@ -54,7 +54,7 @@ func assertPullInvalidReference(t *testing.T, newPuller pullerFactory) {
 
 	_, err := puller.Pull(context.Background(), chimage.PullRequest{
 		Reference:   "not a reference !!",
-		Destination: filepath.Join(t.TempDir(), "layout"),
+		Destination: filepath.Join(privateTempDir(t), "layout"),
 	})
 	if err == nil {
 		t.Fatal("Pull() error = nil, want invalid reference error")
@@ -68,7 +68,7 @@ func assertPullUnsupportedPlatform(t *testing.T, newPuller pullerFactory) {
 
 	_, err := puller.Pull(context.Background(), chimage.PullRequest{
 		Reference:   "docker.io/library/alpine:latest",
-		Destination: filepath.Join(t.TempDir(), "layout"),
+		Destination: filepath.Join(privateTempDir(t), "layout"),
 		Platform:    "windows/amd64",
 	})
 	if err == nil {
@@ -80,7 +80,7 @@ func assertPullFetchFailureLeavesNoFinalLayout(t *testing.T, newPuller pullerFac
 	t.Helper()
 
 	registry := testutil.NewFailingRegistry(t)
-	destination := filepath.Join(t.TempDir(), "layout")
+	destination := filepath.Join(privateTempDir(t), "layout")
 	puller := newPuller(t)
 
 	_, err := puller.Pull(context.Background(), chimage.PullRequest{
@@ -98,7 +98,7 @@ func assertPullFetchFailureLeavesNoFinalLayout(t *testing.T, newPuller pullerFac
 func assertPullRenameFailureIsReturned(t *testing.T, newPuller pullerFactory) {
 	t.Helper()
 
-	root := t.TempDir()
+	root := privateTempDir(t)
 	destination := filepath.Join(root, "layout")
 	if err := os.MkdirAll(destination, 0700); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -125,7 +125,7 @@ func assertPullRenameFailureIsReturned(t *testing.T, newPuller pullerFactory) {
 func assertPullSuccessReturnsDigestSizeAndUTCTime(t *testing.T, newPuller pullerFactory, image imageFixture) {
 	t.Helper()
 
-	destination := filepath.Join(t.TempDir(), "layout")
+	destination := filepath.Join(privateTempDir(t), "layout")
 	puller := newPuller(t)
 	before := time.Now().UTC()
 
@@ -178,4 +178,14 @@ func localImageReference(t *testing.T) imageFixture {
 		reference: reference,
 		digest:    digest.String(),
 	}
+}
+
+func privateTempDir(t *testing.T) string {
+	t.Helper()
+
+	path := t.TempDir()
+	if err := os.Chmod(path, 0700); err != nil {
+		t.Fatalf("Chmod(%q) error = %v", path, err)
+	}
+	return path
 }

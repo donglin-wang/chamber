@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/donglin-wang/chamber/internal/fsutil"
 	chimage "github.com/donglin-wang/chamber/internal/image"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -44,7 +45,7 @@ func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage
 		return chimage.PulledImage{}, fmt.Errorf("resolve image destination: %w", err)
 	}
 	parent := filepath.Dir(destination)
-	if err := os.MkdirAll(parent, 0700); err != nil {
+	if err := fsutil.EnsurePrivateDir(parent); err != nil {
 		return chimage.PulledImage{}, fmt.Errorf("prepare image destination parent: %w", err)
 	}
 

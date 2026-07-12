@@ -2,9 +2,12 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/donglin-wang/chamber/internal/fsutil"
+	metadataetcd "github.com/donglin-wang/chamber/internal/metadata/etcd"
+	runcruntime "github.com/donglin-wang/chamber/internal/runtime/runc"
 )
 
 type Config struct {
@@ -13,15 +16,12 @@ type Config struct {
 	TmpRoot       string
 	ImageRoot     string
 	ContainerRoot string
-	RuntimeRoot   string
-	RuntimeBinDir string
-	MetadataRoot  string
 
 	// OCI Runtime
-	RuntimeName    string
-	RuntimeVersion string
-	RuntimeURL     string
-	RuntimeSHA256  string
+	Runtime runcruntime.Config
+
+	// Metadata
+	Metadata metadataetcd.Config
 
 	// OpenTelemetry
 	OpenTelemetryEndpoint              string
@@ -39,14 +39,9 @@ type Override struct {
 	TmpRoot       *string
 	ImageRoot     *string
 	ContainerRoot *string
-	RuntimeRoot   *string
-	RuntimeBinDir *string
-	MetadataRoot  *string
 
-	RuntimeName    *string
-	RuntimeVersion *string
-	RuntimeURL     *string
-	RuntimeSHA256  *string
+	Runtime  runcruntime.Override
+	Metadata metadataetcd.Override
 
 	OpenTelemetryEndpoint              *string
 	OpenTelemetryInsecure              *bool
@@ -58,7 +53,6 @@ type Override struct {
 }
 
 const (
-	defaultRuntimeName                        = "runc"
 	defaultOpenTelemetryTraceSampleRatio      = 1.0
 	defaultOpenTelemetryMetricsExportInterval = 10 * time.Second
 	defaultLogLevel                           = "info"
@@ -94,11 +88,9 @@ func Load(override Override, getenv func(string) string) (Config, error) {
 		TmpRoot:       filepath.Join(rootPath, "run", "tmp"),
 		ImageRoot:     filepath.Join(rootPath, "images"),
 		ContainerRoot: filepath.Join(rootPath, "containers"),
-		RuntimeRoot:   filepath.Join(rootPath, "run", "runtime"),
-		RuntimeBinDir: filepath.Join(rootPath, "bin"),
-		MetadataRoot:  filepath.Join(rootPath, "metadata", "etcd"),
 
-		RuntimeName: defaultRuntimeName,
+		Runtime:  runcruntime.DefaultConfig(rootPath),
+		Metadata: metadataetcd.DefaultConfig(rootPath),
 
 		OpenTelemetryTraceSampleRatio:      defaultOpenTelemetryTraceSampleRatio,
 		OpenTelemetryMetricsExportInterval: defaultOpenTelemetryMetricsExportInterval,
@@ -122,27 +114,6 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	if override.ContainerRoot != nil {
 		defaultConfig.ContainerRoot = *override.ContainerRoot
 	}
-	if override.RuntimeRoot != nil {
-		defaultConfig.RuntimeRoot = *override.RuntimeRoot
-	}
-	if override.RuntimeBinDir != nil {
-		defaultConfig.RuntimeBinDir = *override.RuntimeBinDir
-	}
-	if override.MetadataRoot != nil {
-		defaultConfig.MetadataRoot = *override.MetadataRoot
-	}
-	if override.RuntimeName != nil {
-		defaultConfig.RuntimeName = *override.RuntimeName
-	}
-	if override.RuntimeVersion != nil {
-		defaultConfig.RuntimeVersion = *override.RuntimeVersion
-	}
-	if override.RuntimeURL != nil {
-		defaultConfig.RuntimeURL = *override.RuntimeURL
-	}
-	if override.RuntimeSHA256 != nil {
-		defaultConfig.RuntimeSHA256 = *override.RuntimeSHA256
-	}
 	if override.OpenTelemetryEndpoint != nil {
 		defaultConfig.OpenTelemetryEndpoint = *override.OpenTelemetryEndpoint
 	}
@@ -162,6 +133,15 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 		defaultConfig.LogFormat = *override.LogFormat
 	}
 
+	var err error
+	defaultConfig.Runtime, err = runcruntime.Resolve(defaultConfig.Runtime, override.Runtime)
+	if err != nil {
+		return Config{}, err
+	}
+	defaultConfig.Metadata, err = metadataetcd.Resolve(defaultConfig.Metadata, override.Metadata)
+	if err != nil {
+		return Config{}, err
+	}
 	absolutizePaths(&defaultConfig)
 
 	return defaultConfig, nil
@@ -173,12 +153,15 @@ func absolutizePaths(cfg *Config) {
 		&cfg.TmpRoot,
 		&cfg.ImageRoot,
 		&cfg.ContainerRoot,
-		&cfg.RuntimeRoot,
-		&cfg.RuntimeBinDir,
-		&cfg.MetadataRoot,
+		&cfg.Metadata.DataDir,
+		&cfg.Metadata.ClientSocket,
+		&cfg.Metadata.PeerSocket,
 	}
 
 	for _, path := range paths {
+		if *path == "" {
+			continue
+		}
 		abs, err := filepath.Abs(*path)
 		if err != nil {
 			panic(fmt.Sprintf("cannot convert config path %q to absolute path: %v", *path, err))
@@ -188,46 +171,36 @@ func absolutizePaths(cfg *Config) {
 }
 
 func (c Config) Prepare() error {
-	if err := ensurePath(filepath.Dir(c.SocketPath)); err != nil {
+	if err := fsutil.EnsurePrivateParent(c.SocketPath); err != nil {
 		return fmt.Errorf("prepare socket directory: %w", err)
 	}
-	if err := ensurePath(c.TmpRoot); err != nil {
+	if err := fsutil.EnsurePrivateDir(c.TmpRoot); err != nil {
 		return fmt.Errorf("prepare tmp root: %w", err)
 	}
-	if err := ensurePath(c.ImageRoot); err != nil {
+	if err := fsutil.EnsurePrivateDir(c.ImageRoot); err != nil {
 		return fmt.Errorf("prepare image root: %w", err)
 	}
-	if err := ensurePath(c.ContainerRoot); err != nil {
+	if err := fsutil.EnsurePrivateDir(c.ContainerRoot); err != nil {
 		return fmt.Errorf("prepare container root: %w", err)
 	}
-	if err := ensurePath(c.RuntimeRoot); err != nil {
+	if err := fsutil.EnsurePrivateDir(c.Runtime.RuntimeRoot); err != nil {
 		return fmt.Errorf("prepare runtime root: %w", err)
 	}
-	if err := ensurePath(c.RuntimeBinDir); err != nil {
+	if err := fsutil.EnsurePrivateDir(c.Runtime.RuntimeBinDir); err != nil {
 		return fmt.Errorf("prepare runtime bin dir: %w", err)
 	}
-	if err := ensurePath(c.MetadataRoot); err != nil {
+	if err := fsutil.EnsurePrivateDir(c.Metadata.DataDir); err != nil {
 		return fmt.Errorf("prepare metadata root: %w", err)
 	}
-	return nil
-}
-
-func ensurePath(path string) error {
-	if err := os.MkdirAll(path, 0700); err != nil {
-		return fmt.Errorf("error creating path %q: %w", path, err)
+	if c.Metadata.ClientSocket != "" {
+		if err := fsutil.EnsurePrivateParent(c.Metadata.ClientSocket); err != nil {
+			return fmt.Errorf("prepare metadata client socket directory: %w", err)
+		}
 	}
-
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("error reading metadata for path %q: %w", path, err)
-	}
-
-	if !info.IsDir() {
-		return fmt.Errorf("%q is not a directory", path)
-	}
-
-	if info.Mode().Perm()&0077 != 0 {
-		return fmt.Errorf("path %q must not be readable, writable, or executable by group or other users", path)
+	if c.Metadata.PeerSocket != "" {
+		if err := fsutil.EnsurePrivateParent(c.Metadata.PeerSocket); err != nil {
+			return fmt.Errorf("prepare metadata peer socket directory: %w", err)
+		}
 	}
 	return nil
 }
