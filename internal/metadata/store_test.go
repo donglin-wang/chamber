@@ -3,13 +3,17 @@ package metadata_test
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/donglin-wang/chamber/internal/metadata"
+	metadataetcd "github.com/donglin-wang/chamber/internal/metadata/etcd"
 	"github.com/donglin-wang/chamber/internal/testutil"
 )
+
+type traceContextKey struct{}
 
 func TestContainerValidTransition(t *testing.T) {
 	tests := map[metadata.StateTransition[metadata.ContainerState]]bool{
@@ -74,6 +78,25 @@ func TestStoreContract(t *testing.T) {
 			t.Helper()
 			return testutil.NewMemoryStore()
 		},
+		"etcd": func(t *testing.T) metadata.Store {
+			t.Helper()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			t.Cleanup(cancel)
+			dataDir, err := os.MkdirTemp("/tmp", "chamber-etcd-*")
+			if err != nil {
+				t.Fatalf("MkdirTemp() error = %v", err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(dataDir) })
+
+			store, err := metadataetcd.Open(ctx, metadataetcd.Config{
+				DataDir: dataDir,
+			})
+			if err != nil {
+				t.Fatalf("Open() error = %v", err)
+			}
+			return store
+		},
 	}
 
 	for name, newStore := range tests {
@@ -86,7 +109,9 @@ func TestStoreContract(t *testing.T) {
 			assertContainerLifecycle(t, store)
 			assertConcurrentOperationCreate(t, store)
 			assertConcurrentOperationTransition(t, store)
+			assertConcurrentTerminalOperationTransition(t, store)
 			assertConcurrentContainerTransition(t, store)
+			assertTraceFieldsAreExplicit(t, store)
 		})
 	}
 }
@@ -330,6 +355,46 @@ func assertConcurrentOperationTransition(t *testing.T, store metadata.Store) {
 	}
 }
 
+func assertConcurrentTerminalOperationTransition(t *testing.T, store metadata.Store) {
+	t.Helper()
+
+	ctx := context.Background()
+	startedAt := time.Date(2026, 7, 11, 10, 22, 0, 0, time.UTC)
+	operation := metadata.Operation{
+		ID:         "op-concurrent-terminal-transition",
+		Kind:       metadata.RunOperation,
+		State:      metadata.OperationRunning,
+		ResourceID: "container-concurrent-terminal-transition",
+		StartedAt:  startedAt,
+		UpdatedAt:  startedAt,
+	}
+	if err := store.CreateOperation(ctx, operation); err != nil {
+		t.Fatalf("CreateOperation() error = %v", err)
+	}
+
+	terminalStates := []metadata.OperationState{
+		metadata.OperationSucceeded,
+		metadata.OperationFailed,
+	}
+	errs := runConcurrently(len(terminalStates), func(worker int) error {
+		_, err := store.TransitionOperation(ctx, operation.ID, metadata.OperationRunning, metadata.OperationUpdate{
+			State: terminalStates[worker],
+			At:    startedAt.Add(time.Duration(worker+1) * time.Second),
+		})
+		return err
+	})
+
+	assertOneSuccess(t, errs, metadata.ErrStateConflict)
+
+	got, err := store.GetOperation(ctx, operation.ID)
+	if err != nil {
+		t.Fatalf("GetOperation() error = %v", err)
+	}
+	if got.State != metadata.OperationSucceeded && got.State != metadata.OperationFailed {
+		t.Fatalf("GetOperation() state = %q, want one terminal update", got.State)
+	}
+}
+
 func assertConcurrentContainerTransition(t *testing.T, store metadata.Store) {
 	t.Helper()
 
@@ -371,6 +436,55 @@ func assertConcurrentContainerTransition(t *testing.T, store metadata.Store) {
 	}
 	if got.ExitCode == nil {
 		t.Fatal("GetContainer() ExitCode = nil, want successful transition exit code")
+	}
+}
+
+func assertTraceFieldsAreExplicit(t *testing.T, store metadata.Store) {
+	t.Helper()
+
+	ctx := context.WithValue(context.Background(), traceContextKey{}, "trace-from-context")
+	startedAt := time.Date(2026, 7, 11, 10, 30, 0, 0, time.UTC)
+	operation := metadata.Operation{
+		ID:         "op-explicit-trace",
+		Kind:       metadata.RunOperation,
+		State:      metadata.OperationRunning,
+		ResourceID: "container-explicit-trace",
+		StartedAt:  startedAt,
+		UpdatedAt:  startedAt,
+	}
+	container := metadata.Container{
+		ID:          "container-explicit-trace",
+		OperationID: operation.ID,
+		ImageDigest: "sha256:trace",
+		ImageRef:    "docker.io/library/alpine:latest",
+		BundlePath:  "/tmp/chamber/bundles/container-explicit-trace",
+		Runtime:     "runc",
+		State:       metadata.ContainerCreating,
+		CreatedAt:   startedAt,
+		UpdatedAt:   startedAt,
+	}
+
+	if err := store.CreateOperation(ctx, operation); err != nil {
+		t.Fatalf("CreateOperation() error = %v", err)
+	}
+	if err := store.CreateContainer(ctx, container); err != nil {
+		t.Fatalf("CreateContainer() error = %v", err)
+	}
+
+	gotOperation, err := store.GetOperation(ctx, operation.ID)
+	if err != nil {
+		t.Fatalf("GetOperation() error = %v", err)
+	}
+	if gotOperation.TraceID != "" || gotOperation.SpanID != "" {
+		t.Fatalf("GetOperation() trace fields = (%q, %q), want empty explicit fields", gotOperation.TraceID, gotOperation.SpanID)
+	}
+
+	gotContainer, err := store.GetContainer(ctx, container.ID)
+	if err != nil {
+		t.Fatalf("GetContainer() error = %v", err)
+	}
+	if gotContainer.TraceID != "" || gotContainer.SpanID != "" {
+		t.Fatalf("GetContainer() trace fields = (%q, %q), want empty explicit fields", gotContainer.TraceID, gotContainer.SpanID)
 	}
 }
 

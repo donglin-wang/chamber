@@ -578,9 +578,9 @@ permissions as the user boundary.
 Use private keys:
 
 ```text
-/chamber/v1/images/by-reference/<escaped-reference>
-/chamber/v1/operations/<operation-id>
-/chamber/v1/containers/<container-id>
+/chamber/v0/images/by-reference/<escaped-reference>
+/chamber/v0/operations/<operation-id>
+/chamber/v0/containers/<container-id>
 ```
 
 Do not place raw image references directly into key paths. Encode references
