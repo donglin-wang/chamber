@@ -38,6 +38,22 @@ func TestParseArgsBuildsPullAndRunCommands(t *testing.T) {
 	if want := []string{"/bin/sh", "-c", "id && echo chamber"}; !reflect.DeepEqual(run.args, want) {
 		t.Fatalf("run args = %#v, want %#v", run.args, want)
 	}
+
+	list, err := parseArgs([]string{"containers", "ls"})
+	if err != nil {
+		t.Fatalf("parse containers ls args: %v", err)
+	}
+	if list.kind != commandListContainers {
+		t.Fatalf("list command kind = %q, want %q", list.kind, commandListContainers)
+	}
+
+	logs, err := parseArgs([]string{"logs", "ctr-run", "--stderr"})
+	if err != nil {
+		t.Fatalf("parse logs args: %v", err)
+	}
+	if logs.kind != commandLogs || logs.containerID != "ctr-run" || logs.logStream != "stderr" {
+		t.Fatalf("logs command = %#v, want stderr logs command", logs)
+	}
 }
 
 func TestParseArgsRejectsInvalidCommands(t *testing.T) {
@@ -51,6 +67,9 @@ func TestParseArgsRejectsInvalidCommands(t *testing.T) {
 		{name: "pull missing image", args: []string{"pull"}, want: "usage: chamber pull IMAGE"},
 		{name: "run missing separator", args: []string{"run", "alpine", "/bin/sh"}, want: "usage: chamber run IMAGE -- COMMAND"},
 		{name: "run missing command", args: []string{"run", "alpine", "--"}, want: "usage: chamber run IMAGE -- COMMAND"},
+		{name: "containers invalid subcommand", args: []string{"containers", "inspect"}, want: "usage: chamber containers ls"},
+		{name: "logs missing id", args: []string{"logs"}, want: "usage: chamber logs CONTAINER"},
+		{name: "logs invalid stream", args: []string{"logs", "ctr", "--stream", "weird"}, want: "--stream must be stdout or stderr"},
 	}
 
 	for _, tt := range tests {
@@ -183,6 +202,62 @@ func TestClientTCPModeRequestBodies(t *testing.T) {
 	}
 }
 
+func TestClientListContainersAndLogsRequests(t *testing.T) {
+	exitCode := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/containers":
+			if r.Method != http.MethodGet {
+				t.Fatalf("list method = %s, want GET", r.Method)
+			}
+			writeJSON(t, w, http.StatusOK, ListContainersResponse{
+				Containers: []ContainerResponse{
+					{
+						ID:          "ctr-run",
+						OperationID: "op-run",
+						Image:       "docker.io/library/alpine:latest",
+						ImageDigest: "sha256:def456",
+						Runtime:     "runc",
+						State:       "exited",
+						ExitCode:    &exitCode,
+					},
+				},
+			})
+		case "/v1/containers/ctr-run/logs":
+			if r.Method != http.MethodGet {
+				t.Fatalf("logs method = %s, want GET", r.Method)
+			}
+			if got := r.URL.Query().Get("stream"); got != "stderr" {
+				t.Fatalf("stream query = %q, want stderr", got)
+			}
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			_, _ = w.Write([]byte("hello stderr\n"))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client, err := newClient("", server.URL, mapGetenv(nil))
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	list, err := client.ListContainers(context.Background())
+	if err != nil {
+		t.Fatalf("ListContainers returned error: %v", err)
+	}
+	if len(list.Containers) != 1 || list.Containers[0].ID != "ctr-run" || list.Containers[0].ExitCode == nil || *list.Containers[0].ExitCode != 0 {
+		t.Fatalf("list response = %#v, want container", list)
+	}
+	logs, err := client.ContainerLogs(context.Background(), "ctr-run", "stderr")
+	if err != nil {
+		t.Fatalf("ContainerLogs returned error: %v", err)
+	}
+	if string(logs) != "hello stderr\n" {
+		t.Fatalf("logs = %q, want stderr content", string(logs))
+	}
+}
+
 func TestClientUnixSocketTransportCallsDaemon(t *testing.T) {
 	dir := shortTempDir(t)
 	socketPath := filepath.Join(dir, "chamber.sock")
@@ -256,6 +331,58 @@ func TestRunUsesTCPModeAndPrintsResponse(t *testing.T) {
 	}
 }
 
+func TestRunListsContainersAndPrintsLogs(t *testing.T) {
+	exitCode := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/containers":
+			writeJSON(t, w, http.StatusOK, ListContainersResponse{
+				Containers: []ContainerResponse{
+					{
+						ID:          "ctr-run",
+						OperationID: "op-run",
+						Image:       "docker.io/library/alpine:latest",
+						State:       "exited",
+						ExitCode:    &exitCode,
+					},
+				},
+			})
+		case "/v1/containers/ctr-run/logs":
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			_, _ = w.Write([]byte("uid=0(root)\nchamber\n"))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var listOut bytes.Buffer
+	err := Run(context.Background(), []string{
+		"--addr", server.URL,
+		"containers", "ls",
+	}, &listOut, ioDiscard{}, mapGetenv(nil))
+	if err != nil {
+		t.Fatalf("Run(containers ls) returned error: %v", err)
+	}
+	for _, want := range []string{"ID", "IMAGE", "STATE", "EXIT", "ctr-run", "docker.io/library/alpine:latest", "exited", "0"} {
+		if !strings.Contains(listOut.String(), want) {
+			t.Fatalf("containers ls output = %q, want containing %q", listOut.String(), want)
+		}
+	}
+
+	var logsOut bytes.Buffer
+	err = Run(context.Background(), []string{
+		"--addr", server.URL,
+		"logs", "ctr-run",
+	}, &logsOut, ioDiscard{}, mapGetenv(nil))
+	if err != nil {
+		t.Fatalf("Run(logs) returned error: %v", err)
+	}
+	if logsOut.String() != "uid=0(root)\nchamber\n" {
+		t.Fatalf("logs output = %q, want raw logs", logsOut.String())
+	}
+}
+
 func TestResponseFormatting(t *testing.T) {
 	var pull bytes.Buffer
 	printPullResponse(&pull, PullResponse{
@@ -287,6 +414,22 @@ func TestResponseFormatting(t *testing.T) {
 	if run.String() != want {
 		t.Fatalf("run output = %q, want %q", run.String(), want)
 	}
+
+	var list bytes.Buffer
+	printContainers(&list, []ContainerResponse{
+		{
+			ID:          "ctr-run",
+			OperationID: "op-run",
+			Image:       "docker.io/library/alpine:latest",
+			State:       "exited",
+			ExitCode:    intPtr(0),
+		},
+	})
+	for _, want := range []string{"ID", "IMAGE", "STATE", "EXIT", "OPERATION", "ctr-run", "docker.io/library/alpine:latest", "exited", "0", "op-run"} {
+		if !strings.Contains(list.String(), want) {
+			t.Fatalf("list output = %q, want containing %q", list.String(), want)
+		}
+	}
 }
 
 func writeJSON(t *testing.T, w http.ResponseWriter, status int, response any) {
@@ -302,6 +445,10 @@ func mapGetenv(values map[string]string) getenvFunc {
 	return func(key string) string {
 		return values[key]
 	}
+}
+
+func intPtr(value int) *int {
+	return &value
 }
 
 type ioDiscard struct{}

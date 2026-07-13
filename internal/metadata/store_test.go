@@ -255,6 +255,32 @@ func assertContainerLifecycle(t *testing.T, store metadata.Store) {
 		t.Fatalf("GetContainer() = %#v, want %#v", got, container)
 	}
 
+	second := container
+	second.ID = "container-0"
+	second.OperationID = "op-0"
+	second.BundlePath = "/tmp/chamber/bundles/container-0"
+	if err := store.CreateContainer(ctx, second); err != nil {
+		t.Fatalf("CreateContainer(second) error = %v", err)
+	}
+	containers, err := store.ListContainers(ctx)
+	if err != nil {
+		t.Fatalf("ListContainers() error = %v", err)
+	}
+	if len(containers) != 2 {
+		t.Fatalf("ListContainers() len = %d, want 2; containers = %#v", len(containers), containers)
+	}
+	if containers[0].ID != second.ID || containers[1].ID != container.ID {
+		t.Fatalf("ListContainers() IDs = %q, %q; want sorted IDs %q, %q", containers[0].ID, containers[1].ID, second.ID, container.ID)
+	}
+	containers[0].ExitCode = &exitCode
+	rereadList, err := store.ListContainers(ctx)
+	if err != nil {
+		t.Fatalf("ListContainers(after caller mutation) error = %v", err)
+	}
+	if rereadList[0].ExitCode != nil {
+		t.Fatalf("ListContainers(after caller mutation) ExitCode = %v, want nil", rereadList[0].ExitCode)
+	}
+
 	updated, err := store.TransitionContainer(ctx, container.ID, metadata.ContainerCreating, metadata.ContainerUpdate{
 		State:    metadata.ContainerFailed,
 		At:       exitedAt,

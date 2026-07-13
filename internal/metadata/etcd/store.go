@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -171,6 +172,26 @@ func (s *Store) CreateContainer(ctx context.Context, container metadata.Containe
 
 func (s *Store) GetContainer(ctx context.Context, id string) (metadata.Container, error) {
 	return getValue[metadata.Container](ctx, s.client, containerKey(id))
+}
+
+func (s *Store) ListContainers(ctx context.Context) ([]metadata.Container, error) {
+	response, err := s.client.Get(ctx, containerPrefix, clientv3.WithPrefix())
+	if err != nil {
+		return nil, mapEtcdError(err)
+	}
+
+	containers := make([]metadata.Container, 0, len(response.Kvs))
+	for _, kv := range response.Kvs {
+		container, err := unmarshalValue[metadata.Container](kv.Value)
+		if err != nil {
+			return nil, err
+		}
+		containers = append(containers, cloneContainer(container))
+	}
+	sort.Slice(containers, func(i, j int) bool {
+		return containers[i].ID < containers[j].ID
+	})
+	return containers, nil
 }
 
 func (s *Store) TransitionContainer(

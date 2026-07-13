@@ -68,6 +68,16 @@ type RunResult struct {
 	Container metadata.Container
 }
 
+type ListContainersResult struct {
+	Containers []metadata.Container
+}
+
+type ContainerLogResult struct {
+	Container metadata.Container
+	Stream    string
+	Content   []byte
+}
+
 type Error struct {
 	OperationID string
 	Code        string
@@ -366,6 +376,58 @@ func (s *Service) Run(
 			Container: chooseContainer(failedContainer, starting),
 		}, failErr
 	}
+}
+
+func (s *Service) ListContainers(ctx context.Context) (ListContainersResult, error) {
+	if s.Store == nil {
+		return ListContainersResult{}, fmt.Errorf("metadata store is required")
+	}
+	containers, err := s.Store.ListContainers(ctx)
+	if err != nil {
+		return ListContainersResult{}, s.daemonError("", metadata.ErrMetadataFailed, err)
+	}
+	return ListContainersResult{Containers: containers}, nil
+}
+
+func (s *Service) ContainerLog(ctx context.Context, containerID string, stream string) (ContainerLogResult, error) {
+	if s.Store == nil {
+		return ContainerLogResult{}, fmt.Errorf("metadata store is required")
+	}
+	containerID = strings.TrimSpace(containerID)
+	if containerID == "" {
+		return ContainerLogResult{}, s.daemonError("", metadata.ErrInvalidRequest, fmt.Errorf("container id is required"))
+	}
+	stream = strings.TrimSpace(stream)
+	if stream == "" {
+		stream = "stdout"
+	}
+	if stream != "stdout" && stream != "stderr" {
+		return ContainerLogResult{}, s.daemonError("", metadata.ErrInvalidRequest, fmt.Errorf("unsupported log stream %q", stream))
+	}
+
+	container, err := s.Store.GetContainer(ctx, containerID)
+	if errors.Is(err, metadata.ErrNotFound) {
+		return ContainerLogResult{}, s.daemonError("", metadata.ErrContainerNotFound, err)
+	}
+	if err != nil {
+		return ContainerLogResult{}, s.daemonError("", metadata.ErrMetadataFailed, err)
+	}
+	if strings.TrimSpace(container.BundlePath) == "" {
+		return ContainerLogResult{}, s.daemonError("", metadata.ErrLogNotFound, fmt.Errorf("container bundle path is empty"))
+	}
+
+	content, err := os.ReadFile(filepath.Join(container.BundlePath, stream+".log"))
+	if errors.Is(err, os.ErrNotExist) {
+		return ContainerLogResult{}, s.daemonError("", metadata.ErrLogNotFound, err)
+	}
+	if err != nil {
+		return ContainerLogResult{}, s.daemonError("", metadata.ErrMetadataFailed, err)
+	}
+	return ContainerLogResult{
+		Container: container,
+		Stream:    stream,
+		Content:   content,
+	}, nil
 }
 
 func (s *Service) finishRunningProcess(

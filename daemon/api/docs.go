@@ -120,6 +120,62 @@ const openAPIJSON = `{
           "500": { "$ref": "#/components/responses/Error" }
         }
       }
+    },
+    "/v1/containers": {
+      "get": {
+        "summary": "List containers recorded by the local daemon",
+        "operationId": "listContainers",
+        "responses": {
+          "200": {
+            "description": "Containers listed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListContainersResponse" }
+              }
+            }
+          },
+          "405": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/containers/{id}/logs": {
+      "get": {
+        "summary": "Read stored stdout or stderr logs for a container",
+        "operationId": "containerLogs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "stream",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["stdout", "stderr"],
+              "default": "stdout"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log content",
+            "content": {
+              "text/plain": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "405": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
     }
   },
   "components": {
@@ -191,6 +247,37 @@ const openAPIJSON = `{
             "type": "string",
             "enum": ["creating", "starting", "running", "exited", "failed"]
           }
+        }
+      },
+      "ListContainersResponse": {
+        "type": "object",
+        "required": ["containers"],
+        "additionalProperties": false,
+        "properties": {
+          "containers": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Container" }
+          }
+        }
+      },
+      "Container": {
+        "type": "object",
+        "required": ["id", "operation_id", "image", "image_digest", "runtime", "state", "created_at", "updated_at"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "operation_id": { "type": "string" },
+          "image": { "type": "string" },
+          "image_digest": { "type": "string" },
+          "runtime": { "type": "string" },
+          "state": {
+            "type": "string",
+            "enum": ["creating", "starting", "running", "exited", "failed"]
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "exit_code": { "type": "integer" },
+          "error_code": { "type": "string" }
         }
       },
       "ErrorResponse": {

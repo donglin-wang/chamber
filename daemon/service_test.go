@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -169,6 +170,121 @@ func TestRunMissingImageFailsOperationWithoutSideEffects(t *testing.T) {
 	if got := events.snapshot(); !reflect.DeepEqual(got, wantEvents) {
 		t.Fatalf("events = %#v, want %#v", got, wantEvents)
 	}
+}
+
+func TestListContainersReturnsStoreContainers(t *testing.T) {
+	store := newFakeStore()
+	events := newEventLog()
+	service := newTestService(t, store, events)
+	store.images["docker.io/library/alpine:latest"] = testImage(service.ImageRoot)
+	store.containers["ctr-2"] = metadata.Container{
+		ID:          "ctr-2",
+		OperationID: "op-2",
+		ImageDigest: "sha256:def456",
+		ImageRef:    "docker.io/library/alpine:latest",
+		BundlePath:  filepath.Join(service.ContainerRoot, "ctr-2"),
+		Runtime:     "runc",
+		State:       metadata.ContainerExited,
+		CreatedAt:   testTime.Add(time.Second),
+		UpdatedAt:   testTime.Add(2 * time.Second),
+	}
+	store.containers["ctr-1"] = metadata.Container{
+		ID:          "ctr-1",
+		OperationID: "op-1",
+		ImageDigest: "sha256:abc123",
+		ImageRef:    "docker.io/library/alpine:latest",
+		BundlePath:  filepath.Join(service.ContainerRoot, "ctr-1"),
+		Runtime:     "runc",
+		State:       metadata.ContainerRunning,
+		CreatedAt:   testTime,
+		UpdatedAt:   testTime,
+	}
+
+	result, err := service.ListContainers(context.Background())
+	if err != nil {
+		t.Fatalf("ListContainers() error = %v", err)
+	}
+	if len(result.Containers) != 2 {
+		t.Fatalf("ListContainers() len = %d, want 2", len(result.Containers))
+	}
+	if result.Containers[0].ID != "ctr-1" || result.Containers[1].ID != "ctr-2" {
+		t.Fatalf("ListContainers() IDs = %q, %q; want sorted ctr-1, ctr-2", result.Containers[0].ID, result.Containers[1].ID)
+	}
+
+	wantEvents := []string{
+		"list-containers",
+	}
+	if got := events.snapshot(); !reflect.DeepEqual(got, wantEvents) {
+		t.Fatalf("events = %#v, want %#v", got, wantEvents)
+	}
+}
+
+func TestContainerLogReturnsStoredStdoutAndStderr(t *testing.T) {
+	store := newFakeStore()
+	events := newEventLog()
+	service := newTestService(t, store, events)
+	bundlePath := filepath.Join(service.ContainerRoot, "ctr-log")
+	if err := os.MkdirAll(bundlePath, 0700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(bundlePath, "stdout.log"), []byte("hello stdout\n"), 0600); err != nil {
+		t.Fatalf("WriteFile(stdout) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(bundlePath, "stderr.log"), []byte("hello stderr\n"), 0600); err != nil {
+		t.Fatalf("WriteFile(stderr) error = %v", err)
+	}
+	store.containers["ctr-log"] = metadata.Container{
+		ID:          "ctr-log",
+		OperationID: "op-log",
+		ImageDigest: "sha256:abc123",
+		ImageRef:    "docker.io/library/alpine:latest",
+		BundlePath:  bundlePath,
+		Runtime:     "runc",
+		State:       metadata.ContainerExited,
+		CreatedAt:   testTime,
+		UpdatedAt:   testTime,
+	}
+
+	stdout, err := service.ContainerLog(context.Background(), "ctr-log", "")
+	if err != nil {
+		t.Fatalf("ContainerLog(stdout) error = %v", err)
+	}
+	if stdout.Stream != "stdout" || string(stdout.Content) != "hello stdout\n" {
+		t.Fatalf("stdout log = stream %q content %q, want stdout content", stdout.Stream, string(stdout.Content))
+	}
+	stderr, err := service.ContainerLog(context.Background(), "ctr-log", "stderr")
+	if err != nil {
+		t.Fatalf("ContainerLog(stderr) error = %v", err)
+	}
+	if stderr.Stream != "stderr" || string(stderr.Content) != "hello stderr\n" {
+		t.Fatalf("stderr log = stream %q content %q, want stderr content", stderr.Stream, string(stderr.Content))
+	}
+}
+
+func TestContainerLogMapsMissingContainerAndMissingLog(t *testing.T) {
+	store := newFakeStore()
+	events := newEventLog()
+	service := newTestService(t, store, events)
+
+	_, err := service.ContainerLog(context.Background(), "missing", "")
+	assertDaemonError(t, err, "", metadata.ErrContainerNotFound)
+
+	store.containers["ctr-no-log"] = metadata.Container{
+		ID:          "ctr-no-log",
+		OperationID: "op-no-log",
+		ImageDigest: "sha256:abc123",
+		ImageRef:    "docker.io/library/alpine:latest",
+		BundlePath:  filepath.Join(service.ContainerRoot, "ctr-no-log"),
+		Runtime:     "runc",
+		State:       metadata.ContainerExited,
+		CreatedAt:   testTime,
+		UpdatedAt:   testTime,
+	}
+	_, err = service.ContainerLog(context.Background(), "ctr-no-log", "")
+	assertDaemonError(t, err, "", metadata.ErrLogNotFound)
+
+	_, err = service.ContainerLog(context.Background(), "ctr-no-log", "weird")
+	assertDaemonError(t, err, "", metadata.ErrInvalidRequest)
 }
 
 func TestRunProvisionFailureFailsContainerAndOperation(t *testing.T) {
@@ -740,6 +856,23 @@ func (s *fakeStore) GetContainer(ctx context.Context, id string) (metadata.Conta
 		return metadata.Container{}, metadata.ErrNotFound
 	}
 	return cloneContainer(container), nil
+}
+
+func (s *fakeStore) ListContainers(ctx context.Context) ([]metadata.Container, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events.add("list-containers")
+	containers := make([]metadata.Container, 0, len(s.containers))
+	for _, container := range s.containers {
+		containers = append(containers, cloneContainer(container))
+	}
+	sort.Slice(containers, func(i, j int) bool {
+		return containers[i].ID < containers[j].ID
+	})
+	return containers, nil
 }
 
 func (s *fakeStore) TransitionContainer(

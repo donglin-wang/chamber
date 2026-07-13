@@ -17,6 +17,8 @@ const (
 	ErrImageNotFound        ErrorCode = "image_not_found"
 	ErrPullFailed           ErrorCode = "pull_failed"
 	ErrMetadataFailed       ErrorCode = "metadata_failed"
+	ErrContainerNotFound    ErrorCode = "container_not_found"
+	ErrLogNotFound          ErrorCode = "log_not_found"
 	ErrBundlePrepareFailed  ErrorCode = "bundle_prepare_failed"
 	ErrRuntimeStartFailed   ErrorCode = "runtime_start_failed"
 	ErrRuntimeWaitFailed    ErrorCode = "runtime_wait_failed"
@@ -143,6 +145,7 @@ type Store interface {
 
 	CreateContainer(ctx context.Context, container Container) error
 	GetContainer(ctx context.Context, id string) (Container, error)
+	ListContainers(ctx context.Context) ([]Container, error)
 	TransitionContainer(
 		ctx context.Context,
 		id string,

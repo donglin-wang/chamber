@@ -21,13 +21,23 @@ type fakeService struct {
 	pullErr    error
 	runResult  daemon.RunResult
 	runErr     error
+	listResult daemon.ListContainersResult
+	listErr    error
+	logResult  daemon.ContainerLogResult
+	logErr     error
 
 	pullCalls int
 	runCalls  int
+	listCalls int
+	logCalls  int
 	pullCtx   context.Context
 	runCtx    context.Context
+	listCtx   context.Context
+	logCtx    context.Context
 	pullReq   daemon.PullRequest
 	runReq    daemon.RunRequest
+	logID     string
+	logStream string
 }
 
 func (s *fakeService) Pull(ctx context.Context, request daemon.PullRequest) (daemon.PullResult, error) {
@@ -42,6 +52,20 @@ func (s *fakeService) Run(ctx context.Context, request daemon.RunRequest) (daemo
 	s.runCtx = ctx
 	s.runReq = request
 	return s.runResult, s.runErr
+}
+
+func (s *fakeService) ListContainers(ctx context.Context) (daemon.ListContainersResult, error) {
+	s.listCalls++
+	s.listCtx = ctx
+	return s.listResult, s.listErr
+}
+
+func (s *fakeService) ContainerLog(ctx context.Context, containerID string, stream string) (daemon.ContainerLogResult, error) {
+	s.logCalls++
+	s.logCtx = ctx
+	s.logID = containerID
+	s.logStream = stream
+	return s.logResult, s.logErr
 }
 
 func TestNewHandlerServesDocsAndOpenAPI(t *testing.T) {
@@ -78,8 +102,14 @@ func TestNewHandlerServesDocsAndOpenAPI(t *testing.T) {
 	if _, ok := paths["/v1/containers/run"]; !ok {
 		t.Fatalf("OpenAPI paths missing /v1/containers/run")
 	}
-	if service.pullCalls != 0 || service.runCalls != 0 {
-		t.Fatalf("service calls = pull %d, run %d; want none", service.pullCalls, service.runCalls)
+	if _, ok := paths["/v1/containers"]; !ok {
+		t.Fatalf("OpenAPI paths missing /v1/containers")
+	}
+	if _, ok := paths["/v1/containers/{id}/logs"]; !ok {
+		t.Fatalf("OpenAPI paths missing /v1/containers/{id}/logs")
+	}
+	if service.pullCalls != 0 || service.runCalls != 0 || service.listCalls != 0 || service.logCalls != 0 {
+		t.Fatalf("service calls = pull %d, run %d, list %d, log %d; want none", service.pullCalls, service.runCalls, service.listCalls, service.logCalls)
 	}
 }
 
@@ -184,8 +214,8 @@ func TestNewHandlerRejectsInvalidTransportRequestsBeforeService(t *testing.T) {
 			if got := recorder.Header().Get("X-Chamber-Operation-ID"); got != "" {
 				t.Fatalf("X-Chamber-Operation-ID = %q, want empty", got)
 			}
-			if service.pullCalls != 0 || service.runCalls != 0 {
-				t.Fatalf("service calls = pull %d, run %d; want none", service.pullCalls, service.runCalls)
+			if service.pullCalls != 0 || service.runCalls != 0 || service.listCalls != 0 || service.logCalls != 0 {
+				t.Fatalf("service calls = pull %d, run %d, list %d, log %d; want none", service.pullCalls, service.runCalls, service.listCalls, service.logCalls)
 			}
 
 			var response ErrorResponse
@@ -310,6 +340,103 @@ func TestNewHandlerRunSuccessResponse(t *testing.T) {
 	}
 }
 
+func TestNewHandlerListContainersSuccessResponse(t *testing.T) {
+	exitCode := 0
+	createdAt := time.Date(2026, 7, 13, 12, 30, 0, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Second)
+	service := &fakeService{
+		listResult: daemon.ListContainersResult{
+			Containers: []metadata.Container{
+				{
+					ID:          "ctr-run",
+					OperationID: "op-run",
+					ImageDigest: "sha256:def456",
+					ImageRef:    "docker.io/library/alpine:latest",
+					Runtime:     "runc",
+					State:       metadata.ContainerExited,
+					CreatedAt:   createdAt,
+					UpdatedAt:   updatedAt,
+					ExitCode:    &exitCode,
+				},
+			},
+		},
+	}
+	recorder := httptest.NewRecorder()
+	ctx := context.WithValue(context.Background(), contextKey("request-id"), "req-list")
+	request := httptest.NewRequest(http.MethodGet, "/v1/containers", nil).WithContext(ctx)
+
+	NewHandler(service).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	if service.listCalls != 1 {
+		t.Fatalf("ListContainers calls = %d, want 1", service.listCalls)
+	}
+	if got := service.listCtx.Value(contextKey("request-id")); got != "req-list" {
+		t.Fatalf("context value = %v, want req-list", got)
+	}
+
+	var response ListContainersResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if len(response.Containers) != 1 {
+		t.Fatalf("containers len = %d, want 1", len(response.Containers))
+	}
+	got := response.Containers[0]
+	if got.ID != "ctr-run" ||
+		got.OperationID != "op-run" ||
+		got.Image != "docker.io/library/alpine:latest" ||
+		got.ImageDigest != "sha256:def456" ||
+		got.Runtime != "runc" ||
+		got.State != metadata.ContainerExited ||
+		got.ExitCode == nil ||
+		*got.ExitCode != 0 {
+		t.Fatalf("container response = %#v, want container fields", got)
+	}
+}
+
+func TestNewHandlerContainerLogSuccessResponse(t *testing.T) {
+	service := &fakeService{
+		logResult: daemon.ContainerLogResult{
+			Container: metadata.Container{ID: "ctr-run"},
+			Stream:    "stderr",
+			Content:   []byte("hello stderr\n"),
+		},
+	}
+	recorder := httptest.NewRecorder()
+	ctx := context.WithValue(context.Background(), contextKey("request-id"), "req-log")
+	request := httptest.NewRequest(http.MethodGet, "/v1/containers/ctr-run/logs?stream=stderr", nil).WithContext(ctx)
+
+	NewHandler(service).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/plain; charset=utf-8", got)
+	}
+	if got := recorder.Header().Get("X-Chamber-Container-ID"); got != "ctr-run" {
+		t.Fatalf("X-Chamber-Container-ID = %q, want ctr-run", got)
+	}
+	if got := recorder.Header().Get("X-Chamber-Log-Stream"); got != "stderr" {
+		t.Fatalf("X-Chamber-Log-Stream = %q, want stderr", got)
+	}
+	if recorder.Body.String() != "hello stderr\n" {
+		t.Fatalf("body = %q, want log content", recorder.Body.String())
+	}
+	if service.logCalls != 1 || service.logID != "ctr-run" || service.logStream != "stderr" {
+		t.Fatalf("log call = calls %d id %q stream %q; want ctr-run stderr", service.logCalls, service.logID, service.logStream)
+	}
+	if got := service.logCtx.Value(contextKey("request-id")); got != "req-log" {
+		t.Fatalf("context value = %v, want req-log", got)
+	}
+}
+
 func TestNewHandlerMapsServiceErrors(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -334,6 +461,20 @@ func TestNewHandlerMapsServiceErrors(t *testing.T) {
 			code:        string(metadata.ErrImageNotFound),
 			message:     "image not found",
 			operationID: "op-missing",
+		},
+		{
+			name:    "container not found",
+			err:     &daemon.Error{Code: string(metadata.ErrContainerNotFound), Err: errors.New("metadata: not found")},
+			status:  http.StatusNotFound,
+			code:    string(metadata.ErrContainerNotFound),
+			message: "container not found",
+		},
+		{
+			name:    "container log not found",
+			err:     &daemon.Error{Code: string(metadata.ErrLogNotFound), Err: errors.New("missing log")},
+			status:  http.StatusNotFound,
+			code:    string(metadata.ErrLogNotFound),
+			message: "container log not found",
 		},
 		{
 			name:        "daemon state conflict",

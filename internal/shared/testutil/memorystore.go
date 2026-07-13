@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -162,6 +163,27 @@ func (s *MemoryStore) GetContainer(ctx context.Context, id string) (metadata.Con
 		return metadata.Container{}, metadata.ErrNotFound
 	}
 	return cloneContainer(container), nil
+}
+
+func (s *MemoryStore) ListContainers(ctx context.Context) ([]metadata.Container, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed {
+		return nil, metadata.ErrNotFound
+	}
+
+	containers := make([]metadata.Container, 0, len(s.containers))
+	for _, container := range s.containers {
+		containers = append(containers, cloneContainer(container))
+	}
+	sort.Slice(containers, func(i, j int) bool {
+		return containers[i].ID < containers[j].ID
+	})
+	return containers, nil
 }
 
 func (s *MemoryStore) TransitionContainer(
