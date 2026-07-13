@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/donglin-wang/chamber/internal/fsutil"
 	chimage "github.com/donglin-wang/chamber/internal/image"
+	"github.com/donglin-wang/chamber/internal/localfs"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -20,13 +20,21 @@ import (
 
 var _ chimage.Puller = (*Puller)(nil)
 
-type Puller struct{}
+type Puller struct {
+	directoryManager localfs.DirectoryManager
+}
 
-func New() *Puller {
-	return &Puller{}
+func New(directoryManager localfs.DirectoryManager) *Puller {
+	return &Puller{
+		directoryManager: directoryManager,
+	}
 }
 
 func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage.PulledImage, error) {
+	if p.directoryManager == nil {
+		return chimage.PulledImage{}, fmt.Errorf("directory manager is required")
+	}
+
 	ref, err := name.ParseReference(request.Reference)
 	if err != nil {
 		return chimage.PulledImage{}, fmt.Errorf("parse image reference: %w", err)
@@ -45,7 +53,7 @@ func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage
 		return chimage.PulledImage{}, fmt.Errorf("resolve image destination: %w", err)
 	}
 	parent := filepath.Dir(destination)
-	if err := fsutil.EnsurePrivateDir(parent); err != nil {
+	if err := p.directoryManager.EnsurePrivateDir(parent); err != nil {
 		return chimage.PulledImage{}, fmt.Errorf("prepare image destination parent: %w", err)
 	}
 
@@ -64,7 +72,7 @@ func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage
 		return chimage.PulledImage{}, fmt.Errorf("resolve image digest: %w", err)
 	}
 
-	tmp, err := os.MkdirTemp(parent, "."+filepath.Base(destination)+".tmp-*")
+	tmp, err := p.directoryManager.MkdirTemp(parent, "."+filepath.Base(destination)+".tmp-*")
 	if err != nil {
 		return chimage.PulledImage{}, fmt.Errorf("create temporary image layout: %w", err)
 	}

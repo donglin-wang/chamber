@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/donglin-wang/chamber/internal/localfs"
 	"github.com/donglin-wang/chamber/internal/metadata"
 	metadataetcd "github.com/donglin-wang/chamber/internal/metadata/etcd"
 	"github.com/donglin-wang/chamber/internal/testutil"
@@ -89,9 +90,9 @@ func TestStoreContract(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = os.RemoveAll(dataDir) })
 
-			store, err := metadataetcd.Open(ctx, metadataetcd.Config{
-				DataDir: dataDir,
-			})
+			store, err := metadataetcd.Open(ctx, metadata.Config{
+				Root: dataDir,
+			}, localfs.NewDirectoryManager())
 			if err != nil {
 				t.Fatalf("Open() error = %v", err)
 			}

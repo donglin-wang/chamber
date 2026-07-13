@@ -1,6 +1,8 @@
 package config
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -8,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	metadataetcd "github.com/donglin-wang/chamber/internal/metadata/etcd"
-	runcruntime "github.com/donglin-wang/chamber/internal/runtime/runc"
+	chimage "github.com/donglin-wang/chamber/internal/image"
+	"github.com/donglin-wang/chamber/internal/metadata"
+	chruntime "github.com/donglin-wang/chamber/internal/runtime"
 )
 
 func TestOverrideFieldsMatchConfigFields(t *testing.T) {
@@ -27,10 +30,12 @@ func TestOverrideFieldsMatchConfigFields(t *testing.T) {
 
 		wantType := reflect.PointerTo(configField.Type)
 		switch name {
+		case "Image":
+			wantType = reflect.TypeOf(chimage.Override{})
 		case "Runtime":
-			wantType = reflect.TypeOf(runcruntime.Override{})
+			wantType = reflect.TypeOf(chruntime.Override{})
 		case "Metadata":
-			wantType = reflect.TypeOf(metadataetcd.Override{})
+			wantType = reflect.TypeOf(metadata.Override{})
 		}
 		if overrideField.Type != wantType {
 			t.Fatalf("Override.%s has type %s, want %s", name, overrideField.Type, wantType)
@@ -40,6 +45,24 @@ func TestOverrideFieldsMatchConfigFields(t *testing.T) {
 	for name := range overrideFields {
 		if _, ok := configFields[name]; !ok {
 			t.Fatalf("Override has extra field %s", name)
+		}
+	}
+}
+
+func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
+	fileset := token.NewFileSet()
+	file, err := parser.ParseFile(fileset, "config.go", nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatalf("parse config.go: %v", err)
+	}
+
+	for _, importSpec := range file.Imports {
+		importPath := strings.Trim(importSpec.Path.Value, `"`)
+		switch importPath {
+		case "github.com/donglin-wang/chamber/internal/image/gocontainerregistry",
+			"github.com/donglin-wang/chamber/internal/metadata/etcd",
+			"github.com/donglin-wang/chamber/internal/runtime/runc":
+			t.Fatalf("config package must import generic package boundaries, not concrete implementation %q", importPath)
 		}
 	}
 }
@@ -59,15 +82,17 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 	want := Config{
 		SocketPath:    filepath.Join(root, "run", "chamber.sock"),
 		TmpRoot:       filepath.Join(root, "run", "tmp"),
-		ImageRoot:     filepath.Join(root, "images"),
 		ContainerRoot: filepath.Join(root, "containers"),
-		Runtime: runcruntime.Config{
+		Image: chimage.Config{
+			Root: filepath.Join(root, "images"),
+		},
+		Runtime: chruntime.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "bin"),
 			Name:          "runc",
 		},
-		Metadata: metadataetcd.Config{
-			DataDir: filepath.Join(root, "metadata", "etcd"),
+		Metadata: metadata.Config{
+			Root: filepath.Join(root, "metadata"),
 		},
 
 		OpenTelemetryTraceSampleRatio:      1.0,
@@ -92,8 +117,8 @@ func TestLoadFallsBackToHomeWhenXDGDataHomeIsUnset(t *testing.T) {
 	}
 
 	root := filepath.Join(home, ".local", "share", "chamber")
-	if cfg.ImageRoot != filepath.Join(root, "images") {
-		t.Fatalf("ImageRoot = %q, want %q", cfg.ImageRoot, filepath.Join(root, "images"))
+	if cfg.Image.Root != filepath.Join(root, "images") {
+		t.Fatalf("Image.Root = %q, want %q", cfg.Image.Root, filepath.Join(root, "images"))
 	}
 	if cfg.SocketPath != filepath.Join(root, "run", "chamber.sock") {
 		t.Fatalf("SocketPath = %q, want %q", cfg.SocketPath, filepath.Join(root, "run", "chamber.sock"))
@@ -101,8 +126,8 @@ func TestLoadFallsBackToHomeWhenXDGDataHomeIsUnset(t *testing.T) {
 	if cfg.Runtime.RuntimeRoot != filepath.Join(root, "run", "runtime") {
 		t.Fatalf("Runtime.RuntimeRoot = %q, want %q", cfg.Runtime.RuntimeRoot, filepath.Join(root, "run", "runtime"))
 	}
-	if cfg.Metadata.DataDir != filepath.Join(root, "metadata", "etcd") {
-		t.Fatalf("Metadata.DataDir = %q, want %q", cfg.Metadata.DataDir, filepath.Join(root, "metadata", "etcd"))
+	if cfg.Metadata.Root != filepath.Join(root, "metadata") {
+		t.Fatalf("Metadata.Root = %q, want %q", cfg.Metadata.Root, filepath.Join(root, "metadata"))
 	}
 }
 
@@ -124,9 +149,11 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 	defaultConfig := Config{
 		SocketPath:    "default/run/chamber.sock",
 		TmpRoot:       "default/tmp",
-		ImageRoot:     "default/images",
 		ContainerRoot: "default/containers",
-		Runtime: runcruntime.Config{
+		Image: chimage.Config{
+			Root: "default/images",
+		},
+		Runtime: chruntime.Config{
 			RuntimeRoot:   "default/runtime",
 			RuntimeBinDir: "default/bin",
 			Name:          "default-runtime",
@@ -134,10 +161,8 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 			URL:           "https://example.test/default-runtime",
 			SHA256:        "default-sha",
 		},
-		Metadata: metadataetcd.Config{
-			DataDir:      "default/metadata",
-			ClientSocket: "default/metadata/client.sock",
-			PeerSocket:   "default/metadata/peer.sock",
+		Metadata: metadata.Config{
+			Root: "default/metadata",
 		},
 
 		OpenTelemetryEndpoint:              "localhost:4317",
@@ -151,9 +176,11 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 	override := Override{
 		SocketPath:    ptr("override/run/chamber.sock"),
 		TmpRoot:       ptr("override/tmp"),
-		ImageRoot:     ptr("override/images"),
 		ContainerRoot: ptr("override/containers"),
-		Runtime: runcruntime.Override{
+		Image: chimage.Override{
+			Root: ptr("override/images"),
+		},
+		Runtime: chruntime.Override{
 			RuntimeRoot:   ptr("override/runtime"),
 			RuntimeBinDir: ptr("override/bin"),
 			Name:          ptr("crun"),
@@ -161,10 +188,8 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 			URL:           ptr("https://example.test/runtime"),
 			SHA256:        ptr("override-sha"),
 		},
-		Metadata: metadataetcd.Override{
-			DataDir:      ptr("override/metadata"),
-			ClientSocket: ptr("override/metadata/client.sock"),
-			PeerSocket:   ptr("override/metadata/peer.sock"),
+		Metadata: metadata.Override{
+			Root: ptr("override/metadata"),
 		},
 
 		OpenTelemetryEndpoint:              ptr("otel.example.test:4317"),
@@ -184,9 +209,11 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 	want := Config{
 		SocketPath:    mustAbs(t, "override/run/chamber.sock"),
 		TmpRoot:       mustAbs(t, "override/tmp"),
-		ImageRoot:     mustAbs(t, "override/images"),
 		ContainerRoot: mustAbs(t, "override/containers"),
-		Runtime: runcruntime.Config{
+		Image: chimage.Config{
+			Root: mustAbs(t, "override/images"),
+		},
+		Runtime: chruntime.Config{
 			RuntimeRoot:   mustAbs(t, "override/runtime"),
 			RuntimeBinDir: mustAbs(t, "override/bin"),
 			Name:          "crun",
@@ -194,10 +221,8 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 			URL:           "https://example.test/runtime",
 			SHA256:        "override-sha",
 		},
-		Metadata: metadataetcd.Config{
-			DataDir:      mustAbs(t, "override/metadata"),
-			ClientSocket: mustAbs(t, "override/metadata/client.sock"),
-			PeerSocket:   mustAbs(t, "override/metadata/peer.sock"),
+		Metadata: metadata.Config{
+			Root: mustAbs(t, "override/metadata"),
 		},
 
 		OpenTelemetryEndpoint:              "otel.example.test:4317",
@@ -218,9 +243,11 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 	defaultConfig := Config{
 		SocketPath:    filepath.Join(root, "default", "run", "chamber.sock"),
 		TmpRoot:       filepath.Join(root, "default", "tmp"),
-		ImageRoot:     filepath.Join(root, "default", "images"),
 		ContainerRoot: filepath.Join(root, "default", "containers"),
-		Runtime: runcruntime.Config{
+		Image: chimage.Config{
+			Root: filepath.Join(root, "default", "images"),
+		},
+		Runtime: chruntime.Config{
 			RuntimeRoot:   filepath.Join(root, "default", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "default", "bin"),
 			Name:          "default-runtime",
@@ -228,8 +255,8 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 			URL:           "https://example.test/default-runtime",
 			SHA256:        "default-sha",
 		},
-		Metadata: metadataetcd.Config{
-			DataDir: filepath.Join(root, "default", "metadata"),
+		Metadata: metadata.Config{
+			Root: filepath.Join(root, "default", "metadata"),
 		},
 
 		OpenTelemetryEndpoint:              "localhost:4317",
@@ -256,14 +283,16 @@ func TestPrepareCreatesPrivateDirectories(t *testing.T) {
 	cfg := Config{
 		SocketPath:    filepath.Join(root, "run", "chamber.sock"),
 		TmpRoot:       filepath.Join(root, "run", "tmp"),
-		ImageRoot:     filepath.Join(root, "images"),
 		ContainerRoot: filepath.Join(root, "containers"),
-		Runtime: runcruntime.Config{
+		Image: chimage.Config{
+			Root: filepath.Join(root, "images"),
+		},
+		Runtime: chruntime.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "bin"),
 		},
-		Metadata: metadataetcd.Config{
-			DataDir: filepath.Join(root, "metadata", "etcd"),
+		Metadata: metadata.Config{
+			Root: filepath.Join(root, "metadata"),
 		},
 	}
 
@@ -274,11 +303,11 @@ func TestPrepareCreatesPrivateDirectories(t *testing.T) {
 	for _, path := range []string{
 		filepath.Dir(cfg.SocketPath),
 		cfg.TmpRoot,
-		cfg.ImageRoot,
+		cfg.Image.Root,
 		cfg.ContainerRoot,
 		cfg.Runtime.RuntimeRoot,
 		cfg.Runtime.RuntimeBinDir,
-		cfg.Metadata.DataDir,
+		cfg.Metadata.Root,
 	} {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -310,14 +339,16 @@ func TestPrepareRejectsGroupOrOtherAccessibleDirectory(t *testing.T) {
 	cfg := Config{
 		SocketPath:    filepath.Join(root, "run", "chamber.sock"),
 		TmpRoot:       tmpRoot,
-		ImageRoot:     filepath.Join(root, "images"),
 		ContainerRoot: filepath.Join(root, "containers"),
-		Runtime: runcruntime.Config{
+		Image: chimage.Config{
+			Root: filepath.Join(root, "images"),
+		},
+		Runtime: chruntime.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "bin"),
 		},
-		Metadata: metadataetcd.Config{
-			DataDir: filepath.Join(root, "metadata", "etcd"),
+		Metadata: metadata.Config{
+			Root: filepath.Join(root, "metadata"),
 		},
 	}
 
@@ -343,14 +374,16 @@ func TestPrepareRejectsPathThatIsAFile(t *testing.T) {
 	cfg := Config{
 		SocketPath:    filepath.Join(root, "run", "chamber.sock"),
 		TmpRoot:       filepath.Join(root, "run", "tmp"),
-		ImageRoot:     imageRoot,
 		ContainerRoot: filepath.Join(root, "containers"),
-		Runtime: runcruntime.Config{
+		Image: chimage.Config{
+			Root: imageRoot,
+		},
+		Runtime: chruntime.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "bin"),
 		},
-		Metadata: metadataetcd.Config{
-			DataDir: filepath.Join(root, "metadata", "etcd"),
+		Metadata: metadata.Config{
+			Root: filepath.Join(root, "metadata"),
 		},
 	}
 

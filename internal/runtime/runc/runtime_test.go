@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/donglin-wang/chamber/internal/localfs"
+	chruntime "github.com/donglin-wang/chamber/internal/runtime"
 )
 
 func TestEnsureDownloadsValidRuntimeBinary(t *testing.T) {
@@ -20,13 +23,13 @@ func TestEnsureDownloadsValidRuntimeBinary(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	binDir := privateTempDir(t)
-	runtime := New(Config{
+	runtime := New(chruntime.Config{
 		RuntimeBinDir: binDir,
 		Name:          "runc",
 		Version:       "test-version",
 		URL:           server.URL,
 		SHA256:        sha256Hex(content),
-	})
+	}, localfs.NewDirectoryManager())
 
 	binary, err := runtime.Ensure(context.Background())
 	if err != nil {
@@ -53,13 +56,13 @@ func TestEnsureRejectsWrongDigest(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	binDir := privateTempDir(t)
-	runtime := New(Config{
+	runtime := New(chruntime.Config{
 		RuntimeBinDir: binDir,
 		Name:          "runc",
 		Version:       "test-version",
 		URL:           server.URL,
 		SHA256:        sha256Hex([]byte("expected binary")),
-	})
+	}, localfs.NewDirectoryManager())
 
 	_, err := runtime.Ensure(context.Background())
 	if err == nil {
@@ -79,13 +82,13 @@ func TestEnsureRejectsNonOKResponse(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	runtime := New(Config{
+	runtime := New(chruntime.Config{
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
 		Version:       "test-version",
 		URL:           server.URL,
 		SHA256:        sha256Hex([]byte("anything")),
-	})
+	}, localfs.NewDirectoryManager())
 
 	_, err := runtime.Ensure(context.Background())
 	if err == nil {
@@ -113,13 +116,13 @@ func TestEnsureRejectsInterruptedBody(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	binDir := privateTempDir(t)
-	runtime := New(Config{
+	runtime := New(chruntime.Config{
 		RuntimeBinDir: binDir,
 		Name:          "runc",
 		Version:       "test-version",
 		URL:           server.URL,
 		SHA256:        sha256Hex(content),
-	})
+	}, localfs.NewDirectoryManager())
 
 	_, err := runtime.Ensure(context.Background())
 	if err == nil {
@@ -144,13 +147,13 @@ func TestEnsureUsesExistingValidBinary(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	runtime := New(Config{
+	runtime := New(chruntime.Config{
 		RuntimeBinDir: binDir,
 		Name:          "runc",
 		Version:       "test-version",
 		URL:           server.URL,
 		SHA256:        sha256Hex(content),
-	})
+	}, localfs.NewDirectoryManager())
 
 	binary, err := runtime.Ensure(context.Background())
 	if err != nil {
@@ -180,13 +183,13 @@ func TestEnsureReplacesExistingInvalidBinary(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	runtime := New(Config{
+	runtime := New(chruntime.Config{
 		RuntimeBinDir: binDir,
 		Name:          "runc",
 		Version:       "test-version",
 		URL:           server.URL,
 		SHA256:        sha256Hex(newContent),
-	})
+	}, localfs.NewDirectoryManager())
 
 	binary, err := runtime.Ensure(context.Background())
 	if err != nil {
@@ -210,13 +213,13 @@ func TestEnsureReturnsAbsolutePath(t *testing.T) {
 		_ = os.RemoveAll(relativeBinDir)
 	})
 
-	runtime := New(Config{
+	runtime := New(chruntime.Config{
 		RuntimeBinDir: relativeBinDir,
 		Name:          "runc",
 		Version:       "test-version",
 		URL:           server.URL,
 		SHA256:        sha256Hex(content),
-	})
+	}, localfs.NewDirectoryManager())
 
 	binary, err := runtime.Ensure(context.Background())
 	if err != nil {
@@ -228,12 +231,12 @@ func TestEnsureReturnsAbsolutePath(t *testing.T) {
 }
 
 func TestEnsureRequiresCompleteConfiguration(t *testing.T) {
-	runtime := New(Config{
+	runtime := New(chruntime.Config{
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
 		Version:       "test-version",
 		URL:           "http://example.test/runc",
-	})
+	}, localfs.NewDirectoryManager())
 
 	_, err := runtime.Ensure(context.Background())
 	if err == nil {

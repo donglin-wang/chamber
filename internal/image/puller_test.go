@@ -11,6 +11,7 @@ import (
 
 	chimage "github.com/donglin-wang/chamber/internal/image"
 	"github.com/donglin-wang/chamber/internal/image/gocontainerregistry"
+	"github.com/donglin-wang/chamber/internal/localfs"
 	"github.com/donglin-wang/chamber/internal/testutil"
 )
 
@@ -22,7 +23,7 @@ func TestPullerLocalContract(t *testing.T) {
 	tests := map[string]pullerFactory{
 		"gocontainerregistry": func(t *testing.T) chimage.Puller {
 			t.Helper()
-			return gocontainerregistry.New()
+			return gocontainerregistry.New(localfs.NewDirectoryManager())
 		},
 	}
 
@@ -38,7 +39,7 @@ func TestPullerLocalContract(t *testing.T) {
 }
 
 func TestGoContainerRegistryPullerRealWorldBusybox(t *testing.T) {
-	puller := gocontainerregistry.New()
+	puller := gocontainerregistry.New(localfs.NewDirectoryManager())
 	assertPullSuccessReturnsDigestSizeAndUTCTime(t, func(t *testing.T) chimage.Puller {
 		t.Helper()
 		return puller

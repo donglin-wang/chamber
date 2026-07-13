@@ -12,12 +12,11 @@ import (
 	goruntime "runtime"
 	"strings"
 
-	"github.com/donglin-wang/chamber/internal/fsutil"
+	"github.com/donglin-wang/chamber/internal/localfs"
 	chruntime "github.com/donglin-wang/chamber/internal/runtime"
 )
 
 const (
-	DefaultName    = "runc"
 	DefaultVersion = "v1.5.0"
 
 	defaultAMD64URL    = "https://github.com/opencontainers/runc/releases/download/v1.5.0/runc.amd64"
@@ -26,27 +25,10 @@ const (
 
 var _ chruntime.Runtime = (*Runtime)(nil)
 
-type Config struct {
-	RuntimeRoot   string
-	RuntimeBinDir string
-	Name          string
-	Version       string
-	URL           string
-	SHA256        string
-}
-
-type Override struct {
-	RuntimeRoot   *string
-	RuntimeBinDir *string
-	Name          *string
-	Version       *string
-	URL           *string
-	SHA256        *string
-}
-
 type Runtime struct {
-	config Config
-	client *http.Client
+	config           chruntime.Config
+	client           *http.Client
+	directoryManager localfs.DirectoryManager
 }
 
 type Option func(*Runtime)
@@ -59,50 +41,9 @@ func WithHTTPClient(client *http.Client) Option {
 	}
 }
 
-func DefaultConfig(rootPath string) Config {
-	return Config{
-		RuntimeRoot:   filepath.Join(rootPath, "run", "runtime"),
-		RuntimeBinDir: filepath.Join(rootPath, "bin"),
-		Name:          DefaultName,
-	}
-}
-
-func Resolve(defaultConfig Config, override Override) (Config, error) {
-	if override.RuntimeRoot != nil {
-		defaultConfig.RuntimeRoot = *override.RuntimeRoot
-	}
-	if override.RuntimeBinDir != nil {
-		defaultConfig.RuntimeBinDir = *override.RuntimeBinDir
-	}
-	if override.Name != nil {
-		defaultConfig.Name = *override.Name
-	}
-	if override.Version != nil {
-		defaultConfig.Version = *override.Version
-	}
-	if override.URL != nil {
-		defaultConfig.URL = *override.URL
-	}
-	if override.SHA256 != nil {
-		defaultConfig.SHA256 = *override.SHA256
-	}
-
-	var err error
-	defaultConfig.RuntimeRoot, err = absPath(defaultConfig.RuntimeRoot)
-	if err != nil {
-		return Config{}, fmt.Errorf("resolve runtime root: %w", err)
-	}
-	defaultConfig.RuntimeBinDir, err = absPath(defaultConfig.RuntimeBinDir)
-	if err != nil {
-		return Config{}, fmt.Errorf("resolve runtime bin dir: %w", err)
-	}
-
-	return defaultConfig, nil
-}
-
-func New(config Config, options ...Option) *Runtime {
+func New(config chruntime.Config, directoryManager localfs.DirectoryManager, options ...Option) *Runtime {
 	if config.Name == "" {
-		config.Name = DefaultName
+		config.Name = chruntime.DefaultName
 	}
 	if config.Version == "" {
 		config.Version = DefaultVersion
@@ -112,8 +53,9 @@ func New(config Config, options ...Option) *Runtime {
 		config.SHA256 = defaultAMD64SHA256
 	}
 	runtime := &Runtime{
-		config: config,
-		client: http.DefaultClient,
+		config:           config,
+		client:           http.DefaultClient,
+		directoryManager: directoryManager,
 	}
 	for _, option := range options {
 		option(runtime)
@@ -124,6 +66,9 @@ func New(config Config, options ...Option) *Runtime {
 
 func (r *Runtime) Ensure(ctx context.Context) (chruntime.Binary, error) {
 	config := r.config
+	if r.directoryManager == nil {
+		return chruntime.Binary{}, fmt.Errorf("directory manager is required")
+	}
 	if config.Name == "" || config.Version == "" || config.URL == "" || config.SHA256 == "" {
 		return chruntime.Binary{}, fmt.Errorf("runc runtime requires name, version, url, and sha256")
 	}
@@ -139,7 +84,7 @@ func (r *Runtime) Ensure(ctx context.Context) (chruntime.Binary, error) {
 	if err != nil {
 		return chruntime.Binary{}, fmt.Errorf("resolve runtime bin dir: %w", err)
 	}
-	if err := fsutil.EnsurePrivateDir(binDir); err != nil {
+	if err := r.directoryManager.EnsurePrivateDir(binDir); err != nil {
 		return chruntime.Binary{}, fmt.Errorf("prepare runtime bin dir: %w", err)
 	}
 
@@ -185,7 +130,7 @@ func (r *Runtime) download(ctx context.Context, url string, expectedDigest []byt
 		return fmt.Errorf("download runtime binary: unexpected HTTP status %s", response.Status)
 	}
 
-	tmp, err := os.CreateTemp(binDir, "."+filepath.Base(binaryPath)+".tmp-*")
+	tmp, err := r.directoryManager.CreateTemp(binDir, "."+filepath.Base(binaryPath)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("create temporary runtime binary: %w", err)
 	}

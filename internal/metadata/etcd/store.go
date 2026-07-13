@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/donglin-wang/chamber/internal/fsutil"
+	"github.com/donglin-wang/chamber/internal/localfs"
 	"github.com/donglin-wang/chamber/internal/metadata"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
@@ -23,52 +23,6 @@ const (
 	operationPrefix = "/chamber/v0/operations/"
 	containerPrefix = "/chamber/v0/containers/"
 )
-
-type Config struct {
-	DataDir      string
-	ClientSocket string
-	PeerSocket   string
-}
-
-type Override struct {
-	DataDir      *string
-	ClientSocket *string
-	PeerSocket   *string
-}
-
-func DefaultConfig(rootPath string) Config {
-	return Config{
-		DataDir: filepath.Join(rootPath, "metadata", "etcd"),
-	}
-}
-
-func Resolve(defaultConfig Config, override Override) (Config, error) {
-	if override.DataDir != nil {
-		defaultConfig.DataDir = *override.DataDir
-	}
-	if override.ClientSocket != nil {
-		defaultConfig.ClientSocket = *override.ClientSocket
-	}
-	if override.PeerSocket != nil {
-		defaultConfig.PeerSocket = *override.PeerSocket
-	}
-
-	var err error
-	defaultConfig.DataDir, err = absPath(defaultConfig.DataDir)
-	if err != nil {
-		return Config{}, fmt.Errorf("metadata etcd: resolve data dir: %w", err)
-	}
-	defaultConfig.ClientSocket, err = absPath(defaultConfig.ClientSocket)
-	if err != nil {
-		return Config{}, fmt.Errorf("metadata etcd: resolve client socket: %w", err)
-	}
-	defaultConfig.PeerSocket, err = absPath(defaultConfig.PeerSocket)
-	if err != nil {
-		return Config{}, fmt.Errorf("metadata etcd: resolve peer socket: %w", err)
-	}
-
-	return defaultConfig, nil
-}
 
 type Store struct {
 	client *clientv3.Client
@@ -83,41 +37,40 @@ type envelope[T any] struct {
 	Value         T   `json:"value"`
 }
 
-func Open(ctx context.Context, cfg Config) (*Store, error) {
-	if cfg.DataDir == "" {
-		return nil, fmt.Errorf("metadata etcd: data dir is required")
+func Open(ctx context.Context, cfg metadata.Config, directoryManager localfs.DirectoryManager) (*Store, error) {
+	if directoryManager == nil {
+		return nil, fmt.Errorf("metadata etcd: directory manager is required")
+	}
+	if cfg.Root == "" {
+		return nil, fmt.Errorf("metadata etcd: root is required")
 	}
 
-	dataDir, err := absPath(cfg.DataDir)
+	dataDir, err := absPath(cfg.Root)
 	if err != nil {
-		return nil, fmt.Errorf("metadata etcd: resolve data dir: %w", err)
+		return nil, fmt.Errorf("metadata etcd: resolve root: %w", err)
 	}
-	if err := fsutil.EnsurePrivateDir(dataDir); err != nil {
+	if err := directoryManager.EnsurePrivateDir(dataDir); err != nil {
 		return nil, fmt.Errorf("metadata etcd: prepare data dir: %w", err)
 	}
 
-	if cfg.ClientSocket == "" {
-		cfg.ClientSocket = filepath.Join(dataDir, "client.sock")
-	}
-	if cfg.PeerSocket == "" {
-		cfg.PeerSocket = filepath.Join(dataDir, "peer.sock")
-	}
-	if err := fsutil.EnsurePrivateParent(cfg.ClientSocket); err != nil {
+	clientSocket := filepath.Join(dataDir, "client.sock")
+	peerSocket := filepath.Join(dataDir, "peer.sock")
+	if err := directoryManager.EnsurePrivateParent(clientSocket); err != nil {
 		return nil, fmt.Errorf("metadata etcd: prepare client socket dir: %w", err)
 	}
-	if err := fsutil.EnsurePrivateParent(cfg.PeerSocket); err != nil {
+	if err := directoryManager.EnsurePrivateParent(peerSocket); err != nil {
 		return nil, fmt.Errorf("metadata etcd: prepare peer socket dir: %w", err)
 	}
 
-	clientURL, err := unixURL(cfg.ClientSocket)
+	clientURL, err := unixURL(clientSocket)
 	if err != nil {
 		return nil, fmt.Errorf("metadata etcd: client socket URL: %w", err)
 	}
-	listenPeerURL, err := unixPeerListenURL(cfg.PeerSocket)
+	listenPeerURL, err := unixPeerListenURL(peerSocket)
 	if err != nil {
 		return nil, fmt.Errorf("metadata etcd: peer socket URL: %w", err)
 	}
-	advertisePeerURL, err := unixURL(cfg.PeerSocket)
+	advertisePeerURL, err := unixURL(peerSocket)
 	if err != nil {
 		return nil, fmt.Errorf("metadata etcd: peer advertise URL: %w", err)
 	}

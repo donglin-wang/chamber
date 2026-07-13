@@ -5,23 +5,26 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/donglin-wang/chamber/internal/fsutil"
-	metadataetcd "github.com/donglin-wang/chamber/internal/metadata/etcd"
-	runcruntime "github.com/donglin-wang/chamber/internal/runtime/runc"
+	chimage "github.com/donglin-wang/chamber/internal/image"
+	"github.com/donglin-wang/chamber/internal/localfs"
+	"github.com/donglin-wang/chamber/internal/metadata"
+	chruntime "github.com/donglin-wang/chamber/internal/runtime"
 )
 
 type Config struct {
 	// Storage
 	SocketPath    string
 	TmpRoot       string
-	ImageRoot     string
 	ContainerRoot string
 
+	// Images
+	Image chimage.Config
+
 	// OCI Runtime
-	Runtime runcruntime.Config
+	Runtime chruntime.Config
 
 	// Metadata
-	Metadata metadataetcd.Config
+	Metadata metadata.Config
 
 	// OpenTelemetry
 	OpenTelemetryEndpoint              string
@@ -37,11 +40,11 @@ type Config struct {
 type Override struct {
 	SocketPath    *string
 	TmpRoot       *string
-	ImageRoot     *string
 	ContainerRoot *string
 
-	Runtime  runcruntime.Override
-	Metadata metadataetcd.Override
+	Image    chimage.Override
+	Runtime  chruntime.Override
+	Metadata metadata.Override
 
 	OpenTelemetryEndpoint              *string
 	OpenTelemetryInsecure              *bool
@@ -86,11 +89,11 @@ func Load(override Override, getenv func(string) string) (Config, error) {
 	defaultConfig := Config{
 		SocketPath:    filepath.Join(rootPath, "run", "chamber.sock"),
 		TmpRoot:       filepath.Join(rootPath, "run", "tmp"),
-		ImageRoot:     filepath.Join(rootPath, "images"),
 		ContainerRoot: filepath.Join(rootPath, "containers"),
 
-		Runtime:  runcruntime.DefaultConfig(rootPath),
-		Metadata: metadataetcd.DefaultConfig(rootPath),
+		Image:    chimage.DefaultConfig(rootPath),
+		Runtime:  chruntime.DefaultConfig(rootPath),
+		Metadata: metadata.DefaultConfig(rootPath),
 
 		OpenTelemetryTraceSampleRatio:      defaultOpenTelemetryTraceSampleRatio,
 		OpenTelemetryMetricsExportInterval: defaultOpenTelemetryMetricsExportInterval,
@@ -107,9 +110,6 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	}
 	if override.TmpRoot != nil {
 		defaultConfig.TmpRoot = *override.TmpRoot
-	}
-	if override.ImageRoot != nil {
-		defaultConfig.ImageRoot = *override.ImageRoot
 	}
 	if override.ContainerRoot != nil {
 		defaultConfig.ContainerRoot = *override.ContainerRoot
@@ -134,11 +134,15 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	}
 
 	var err error
-	defaultConfig.Runtime, err = runcruntime.Resolve(defaultConfig.Runtime, override.Runtime)
+	defaultConfig.Image, err = chimage.Resolve(defaultConfig.Image, override.Image)
 	if err != nil {
 		return Config{}, err
 	}
-	defaultConfig.Metadata, err = metadataetcd.Resolve(defaultConfig.Metadata, override.Metadata)
+	defaultConfig.Runtime, err = chruntime.Resolve(defaultConfig.Runtime, override.Runtime)
+	if err != nil {
+		return Config{}, err
+	}
+	defaultConfig.Metadata, err = metadata.Resolve(defaultConfig.Metadata, override.Metadata)
 	if err != nil {
 		return Config{}, err
 	}
@@ -151,11 +155,7 @@ func absolutizePaths(cfg *Config) {
 	paths := []*string{
 		&cfg.SocketPath,
 		&cfg.TmpRoot,
-		&cfg.ImageRoot,
 		&cfg.ContainerRoot,
-		&cfg.Metadata.DataDir,
-		&cfg.Metadata.ClientSocket,
-		&cfg.Metadata.PeerSocket,
 	}
 
 	for _, path := range paths {
@@ -171,36 +171,28 @@ func absolutizePaths(cfg *Config) {
 }
 
 func (c Config) Prepare() error {
-	if err := fsutil.EnsurePrivateParent(c.SocketPath); err != nil {
+	directoryManager := localfs.NewDirectoryManager()
+
+	if err := directoryManager.EnsurePrivateParent(c.SocketPath); err != nil {
 		return fmt.Errorf("prepare socket directory: %w", err)
 	}
-	if err := fsutil.EnsurePrivateDir(c.TmpRoot); err != nil {
+	if err := directoryManager.EnsurePrivateDir(c.TmpRoot); err != nil {
 		return fmt.Errorf("prepare tmp root: %w", err)
 	}
-	if err := fsutil.EnsurePrivateDir(c.ImageRoot); err != nil {
+	if err := directoryManager.EnsurePrivateDir(c.Image.Root); err != nil {
 		return fmt.Errorf("prepare image root: %w", err)
 	}
-	if err := fsutil.EnsurePrivateDir(c.ContainerRoot); err != nil {
+	if err := directoryManager.EnsurePrivateDir(c.ContainerRoot); err != nil {
 		return fmt.Errorf("prepare container root: %w", err)
 	}
-	if err := fsutil.EnsurePrivateDir(c.Runtime.RuntimeRoot); err != nil {
+	if err := directoryManager.EnsurePrivateDir(c.Runtime.RuntimeRoot); err != nil {
 		return fmt.Errorf("prepare runtime root: %w", err)
 	}
-	if err := fsutil.EnsurePrivateDir(c.Runtime.RuntimeBinDir); err != nil {
+	if err := directoryManager.EnsurePrivateDir(c.Runtime.RuntimeBinDir); err != nil {
 		return fmt.Errorf("prepare runtime bin dir: %w", err)
 	}
-	if err := fsutil.EnsurePrivateDir(c.Metadata.DataDir); err != nil {
+	if err := directoryManager.EnsurePrivateDir(c.Metadata.Root); err != nil {
 		return fmt.Errorf("prepare metadata root: %w", err)
-	}
-	if c.Metadata.ClientSocket != "" {
-		if err := fsutil.EnsurePrivateParent(c.Metadata.ClientSocket); err != nil {
-			return fmt.Errorf("prepare metadata client socket directory: %w", err)
-		}
-	}
-	if c.Metadata.PeerSocket != "" {
-		if err := fsutil.EnsurePrivateParent(c.Metadata.PeerSocket); err != nil {
-			return fmt.Errorf("prepare metadata peer socket directory: %w", err)
-		}
 	}
 	return nil
 }
