@@ -6,9 +6,9 @@ import (
 	"time"
 
 	chimage "github.com/donglin-wang/chamber/internal/image"
-	"github.com/donglin-wang/chamber/internal/localfs"
 	"github.com/donglin-wang/chamber/internal/metadata"
 	chruntime "github.com/donglin-wang/chamber/internal/runtime"
+	"github.com/donglin-wang/chamber/internal/shared/localfs"
 )
 
 type Config struct {

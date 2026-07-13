@@ -11,8 +11,8 @@ import (
 
 	chimage "github.com/donglin-wang/chamber/internal/image"
 	"github.com/donglin-wang/chamber/internal/image/gocontainerregistry"
-	"github.com/donglin-wang/chamber/internal/localfs"
-	"github.com/donglin-wang/chamber/internal/testutil"
+	"github.com/donglin-wang/chamber/internal/shared/localfs"
+	"github.com/donglin-wang/chamber/internal/shared/testutil"
 )
 
 const busyboxReference = "index.docker.io/library/busybox:latest"

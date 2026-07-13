@@ -78,7 +78,7 @@ internal/metadata/store.go
 internal/metadata/etcd/store.go
 internal/runtime/runtime.go
 internal/runtime/runc/runtime.go
-internal/testutil/memorystore.go
+internal/shared/testutil/memorystore.go
 ```
 
 `internal/daemon` will own the use-case ordering. HTTP handlers decode and
@@ -506,7 +506,7 @@ Before etcd enters the picture, build a small in-memory store. This gives you a
 fast target for service tests and lets the store contract prove the behavior
 without network, disk, or embedded-server complexity.
 
-Create `internal/testutil/memorystore.go`. Implement `metadata.Store` with a
+Create `internal/shared/testutil/memorystore.go`. Implement `metadata.Store` with a
 `sync.RWMutex` and maps. Copy records on read and write. Enforce the same state
 transition rules and sentinel errors that etcd will enforce later.
 
@@ -525,7 +525,7 @@ func TestStoreContract(t *testing.T) {
 Run the tests with the race detector:
 
 ```sh
-go test -race ./internal/metadata ./internal/testutil
+go test -race ./internal/metadata ./internal/shared/testutil
 ```
 
 You are practicing:

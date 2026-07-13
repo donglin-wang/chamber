@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/donglin-wang/chamber/internal/localfs"
 	"github.com/donglin-wang/chamber/internal/metadata"
+	"github.com/donglin-wang/chamber/internal/shared/localfs"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
 )

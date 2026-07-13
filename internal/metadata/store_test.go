@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/donglin-wang/chamber/internal/localfs"
 	"github.com/donglin-wang/chamber/internal/metadata"
 	metadataetcd "github.com/donglin-wang/chamber/internal/metadata/etcd"
-	"github.com/donglin-wang/chamber/internal/testutil"
+	"github.com/donglin-wang/chamber/internal/shared/localfs"
+	"github.com/donglin-wang/chamber/internal/shared/testutil"
 )
 
 type traceContextKey struct{}

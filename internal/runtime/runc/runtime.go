@@ -12,8 +12,8 @@ import (
 	goruntime "runtime"
 	"strings"
 
-	"github.com/donglin-wang/chamber/internal/localfs"
 	chruntime "github.com/donglin-wang/chamber/internal/runtime"
+	"github.com/donglin-wang/chamber/internal/shared/localfs"
 )
 
 const (

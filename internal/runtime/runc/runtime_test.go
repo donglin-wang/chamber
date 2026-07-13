@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/donglin-wang/chamber/internal/localfs"
 	chruntime "github.com/donglin-wang/chamber/internal/runtime"
+	"github.com/donglin-wang/chamber/internal/shared/localfs"
 )
 
 func TestEnsureDownloadsValidRuntimeBinary(t *testing.T) {
