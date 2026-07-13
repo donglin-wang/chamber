@@ -14,7 +14,8 @@ func TestPatchRootlessSpec(t *testing.T) {
 	resources := &specs.LinuxResources{}
 	spec := &specs.Spec{
 		Process: &specs.Process{
-			Args: []string{"/bin/old"},
+			Args:     []string{"/bin/old"},
+			Terminal: true,
 		},
 		Mounts: []specs.Mount{
 			{Destination: "/proc", Type: "proc"},
@@ -64,6 +65,9 @@ func TestPatchRootlessSpec(t *testing.T) {
 	}
 	if !slices.Equal(spec.Process.Args, []string{"/bin/sh", "-c", "echo hi"}) {
 		t.Fatalf("Process.Args = %#v, want command override", spec.Process.Args)
+	}
+	if spec.Process.Terminal {
+		t.Fatal("Process.Terminal = true, want false for daemon-managed stdio")
 	}
 	for _, mount := range spec.Mounts {
 		if mount.Type == "cgroup" || mount.Type == "cgroup2" || mount.Destination == "/sys/fs/cgroup" {

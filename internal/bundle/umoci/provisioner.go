@@ -165,6 +165,7 @@ func patchRootlessSpec(
 	spec.Linux.CgroupsPath = ""
 	spec.Linux.Resources = nil
 	spec.Mounts = removeCgroupMounts(spec.Mounts)
+	spec.Process.Terminal = false
 
 	if len(command) > 0 {
 		spec.Process.Args = slices.Clone(command)
