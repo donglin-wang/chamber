@@ -4,13 +4,18 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	goruntime "runtime"
 	"strings"
+	"time"
 
 	chruntime "github.com/donglin-wang/chamber/internal/runtime"
 	"github.com/donglin-wang/chamber/internal/shared/localfs"
@@ -21,6 +26,13 @@ const (
 
 	defaultAMD64URL    = "https://github.com/opencontainers/runc/releases/download/v1.5.0/runc.amd64"
 	defaultAMD64SHA256 = "0363e69bebd3a027d1239364ab9b4f4873f6bc4e7a7878e94b4ea59f08551297"
+)
+
+var validContainerID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
+
+var (
+	startupObservationTimeout = 500 * time.Millisecond
+	startupPollInterval       = 10 * time.Millisecond
 )
 
 var _ chruntime.Runtime = (*Runtime)(nil)
@@ -110,8 +122,135 @@ func (r *Runtime) Ensure(ctx context.Context) (chruntime.Binary, error) {
 	}, nil
 }
 
-func (r *Runtime) Run(context.Context, chruntime.Binary, chruntime.RunRequest) (chruntime.StartResult, error) {
-	return chruntime.StartResult{}, fmt.Errorf("runc Run is not implemented until challenge 9")
+func (r *Runtime) Run(ctx context.Context, binary chruntime.Binary, request chruntime.RunRequest) (chruntime.StartResult, error) {
+	if binary.Path == "" {
+		return chruntime.StartResult{}, fmt.Errorf("runtime binary path is required")
+	}
+	if request.StateRoot == "" {
+		return chruntime.StartResult{}, fmt.Errorf("runtime state root is required")
+	}
+	if request.Bundle.BundlePath == "" {
+		return chruntime.StartResult{}, fmt.Errorf("runtime bundle path is required")
+	}
+	containerID := request.Bundle.ContainerID
+	if !validContainerID.MatchString(containerID) {
+		return chruntime.StartResult{}, fmt.Errorf("invalid container ID %q", containerID)
+	}
+	if len(request.Bundle.RootFS.Mounts) > 0 {
+		return chruntime.StartResult{}, fmt.Errorf("runtime bundle rootfs mounts are not yet supported by runc Run")
+	}
+
+	cmd := exec.CommandContext(ctx, binary.Path, "--root", request.StateRoot, "run", containerID)
+	cmd.Dir = request.Bundle.BundlePath
+	cmd.Stdin = request.Stdin
+	cmd.Stdout = request.Stdout
+	cmd.Stderr = request.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return chruntime.StartResult{}, fmt.Errorf("start runc container %q: %w", containerID, err)
+	}
+
+	process := newRuncProcess(cmd)
+	state, err := observeStartup(ctx, binary.Path, request.StateRoot, containerID, process)
+	if err != nil {
+		return chruntime.StartResult{}, err
+	}
+	return chruntime.StartResult{
+		Process: process,
+		State:   state,
+	}, nil
+}
+
+type runcProcess struct {
+	done   chan struct{}
+	result waitResult
+}
+
+type waitResult struct {
+	exitCode int
+	err      error
+}
+
+func newRuncProcess(cmd *exec.Cmd) *runcProcess {
+	process := &runcProcess{
+		done: make(chan struct{}),
+	}
+	go func() {
+		process.result = convertWaitResult(cmd.Wait())
+		close(process.done)
+	}()
+	return process
+}
+
+func (p *runcProcess) Wait() (int, error) {
+	<-p.done
+	return p.result.exitCode, p.result.err
+}
+
+func convertWaitResult(err error) waitResult {
+	if err == nil {
+		return waitResult{exitCode: 0}
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		exitCode := exitErr.ExitCode()
+		if exitCode >= 0 {
+			return waitResult{exitCode: exitCode}
+		}
+		return waitResult{
+			exitCode: exitCode,
+			err:      fmt.Errorf("runtime process exited without an exit code: %w", err),
+		}
+	}
+
+	return waitResult{err: err}
+}
+
+func observeStartup(ctx context.Context, binaryPath string, stateRoot string, containerID string, process *runcProcess) (chruntime.ObservedState, error) {
+	ticker := time.NewTicker(startupPollInterval)
+	defer ticker.Stop()
+
+	deadline := time.NewTimer(startupObservationTimeout)
+	defer deadline.Stop()
+
+	for {
+		if running, err := containerIsRunning(ctx, binaryPath, stateRoot, containerID); err != nil {
+			if ctx.Err() != nil {
+				return "", fmt.Errorf("observe runc container %q startup: %w", containerID, err)
+			}
+		} else if running {
+			return chruntime.ProcessRunning, nil
+		}
+
+		select {
+		case <-process.done:
+			return chruntime.ProcessExited, nil
+		case <-deadline.C:
+			return chruntime.ProcessRunning, nil
+		case <-ctx.Done():
+			return "", fmt.Errorf("observe runc container %q startup: %w", containerID, ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+type runcState struct {
+	Status string `json:"status"`
+}
+
+func containerIsRunning(ctx context.Context, binaryPath string, stateRoot string, containerID string) (bool, error) {
+	cmd := exec.CommandContext(ctx, binaryPath, "--root", stateRoot, "state", containerID)
+	output, err := cmd.Output()
+	if err != nil {
+		return false, err
+	}
+
+	var state runcState
+	if err := json.Unmarshal(output, &state); err != nil {
+		return false, err
+	}
+	return state.Status == "running", nil
 }
 
 func (r *Runtime) download(ctx context.Context, url string, expectedDigest []byte, binDir string, binaryPath string) error {
