@@ -313,12 +313,13 @@ func (s *Service) Run(
 			At:    s.now(),
 		})
 		if err != nil {
-			_ = stdout.Close()
-			_ = stderr.Close()
-			failed, failErr := s.failOperation(ctx, operationID, metadata.ErrMetadataFailed, err)
-			return RunResult{Operation: chooseOperation(failed, operation), Container: starting}, failErr
+			go s.finishRunningProcess(operationID, containerID, metadata.ContainerStarting, start.Process, stdout, stderr)
+			return RunResult{
+				Operation: operation,
+				Container: starting,
+			}, s.daemonError(operationID, metadata.ErrMetadataFailed, err)
 		}
-		go s.finishRunningProcess(operationID, containerID, start.Process, stdout, stderr)
+		go s.finishRunningProcess(operationID, containerID, metadata.ContainerRunning, start.Process, stdout, stderr)
 		return RunResult{
 			Operation: operation,
 			Container: running,
@@ -353,6 +354,7 @@ func (s *Service) Run(
 func (s *Service) finishRunningProcess(
 	operationID string,
 	containerID string,
+	from metadata.ContainerState,
 	process chruntime.Process,
 	stdout *os.File,
 	stderr *os.File,
@@ -360,7 +362,7 @@ func (s *Service) finishRunningProcess(
 	defer stdout.Close()
 	defer stderr.Close()
 
-	_, _, err := s.finishExitedProcess(context.Background(), operationID, containerID, metadata.ContainerRunning, process)
+	_, _, err := s.finishExitedProcess(context.Background(), operationID, containerID, from, process)
 	if err != nil {
 		s.logError("record container exit", err, "operation_id", operationID, "container_id", containerID)
 	}
@@ -397,6 +399,10 @@ func (s *Service) finishExitedProcess(
 		ExitCode:  exitCodePtr,
 		ErrorCode: string(code),
 	})
+	if containerErr != nil {
+		err := errors.Join(waitErr, containerErr)
+		return exited, metadata.Operation{}, s.daemonError(operationID, metadata.ErrMetadataFailed, err)
+	}
 
 	var operation metadata.Operation
 	var operationErr error
@@ -406,10 +412,10 @@ func (s *Service) finishExitedProcess(
 		operation, operationErr = s.transitionOperation(ctx, operationID, metadata.OperationFailed, code)
 	}
 
-	if containerErr != nil || operationErr != nil {
-		err := errors.Join(waitErr, containerErr, operationErr)
+	if operationErr != nil {
+		err := errors.Join(waitErr, operationErr)
 		if waitErr == nil && code != "" {
-			err = errors.Join(fmt.Errorf("%s", code), containerErr, operationErr)
+			err = errors.Join(fmt.Errorf("%s", code), operationErr)
 		}
 		return exited, operation, s.daemonError(operationID, firstNonZeroCode(code, metadata.ErrMetadataFailed), err)
 	}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -25,6 +26,7 @@ func TestEnsurePrivateDirCreatesDirectory(t *testing.T) {
 	if info.Mode().Perm() != 0700 {
 		t.Fatalf("mode = %v, want 0700", info.Mode().Perm())
 	}
+	assertOwnedByCurrentUser(t, info)
 }
 
 func TestEnsurePrivateDirRejectsGroupOrOtherAccessibleDirectory(t *testing.T) {
@@ -44,6 +46,23 @@ func TestEnsurePrivateDirRejectsGroupOrOtherAccessibleDirectory(t *testing.T) {
 	if !strings.Contains(err.Error(), "must not be readable, writable, or executable by group or other users") {
 		t.Fatalf("EnsurePrivateDir() error = %v, want permission explanation", err)
 	}
+}
+
+func TestEnsurePrivateDirAcceptsExistingCurrentUserOwnedDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatalf("Mkdir() error = %v", err)
+	}
+
+	manager := NewDirectoryManager()
+	if err := manager.EnsurePrivateDir(path); err != nil {
+		t.Fatalf("EnsurePrivateDir() error = %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	assertOwnedByCurrentUser(t, info)
 }
 
 func TestEnsurePrivateDirRejectsFile(t *testing.T) {
@@ -76,6 +95,17 @@ func TestEnsurePrivateParentCreatesParent(t *testing.T) {
 	}
 	if !info.IsDir() {
 		t.Fatalf("%q is not a directory", filepath.Dir(path))
+	}
+}
+
+func assertOwnedByCurrentUser(t *testing.T, info os.FileInfo) {
+	t.Helper()
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatal("file info does not contain Stat_t")
+	}
+	if int(stat.Uid) != os.Geteuid() {
+		t.Fatalf("uid = %d, want %d", stat.Uid, os.Geteuid())
 	}
 }
 

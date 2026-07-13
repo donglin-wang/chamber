@@ -416,13 +416,11 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	// values, and return the result without touching disk.
 	panic("TODO")
 }
-
-func (c Config) Prepare() error {
-	// TODO: create each directory as 0700 and reject directories not owned by
-	// the effective UID or writable by group/other.
-	panic("TODO")
-}
 ```
+
+`daemon/config` resolves names and values only. Do not create directories from
+the config package. The local daemon entrypoint owns its socket and temp
+directory setup; primitive adapters own their own roots through `localfs`.
 
 Use these defaults:
 
@@ -1378,7 +1376,7 @@ Build startup in this order:
 
 ```text
 parse configuration
-  -> prepare and verify directories
+  -> prepare the daemon-owned socket directory and temp root
   -> initialize slog
   -> reject non-Linux or effective UID 0
   -> check rootless user-namespace prerequisites

@@ -247,6 +247,33 @@ func TestEnsureRequiresCompleteConfiguration(t *testing.T) {
 	}
 }
 
+func TestDefaultRuntimeArtifactSupportsLinuxReleaseArchitectures(t *testing.T) {
+	tests := map[string]struct {
+		url    string
+		sha256 string
+	}{
+		"amd64": {
+			url:    defaultAMD64URL,
+			sha256: defaultAMD64SHA256,
+		},
+		"arm64": {
+			url:    defaultARM64URL,
+			sha256: defaultARM64SHA256,
+		},
+	}
+	for arch, want := range tests {
+		t.Run(arch, func(t *testing.T) {
+			url, sha256 := defaultRuntimeArtifact(arch)
+			if url != want.url {
+				t.Fatalf("url = %q, want %q", url, want.url)
+			}
+			if sha256 != want.sha256 {
+				t.Fatalf("sha256 = %q, want %q", sha256, want.sha256)
+			}
+		})
+	}
+}
+
 func TestRunStartsRuncAndReportsRunning(t *testing.T) {
 	logDir := privateTempDir(t)
 	binaryPath := writeFakeRunc(t, logDir, `

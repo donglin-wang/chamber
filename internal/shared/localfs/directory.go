@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 type DirectoryManager interface {
@@ -45,6 +46,13 @@ func ensurePrivateDirMetadata(path string, info os.FileInfo) error {
 	}
 	if info.Mode().Perm()&0077 != 0 {
 		return fmt.Errorf("path %q must not be readable, writable, or executable by group or other users", path)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("cannot determine owner for private directory %q", path)
+	}
+	if int(stat.Uid) != os.Geteuid() {
+		return fmt.Errorf("private directory %q must be owned by the current user", path)
 	}
 
 	return nil

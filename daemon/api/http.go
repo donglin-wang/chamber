@@ -161,7 +161,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 
 	status, code, message := publicError(err, daemonErr)
 	if status == http.StatusInternalServerError {
-		slog.Default().Error("daemon request failed", "error", err, "operation_id", operationID)
+		slog.Default().Error("daemon request failed", "operation_id", operationID, "code", code)
 	}
 	writeError(w, status, operationID, code, message)
 }
@@ -182,6 +182,9 @@ func publicError(err error, daemonErr *daemon.Error) (int, string, string) {
 		errors.Is(err, metadata.ErrAlreadyExists):
 		return http.StatusConflict, "conflict", "operation conflict"
 	default:
+		if code != "" {
+			return http.StatusInternalServerError, code, "internal error"
+		}
 		return http.StatusInternalServerError, "internal", "internal error"
 	}
 }

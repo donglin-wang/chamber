@@ -287,6 +287,91 @@ func TestRunRunningProcessEventuallyExitsNonzero(t *testing.T) {
 	}
 }
 
+func TestRunStillWaitsWhenRunningTransitionFailsAfterRuntimeStart(t *testing.T) {
+	store := newFakeStore()
+	events := newEventLog()
+	service := newTestService(t, store, events)
+	service.IDs = &sequenceIDs{values: []string{"op-run", "ctr-run"}}
+	store.images["docker.io/library/alpine:latest"] = testImage(service.ImageRoot)
+	store.failContainerTransitions = map[string]error{
+		containerTransitionKey(metadata.ContainerStarting, metadata.ContainerRunning): errors.New("metadata write failed"),
+	}
+	process := newFakeProcess()
+	service.Runtime = &fakeRuntime{
+		events: events,
+		result: chruntime.StartResult{
+			Process: process,
+			State:   chruntime.ProcessRunning,
+		},
+	}
+
+	result, err := service.Run(context.Background(), RunRequest{
+		Image:   "docker.io/library/alpine:latest",
+		Command: []string{"/bin/sh"},
+	})
+	assertDaemonError(t, err, "op-run", metadata.ErrMetadataFailed)
+	if result.Container.State != metadata.ContainerStarting {
+		t.Fatalf("Run() container state = %q, want %q", result.Container.State, metadata.ContainerStarting)
+	}
+
+	process.finish(0, nil)
+	operation := store.waitOperationState(t, "op-run", metadata.OperationSucceeded)
+	container := store.waitContainerState(t, "ctr-run", metadata.ContainerExited)
+	if operation.ErrorCode != "" {
+		t.Fatalf("operation error code = %q, want empty", operation.ErrorCode)
+	}
+	if container.ExitCode == nil || *container.ExitCode != 0 {
+		t.Fatalf("container exit code = %v, want 0", container.ExitCode)
+	}
+}
+
+func TestRunDoesNotFinishOperationWhenContainerExitTransitionFails(t *testing.T) {
+	store := newFakeStore()
+	events := newEventLog()
+	service := newTestService(t, store, events)
+	service.IDs = &sequenceIDs{values: []string{"op-run", "ctr-run"}}
+	store.images["docker.io/library/alpine:latest"] = testImage(service.ImageRoot)
+	store.failContainerTransitions = map[string]error{
+		containerTransitionKey(metadata.ContainerRunning, metadata.ContainerExited): errors.New("container terminal write failed"),
+	}
+	process := newFakeProcess()
+	service.Runtime = &fakeRuntime{
+		events: events,
+		result: chruntime.StartResult{
+			Process: process,
+			State:   chruntime.ProcessRunning,
+		},
+	}
+
+	result, err := service.Run(context.Background(), RunRequest{
+		Image:   "docker.io/library/alpine:latest",
+		Command: []string{"/bin/sh"},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Container.State != metadata.ContainerRunning {
+		t.Fatalf("Run() container state = %q, want %q", result.Container.State, metadata.ContainerRunning)
+	}
+
+	process.finish(0, nil)
+	time.Sleep(50 * time.Millisecond)
+	operation, err := store.GetOperation(context.Background(), "op-run")
+	if err != nil {
+		t.Fatalf("GetOperation() error = %v", err)
+	}
+	if operation.State != metadata.OperationRunning {
+		t.Fatalf("operation state = %q, want %q", operation.State, metadata.OperationRunning)
+	}
+	container, err := store.GetContainer(context.Background(), "ctr-run")
+	if err != nil {
+		t.Fatalf("GetContainer() error = %v", err)
+	}
+	if container.State != metadata.ContainerRunning {
+		t.Fatalf("container state = %q, want %q", container.State, metadata.ContainerRunning)
+	}
+}
+
 var testTime = time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
 
 type contextKey string
@@ -487,12 +572,13 @@ func (p *fakeProcess) Wait() (int, error) {
 }
 
 type fakeStore struct {
-	mu          sync.Mutex
-	events      *eventLog
-	images      map[string]metadata.Image
-	operations  map[string]metadata.Operation
-	containers  map[string]metadata.Container
-	putImageErr error
+	mu                       sync.Mutex
+	events                   *eventLog
+	images                   map[string]metadata.Image
+	operations               map[string]metadata.Operation
+	containers               map[string]metadata.Container
+	putImageErr              error
+	failContainerTransitions map[string]error
 }
 
 func newFakeStore() *fakeStore {
@@ -624,6 +710,9 @@ func (s *fakeStore) TransitionContainer(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events.add(fmt.Sprintf("transition-container:%s:%s->%s", id, from, update.State))
+	if err := s.failContainerTransitions[containerTransitionKey(from, update.State)]; err != nil {
+		return metadata.Container{}, err
+	}
 	container, ok := s.containers[id]
 	if !ok {
 		return metadata.Container{}, metadata.ErrNotFound
@@ -637,6 +726,10 @@ func (s *fakeStore) TransitionContainer(
 	container.ErrorCode = metadata.ErrorCode(update.ErrorCode)
 	s.containers[id] = cloneContainer(container)
 	return cloneContainer(container), nil
+}
+
+func containerTransitionKey(from metadata.ContainerState, to metadata.ContainerState) string {
+	return string(from) + "->" + string(to)
 }
 
 func (s *fakeStore) Close() error {

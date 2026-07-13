@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -58,8 +59,9 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if err := cfg.Prepare(); err != nil {
-		return fmt.Errorf("prepare config: %w", err)
+	directories := localfs.NewDirectoryManager()
+	if err := prepareDaemonPaths(cfg.SocketPath, cfg.TmpRoot, directories); err != nil {
+		return err
 	}
 
 	logger, err := newLogger(os.Stderr, cfg.LogLevel, cfg.LogFormat)
@@ -71,11 +73,13 @@ func run(ctx context.Context, args []string) error {
 	if err := runtimePreflight(runtime.GOOS, os.Geteuid()); err != nil {
 		return err
 	}
+	if err := rootlessPreflight(os.ReadFile); err != nil {
+		return err
+	}
 
 	lifetime, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
-	directories := localfs.NewDirectoryManager()
 	store, err := etcd.Open(lifetime, cfg.Metadata, localfs.NewDirectoryManager())
 	if err != nil {
 		return fmt.Errorf("open metadata store: %w", err)
@@ -152,6 +156,19 @@ func run(ctx context.Context, args []string) error {
 		return nil
 	}
 	return err
+}
+
+func prepareDaemonPaths(socketPath string, tmpRoot string, directories localfs.DirectoryManager) error {
+	if directories == nil {
+		return fmt.Errorf("directory manager is required")
+	}
+	if err := directories.EnsurePrivateParent(socketPath); err != nil {
+		return fmt.Errorf("prepare socket directory: %w", err)
+	}
+	if err := directories.EnsurePrivateDir(tmpRoot); err != nil {
+		return fmt.Errorf("prepare tmp root: %w", err)
+	}
+	return nil
 }
 
 func parseArgs(args []string) (startupOptions, error) {
@@ -272,6 +289,69 @@ func runtimePreflight(goos string, euid int) error {
 		return err
 	}
 	return nil
+}
+
+type readFileFunc func(string) ([]byte, error)
+
+func rootlessPreflight(readFile readFileFunc) error {
+	if err := requireSysctlEnabled(readFile, "/proc/sys/kernel/unprivileged_userns_clone", "unprivileged user namespaces are disabled"); err != nil {
+		return err
+	}
+	if err := requireSysctlPositive(readFile, "/proc/sys/user/max_user_namespaces", "user namespaces are unavailable"); err != nil {
+		return err
+	}
+	if err := requireSysctlDisabled(readFile, "/proc/sys/kernel/apparmor_restrict_unprivileged_userns", "unprivileged user namespaces are restricted by AppArmor"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func requireSysctlEnabled(readFile readFileFunc, path string, message string) error {
+	value, ok, err := readOptionalInt(readFile, path)
+	if err != nil || !ok {
+		return err
+	}
+	if value == 0 {
+		return errors.New(message)
+	}
+	return nil
+}
+
+func requireSysctlPositive(readFile readFileFunc, path string, message string) error {
+	value, ok, err := readOptionalInt(readFile, path)
+	if err != nil || !ok {
+		return err
+	}
+	if value <= 0 {
+		return errors.New(message)
+	}
+	return nil
+}
+
+func requireSysctlDisabled(readFile readFileFunc, path string, message string) error {
+	value, ok, err := readOptionalInt(readFile, path)
+	if err != nil || !ok {
+		return err
+	}
+	if value != 0 {
+		return errors.New(message)
+	}
+	return nil
+}
+
+func readOptionalInt(readFile readFileFunc, path string) (int, bool, error) {
+	content, err := readFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("read rootless prerequisite %s: %w", path, err)
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(string(content)))
+	if err != nil {
+		return 0, false, fmt.Errorf("parse rootless prerequisite %s: %w", path, err)
+	}
+	return value, true, nil
 }
 
 func validateLinux(goos string) error {

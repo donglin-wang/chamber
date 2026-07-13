@@ -3,7 +3,6 @@ package config
 import (
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -61,8 +60,9 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 		switch importPath {
 		case "github.com/donglin-wang/chamber/internal/image/gocontainerregistry",
 			"github.com/donglin-wang/chamber/internal/metadata/etcd",
-			"github.com/donglin-wang/chamber/internal/runtime/runc":
-			t.Fatalf("config package must import generic package boundaries, not concrete implementation %q", importPath)
+			"github.com/donglin-wang/chamber/internal/runtime/runc",
+			"github.com/donglin-wang/chamber/internal/shared/localfs":
+			t.Fatalf("config package must import generic package boundaries and not filesystem setup %q", importPath)
 		}
 	}
 }
@@ -275,127 +275,6 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 
 	if !reflect.DeepEqual(cfg, defaultConfig) {
 		t.Fatalf("Resolve() config mismatch:\n got: %#v\nwant: %#v", cfg, defaultConfig)
-	}
-}
-
-func TestPrepareCreatesPrivateDirectories(t *testing.T) {
-	root := t.TempDir()
-	cfg := Config{
-		SocketPath:    filepath.Join(root, "run", "chamber.sock"),
-		TmpRoot:       filepath.Join(root, "run", "tmp"),
-		ContainerRoot: filepath.Join(root, "containers"),
-		Image: chimage.Config{
-			Root: filepath.Join(root, "images"),
-		},
-		Runtime: chruntime.Config{
-			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
-			RuntimeBinDir: filepath.Join(root, "bin"),
-		},
-		Metadata: metadata.Config{
-			Root: filepath.Join(root, "metadata"),
-		},
-	}
-
-	if err := cfg.Prepare(); err != nil {
-		t.Fatalf("Prepare returned error: %v", err)
-	}
-
-	for _, path := range []string{
-		filepath.Dir(cfg.SocketPath),
-		cfg.TmpRoot,
-		cfg.Image.Root,
-		cfg.ContainerRoot,
-		cfg.Runtime.RuntimeRoot,
-		cfg.Runtime.RuntimeBinDir,
-		cfg.Metadata.Root,
-	} {
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatalf("Stat(%q) returned error: %v", path, err)
-		}
-		if !info.IsDir() {
-			t.Fatalf("%q is not a directory", path)
-		}
-		if info.Mode().Perm() != 0700 {
-			t.Fatalf("%q permissions = %o, want 0700", path, info.Mode().Perm())
-		}
-	}
-}
-
-func TestPrepareRejectsGroupOrOtherAccessibleDirectory(t *testing.T) {
-	root := t.TempDir()
-	runRoot := filepath.Join(root, "run")
-	tmpRoot := filepath.Join(root, "run", "tmp")
-	if err := os.MkdirAll(runRoot, 0700); err != nil {
-		t.Fatalf("MkdirAll returned error: %v", err)
-	}
-	if err := os.Mkdir(tmpRoot, 0755); err != nil {
-		t.Fatalf("Mkdir returned error: %v", err)
-	}
-	if err := os.Chmod(tmpRoot, 0755); err != nil {
-		t.Fatalf("Chmod returned error: %v", err)
-	}
-
-	cfg := Config{
-		SocketPath:    filepath.Join(root, "run", "chamber.sock"),
-		TmpRoot:       tmpRoot,
-		ContainerRoot: filepath.Join(root, "containers"),
-		Image: chimage.Config{
-			Root: filepath.Join(root, "images"),
-		},
-		Runtime: chruntime.Config{
-			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
-			RuntimeBinDir: filepath.Join(root, "bin"),
-		},
-		Metadata: metadata.Config{
-			Root: filepath.Join(root, "metadata"),
-		},
-	}
-
-	err := cfg.Prepare()
-	if err == nil {
-		t.Fatal("Prepare returned nil error")
-	}
-	if !strings.Contains(err.Error(), "prepare tmp root") {
-		t.Fatalf("Prepare error = %q, want tmp root context", err)
-	}
-	if !strings.Contains(err.Error(), "must not be readable, writable, or executable by group or other users") {
-		t.Fatalf("Prepare error = %q, want permission explanation", err)
-	}
-}
-
-func TestPrepareRejectsPathThatIsAFile(t *testing.T) {
-	root := t.TempDir()
-	imageRoot := filepath.Join(root, "images")
-	if err := os.WriteFile(imageRoot, []byte("not a directory"), 0600); err != nil {
-		t.Fatalf("WriteFile returned error: %v", err)
-	}
-
-	cfg := Config{
-		SocketPath:    filepath.Join(root, "run", "chamber.sock"),
-		TmpRoot:       filepath.Join(root, "run", "tmp"),
-		ContainerRoot: filepath.Join(root, "containers"),
-		Image: chimage.Config{
-			Root: imageRoot,
-		},
-		Runtime: chruntime.Config{
-			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
-			RuntimeBinDir: filepath.Join(root, "bin"),
-		},
-		Metadata: metadata.Config{
-			Root: filepath.Join(root, "metadata"),
-		},
-	}
-
-	err := cfg.Prepare()
-	if err == nil {
-		t.Fatal("Prepare returned nil error")
-	}
-	if !strings.Contains(err.Error(), "prepare image root") {
-		t.Fatalf("Prepare error = %q, want image root context", err)
-	}
-	if !strings.Contains(err.Error(), "not a directory") {
-		t.Fatalf("Prepare error = %q, want file rejection", err)
 	}
 }
 

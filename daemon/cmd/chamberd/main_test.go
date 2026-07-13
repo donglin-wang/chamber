@@ -124,6 +124,100 @@ func TestRuntimePreflight(t *testing.T) {
 	}
 }
 
+func TestRootlessPreflightAcceptsEnabledPrerequisites(t *testing.T) {
+	readFile := mapReadFile(map[string]string{
+		"/proc/sys/kernel/unprivileged_userns_clone":             "1\n",
+		"/proc/sys/user/max_user_namespaces":                     "28633\n",
+		"/proc/sys/kernel/apparmor_restrict_unprivileged_userns": "0\n",
+	})
+	if err := rootlessPreflight(readFile); err != nil {
+		t.Fatalf("rootlessPreflight returned error: %v", err)
+	}
+}
+
+func TestRootlessPreflightIgnoresMissingPrerequisiteFiles(t *testing.T) {
+	if err := rootlessPreflight(mapReadFile(nil)); err != nil {
+		t.Fatalf("rootlessPreflight returned error: %v", err)
+	}
+}
+
+func TestRootlessPreflightRejectsDisabledUserNamespaces(t *testing.T) {
+	readFile := mapReadFile(map[string]string{
+		"/proc/sys/kernel/unprivileged_userns_clone": "0\n",
+		"/proc/sys/user/max_user_namespaces":         "28633\n",
+	})
+	err := rootlessPreflight(readFile)
+	if err == nil || !strings.Contains(err.Error(), "unprivileged user namespaces are disabled") {
+		t.Fatalf("rootlessPreflight error = %v, want disabled userns error", err)
+	}
+}
+
+func TestRootlessPreflightRejectsZeroUserNamespaceLimit(t *testing.T) {
+	readFile := mapReadFile(map[string]string{
+		"/proc/sys/kernel/unprivileged_userns_clone": "1\n",
+		"/proc/sys/user/max_user_namespaces":         "0\n",
+	})
+	err := rootlessPreflight(readFile)
+	if err == nil || !strings.Contains(err.Error(), "user namespaces are unavailable") {
+		t.Fatalf("rootlessPreflight error = %v, want namespace limit error", err)
+	}
+}
+
+func TestRootlessPreflightRejectsAppArmorRestriction(t *testing.T) {
+	readFile := mapReadFile(map[string]string{
+		"/proc/sys/kernel/unprivileged_userns_clone":             "1\n",
+		"/proc/sys/user/max_user_namespaces":                     "28633\n",
+		"/proc/sys/kernel/apparmor_restrict_unprivileged_userns": "1\n",
+	})
+	err := rootlessPreflight(readFile)
+	if err == nil || !strings.Contains(err.Error(), "restricted by AppArmor") {
+		t.Fatalf("rootlessPreflight error = %v, want AppArmor restriction error", err)
+	}
+}
+
+func TestPrepareDaemonPathsCreatesDaemonOwnedDirectories(t *testing.T) {
+	root := t.TempDir()
+	socketPath := filepath.Join(root, "run", "chamber.sock")
+	tmpRoot := filepath.Join(root, "run", "tmp")
+
+	if err := prepareDaemonPaths(socketPath, tmpRoot, localDirectoryManager{}); err != nil {
+		t.Fatalf("prepareDaemonPaths returned error: %v", err)
+	}
+
+	for _, path := range []string{filepath.Dir(socketPath), tmpRoot} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("Stat(%q) error = %v", path, err)
+		}
+		if !info.IsDir() {
+			t.Fatalf("%q is not a directory", path)
+		}
+		if info.Mode().Perm() != 0700 {
+			t.Fatalf("%q mode = %o, want 0700", path, info.Mode().Perm())
+		}
+	}
+}
+
+func TestPrepareDaemonPathsRejectsUnsafeTmpRoot(t *testing.T) {
+	root := t.TempDir()
+	socketPath := filepath.Join(root, "run", "chamber.sock")
+	tmpRoot := filepath.Join(root, "tmp")
+	if err := os.Mkdir(tmpRoot, 0755); err != nil {
+		t.Fatalf("Mkdir() error = %v", err)
+	}
+	if err := os.Chmod(tmpRoot, 0755); err != nil {
+		t.Fatalf("Chmod() error = %v", err)
+	}
+
+	err := prepareDaemonPaths(socketPath, tmpRoot, localDirectoryManager{})
+	if err == nil {
+		t.Fatal("prepareDaemonPaths returned nil error")
+	}
+	if !strings.Contains(err.Error(), "prepare tmp root") {
+		t.Fatalf("prepareDaemonPaths error = %v, want tmp root context", err)
+	}
+}
+
 func TestCryptoHexIDGeneratorProducesRuntimeSafeIDs(t *testing.T) {
 	generator := cryptoHexIDGenerator{}
 	validRuntimeID := regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,127}$`)
@@ -139,6 +233,37 @@ func TestCryptoHexIDGeneratorProducesRuntimeSafeIDs(t *testing.T) {
 		}
 		seen[id] = struct{}{}
 	}
+}
+
+type localDirectoryManager struct{}
+
+func (localDirectoryManager) EnsurePrivateDir(path string) error {
+	info, err := os.Stat(path)
+	if err == nil {
+		if !info.IsDir() {
+			return errors.New("not a directory")
+		}
+		if info.Mode().Perm()&0077 != 0 {
+			return errors.New("must not be readable, writable, or executable by group or other users")
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return os.MkdirAll(path, 0700)
+}
+
+func (m localDirectoryManager) EnsurePrivateParent(path string) error {
+	return m.EnsurePrivateDir(filepath.Dir(path))
+}
+
+func (localDirectoryManager) MkdirTemp(parent string, pattern string) (string, error) {
+	return os.MkdirTemp(parent, pattern)
+}
+
+func (localDirectoryManager) CreateTemp(parent string, pattern string) (*os.File, error) {
+	return os.CreateTemp(parent, pattern)
 }
 
 func TestPrepareUnixSocketRemovesOwnedStaleSocket(t *testing.T) {
@@ -220,4 +345,14 @@ func shortTempDir(t *testing.T) string {
 		_ = os.RemoveAll(dir)
 	})
 	return dir
+}
+
+func mapReadFile(files map[string]string) readFileFunc {
+	return func(path string) ([]byte, error) {
+		value, ok := files[path]
+		if !ok {
+			return nil, os.ErrNotExist
+		}
+		return []byte(value), nil
+	}
 }

@@ -26,6 +26,8 @@ const (
 
 	defaultAMD64URL    = "https://github.com/opencontainers/runc/releases/download/v1.5.0/runc.amd64"
 	defaultAMD64SHA256 = "0363e69bebd3a027d1239364ab9b4f4873f6bc4e7a7878e94b4ea59f08551297"
+	defaultARM64URL    = "https://github.com/opencontainers/runc/releases/download/v1.5.0/runc.arm64"
+	defaultARM64SHA256 = "1f6d8c553add066a6aaf838d3172d4c5ed3c6b065b6f7eed2f4a4aa4af261e59"
 )
 
 var validContainerID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
@@ -60,9 +62,8 @@ func New(config chruntime.Config, directoryManager localfs.DirectoryManager, opt
 	if config.Version == "" {
 		config.Version = DefaultVersion
 	}
-	if config.URL == "" && config.SHA256 == "" && goruntime.GOARCH == "amd64" {
-		config.URL = defaultAMD64URL
-		config.SHA256 = defaultAMD64SHA256
+	if config.URL == "" && config.SHA256 == "" {
+		config.URL, config.SHA256 = defaultRuntimeArtifact(goruntime.GOARCH)
 	}
 	runtime := &Runtime{
 		config:           config,
@@ -129,6 +130,9 @@ func (r *Runtime) Run(ctx context.Context, binary chruntime.Binary, request chru
 	if request.StateRoot == "" {
 		return chruntime.StartResult{}, fmt.Errorf("runtime state root is required")
 	}
+	if err := r.directoryManagerOrDefault().EnsurePrivateDir(request.StateRoot); err != nil {
+		return chruntime.StartResult{}, fmt.Errorf("prepare runtime state root: %w", err)
+	}
 	if request.Bundle.BundlePath == "" {
 		return chruntime.StartResult{}, fmt.Errorf("runtime bundle path is required")
 	}
@@ -159,6 +163,24 @@ func (r *Runtime) Run(ctx context.Context, binary chruntime.Binary, request chru
 		Process: process,
 		State:   state,
 	}, nil
+}
+
+func defaultRuntimeArtifact(arch string) (url string, sha256 string) {
+	switch arch {
+	case "amd64":
+		return defaultAMD64URL, defaultAMD64SHA256
+	case "arm64":
+		return defaultARM64URL, defaultARM64SHA256
+	default:
+		return "", ""
+	}
+}
+
+func (r *Runtime) directoryManagerOrDefault() localfs.DirectoryManager {
+	if r.directoryManager == nil {
+		return localfs.NewDirectoryManager()
+	}
+	return r.directoryManager
 }
 
 type runcProcess struct {

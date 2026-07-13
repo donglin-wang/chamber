@@ -8,7 +8,6 @@ import (
 	chimage "github.com/donglin-wang/chamber/internal/image"
 	"github.com/donglin-wang/chamber/internal/metadata"
 	chruntime "github.com/donglin-wang/chamber/internal/runtime"
-	"github.com/donglin-wang/chamber/internal/shared/localfs"
 )
 
 type Config struct {
@@ -168,31 +167,4 @@ func absolutizePaths(cfg *Config) {
 		}
 		*path = abs
 	}
-}
-
-func (c Config) Prepare() error {
-	directoryManager := localfs.NewDirectoryManager()
-
-	if err := directoryManager.EnsurePrivateParent(c.SocketPath); err != nil {
-		return fmt.Errorf("prepare socket directory: %w", err)
-	}
-	if err := directoryManager.EnsurePrivateDir(c.TmpRoot); err != nil {
-		return fmt.Errorf("prepare tmp root: %w", err)
-	}
-	if err := directoryManager.EnsurePrivateDir(c.Image.Root); err != nil {
-		return fmt.Errorf("prepare image root: %w", err)
-	}
-	if err := directoryManager.EnsurePrivateDir(c.ContainerRoot); err != nil {
-		return fmt.Errorf("prepare container root: %w", err)
-	}
-	if err := directoryManager.EnsurePrivateDir(c.Runtime.RuntimeRoot); err != nil {
-		return fmt.Errorf("prepare runtime root: %w", err)
-	}
-	if err := directoryManager.EnsurePrivateDir(c.Runtime.RuntimeBinDir); err != nil {
-		return fmt.Errorf("prepare runtime bin dir: %w", err)
-	}
-	if err := directoryManager.EnsurePrivateDir(c.Metadata.Root); err != nil {
-		return fmt.Errorf("prepare metadata root: %w", err)
-	}
-	return nil
 }
