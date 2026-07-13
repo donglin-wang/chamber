@@ -138,7 +138,7 @@ func (s *Service) Pull(
 		pulledAt = s.now()
 	}
 	image := metadata.Image{
-		Reference:  firstNonEmpty(pulled.Reference, reference),
+		Reference:  reference,
 		Digest:     pulled.Digest,
 		LayoutPath: firstNonEmpty(pulled.LayoutPath, destination),
 		PulledAt:   pulledAt,

@@ -24,7 +24,7 @@ func TestPullSuccessCreatesDurableOperationBeforePull(t *testing.T) {
 	service.Puller = &fakePuller{
 		events: events,
 		pulled: chimage.PulledImage{
-			Reference:  "docker.io/library/alpine:latest",
+			Reference:  "index.docker.io/library/alpine:latest",
 			Digest:     "sha256:abc123",
 			LayoutPath: filepath.Join(service.ImageRoot, "pulled-layout"),
 			PulledAt:   testTime,
@@ -42,6 +42,9 @@ func TestPullSuccessCreatesDurableOperationBeforePull(t *testing.T) {
 	}
 	if result.Image.Digest != "sha256:abc123" {
 		t.Fatalf("Pull() image digest = %q, want sha256:abc123", result.Image.Digest)
+	}
+	if result.Image.Reference != "docker.io/library/alpine:latest" {
+		t.Fatalf("Pull() image reference = %q, want original request reference", result.Image.Reference)
 	}
 
 	wantEvents := []string{
