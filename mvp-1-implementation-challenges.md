@@ -69,10 +69,10 @@ Commit after each challenge if the tests are green. The intended package layout
 will emerge as you go:
 
 ```text
-cmd/chamberd/main.go
-internal/api/http.go
-internal/config/config.go
-internal/daemon/service.go
+daemon/cmd/chamberd/main.go
+daemon/api/http.go
+daemon/config/config.go
+daemon/service.go
 internal/bundle/bundle.go
 internal/bundle/umoci/provisioner.go
 internal/image/puller.go
@@ -83,7 +83,7 @@ internal/runtime/runc/runtime.go
 internal/shared/testutil/memorystore.go
 ```
 
-`internal/daemon` will own the use-case ordering. HTTP handlers decode and
+`daemon` will own the use-case ordering. HTTP handlers decode and
 encode HTTP; they do not pull images, write etcd keys, provision bundles, or
 invoke `runc` directly. Adapters under `internal/image`,
 `internal/bundle/umoci`, `internal/metadata/etcd`, and `internal/runtime/runc`
@@ -355,7 +355,7 @@ Chamber must be per-user and rootless by default, so path calculation is a real
 part of the correctness story. Do this before implementing side-effectful
 adapters.
 
-Create `internal/config/config.go`:
+Create `daemon/config/config.go`:
 
 ```go
 package config
@@ -1026,7 +1026,7 @@ You are practicing:
 This is where the earlier interfaces become useful. The service owns ordering:
 durable record first, external side effect second, terminal transition last.
 
-Create `internal/daemon/service.go`:
+Create `daemon/service.go`:
 
 ```go
 package daemon
@@ -1221,7 +1221,7 @@ HTTP is a transport adapter. It should decode, validate, call the service,
 choose a public status code, and encode a response. It should not know how to
 pull an image, write etcd, provision bundles, or execute `runc`.
 
-Create `internal/api/http.go`:
+Create `daemon/api/http.go`:
 
 ```go
 package api
@@ -1231,7 +1231,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/donglin-wang/chamber/internal/daemon"
+	"github.com/donglin-wang/chamber/daemon"
 	"github.com/donglin-wang/chamber/internal/metadata"
 )
 
@@ -1360,8 +1360,8 @@ You are practicing:
 
 ## Challenge 12: compose and stop the daemon
 
-Write `cmd/chamberd/main.go` last. It is the composition root and may import
-every concrete adapter. Inner packages should depend only on interfaces.
+Write `daemon/cmd/chamberd/main.go` last. It is the composition root and may
+import every concrete adapter. Inner packages should depend only on interfaces.
 
 Keep `main` tiny:
 
