@@ -92,7 +92,7 @@ func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage
 		img,
 		layout.WithPlatform(platform),
 		layout.WithAnnotations(map[string]string{
-			imagespec.AnnotationRefName: ref.Name(),
+			imagespec.AnnotationRefName: request.Reference,
 		}),
 	); err != nil {
 		return chimage.PulledImage{}, fmt.Errorf("write OCI image layout: %w", err)
@@ -112,7 +112,7 @@ func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage
 	}
 
 	return chimage.PulledImage{
-		Reference:  ref.Name(),
+		Reference:  request.Reference,
 		Digest:     digest.String(),
 		LayoutPath: destination,
 		SizeBytes:  sizeBytes,
