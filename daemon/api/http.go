@@ -60,6 +60,18 @@ type handler struct {
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
+	case "/docs", "/swagger":
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "", "method_not_allowed", "method not allowed")
+			return
+		}
+		serveDocs(w, r)
+	case "/openapi.json":
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "", "method_not_allowed", "method not allowed")
+			return
+		}
+		serveOpenAPI(w, r)
 	case "/v1/images/pull":
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "", "method_not_allowed", "method not allowed")

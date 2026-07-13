@@ -44,6 +44,45 @@ func (s *fakeService) Run(ctx context.Context, request daemon.RunRequest) (daemo
 	return s.runResult, s.runErr
 }
 
+func TestNewHandlerServesDocsAndOpenAPI(t *testing.T) {
+	service := &fakeService{}
+
+	docs := httptest.NewRecorder()
+	NewHandler(service).ServeHTTP(docs, httptest.NewRequest(http.MethodGet, "/docs", nil))
+	if docs.Code != http.StatusOK {
+		t.Fatalf("docs status = %d, want %d; body = %s", docs.Code, http.StatusOK, docs.Body.String())
+	}
+	if got := docs.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("docs Content-Type = %q, want text/html; charset=utf-8", got)
+	}
+	if !strings.Contains(docs.Body.String(), `url: "/openapi.json"`) {
+		t.Fatalf("docs body does not point Swagger UI at /openapi.json")
+	}
+
+	spec := httptest.NewRecorder()
+	NewHandler(service).ServeHTTP(spec, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+	if spec.Code != http.StatusOK {
+		t.Fatalf("openapi status = %d, want %d; body = %s", spec.Code, http.StatusOK, spec.Body.String())
+	}
+	if got := spec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("openapi Content-Type = %q, want application/json", got)
+	}
+	var document map[string]any
+	if err := json.NewDecoder(spec.Body).Decode(&document); err != nil {
+		t.Fatalf("decode OpenAPI JSON: %v", err)
+	}
+	paths := document["paths"].(map[string]any)
+	if _, ok := paths["/v1/images/pull"]; !ok {
+		t.Fatalf("OpenAPI paths missing /v1/images/pull")
+	}
+	if _, ok := paths["/v1/containers/run"]; !ok {
+		t.Fatalf("OpenAPI paths missing /v1/containers/run")
+	}
+	if service.pullCalls != 0 || service.runCalls != 0 {
+		t.Fatalf("service calls = pull %d, run %d; want none", service.pullCalls, service.runCalls)
+	}
+}
+
 func TestNewHandlerRejectsInvalidTransportRequestsBeforeService(t *testing.T) {
 	tooLargeBody := `{"reference":"` + strings.Repeat("a", int(maxRequestBodyBytes)+1) + `"}`
 	tests := []struct {

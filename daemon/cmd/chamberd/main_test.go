@@ -27,6 +27,7 @@ func TestParseArgsBuildsConfigOverride(t *testing.T) {
 		"--log-level", "debug",
 		"--log-format", "text",
 		"--platform", "linux/amd64",
+		"--http-addr", "127.0.0.1:8080",
 	})
 	if err != nil {
 		t.Fatalf("parseArgs returned error: %v", err)
@@ -47,6 +48,9 @@ func TestParseArgsBuildsConfigOverride(t *testing.T) {
 	assertStringPtr(t, "LogFormat", options.override.LogFormat, "text")
 	if options.platform != "linux/amd64" {
 		t.Fatalf("platform = %q, want linux/amd64", options.platform)
+	}
+	if options.httpAddr != "127.0.0.1:8080" {
+		t.Fatalf("httpAddr = %q, want 127.0.0.1:8080", options.httpAddr)
 	}
 }
 
@@ -69,6 +73,9 @@ func TestParseArgsLeavesUnsetOverridesNil(t *testing.T) {
 	}
 	if options.platform != "" {
 		t.Fatalf("platform = %q, want empty", options.platform)
+	}
+	if options.httpAddr != "" {
+		t.Fatalf("httpAddr = %q, want empty", options.httpAddr)
 	}
 }
 
@@ -233,6 +240,77 @@ func TestCryptoHexIDGeneratorProducesRuntimeSafeIDs(t *testing.T) {
 		}
 		seen[id] = struct{}{}
 	}
+}
+
+func TestListenDaemonAPIUsesUnixSocketByDefault(t *testing.T) {
+	path := filepath.Join(shortTempDir(t), "chamber.sock")
+
+	endpoints, err := listenDaemonAPI(path, "", os.Geteuid())
+	if err != nil {
+		t.Fatalf("listenDaemonAPI returned error: %v", err)
+	}
+	defer cleanupAPIEndpoints(endpoints)
+
+	if len(endpoints) != 1 {
+		t.Fatalf("endpoints = %d, want 1", len(endpoints))
+	}
+	if endpoints[0].name != "unix" {
+		t.Fatalf("endpoint name = %q, want unix", endpoints[0].name)
+	}
+	if got := endpoints[0].listener.Addr().Network(); got != "unix" {
+		t.Fatalf("listener network = %q, want unix", got)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%q) error = %v", path, err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("socket mode = %o, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestListenDaemonAPIAddsTCPDemoListener(t *testing.T) {
+	path := filepath.Join(shortTempDir(t), "chamber.sock")
+
+	endpoints, err := listenDaemonAPI(path, "127.0.0.1:0", os.Geteuid())
+	if err != nil {
+		t.Fatalf("listenDaemonAPI returned error: %v", err)
+	}
+	defer cleanupAPIEndpoints(endpoints)
+
+	if len(endpoints) != 2 {
+		t.Fatalf("endpoints = %d, want 2", len(endpoints))
+	}
+	if endpoints[0].name != "unix" || endpoints[1].name != "tcp" {
+		t.Fatalf("endpoint names = %q, %q; want unix, tcp", endpoints[0].name, endpoints[1].name)
+	}
+	if got := endpoints[1].listener.Addr().Network(); got != "tcp" {
+		t.Fatalf("TCP listener network = %q, want tcp", got)
+	}
+	if got := endpoints[1].listener.Addr().String(); !strings.HasPrefix(got, "127.0.0.1:") {
+		t.Fatalf("TCP listener address = %q, want 127.0.0.1:<port>", got)
+	}
+}
+
+func TestListenDaemonAPIRejectsInvalidTCPAddressAndRemovesSocket(t *testing.T) {
+	path := filepath.Join(shortTempDir(t), "chamber.sock")
+
+	err := mustFailListenDaemonAPI(path, "127.0.0.1:not-a-port")
+	if !strings.Contains(err.Error(), "listen on TCP address") {
+		t.Fatalf("listenDaemonAPI error = %v, want TCP context", err)
+	}
+	if _, statErr := os.Lstat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("socket still exists after TCP listen failure, err=%v", statErr)
+	}
+}
+
+func mustFailListenDaemonAPI(socketPath string, httpAddr string) error {
+	endpoints, err := listenDaemonAPI(socketPath, httpAddr, os.Geteuid())
+	if err == nil {
+		cleanupAPIEndpoints(endpoints)
+		return errors.New("listenDaemonAPI returned nil error")
+	}
+	return err
 }
 
 type localDirectoryManager struct{}

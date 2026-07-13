@@ -37,6 +37,7 @@ const (
 type startupOptions struct {
 	override daemonconfig.Override
 	platform string
+	httpAddr string
 }
 
 func main() {
@@ -113,49 +114,13 @@ func run(ctx context.Context, args []string) error {
 		Platform:      options.platform,
 	}
 
-	if err := prepareUnixSocket(cfg.SocketPath, os.Geteuid()); err != nil {
+	endpoints, err := listenDaemonAPI(cfg.SocketPath, options.httpAddr, os.Geteuid())
+	if err != nil {
 		return err
 	}
-	listener, err := net.Listen("unix", cfg.SocketPath)
-	if err != nil {
-		return fmt.Errorf("listen on unix socket: %w", err)
-	}
-	defer os.Remove(cfg.SocketPath)
-	if err := os.Chmod(cfg.SocketPath, 0600); err != nil {
-		_ = listener.Close()
-		return fmt.Errorf("secure unix socket: %w", err)
-	}
+	defer cleanupAPIEndpoints(endpoints)
 
-	server := &http.Server{
-		Handler: api.NewHandler(service),
-	}
-
-	serveErr := make(chan error, 1)
-	go func() {
-		serveErr <- server.Serve(listener)
-	}()
-	logger.Info("chamberd started")
-
-	select {
-	case err := <-serveErr:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return fmt.Errorf("serve daemon API: %w", err)
-	case <-lifetime.Done():
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
-	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown daemon API: %w", err)
-	}
-	err = <-serveErr
-	if errors.Is(err, http.ErrServerClosed) {
-		logger.Info("chamberd stopped")
-		return nil
-	}
-	return err
+	return serveDaemonAPI(lifetime, endpoints, api.NewHandler(service), logger)
 }
 
 func prepareDaemonPaths(socketPath string, tmpRoot string, directories localfs.DirectoryManager) error {
@@ -205,6 +170,7 @@ func parseArgs(args []string) (startupOptions, error) {
 	fs.StringVar(&logLevel, "log-level", "", "log level")
 	fs.StringVar(&logFormat, "log-format", "", "log format")
 	fs.StringVar(&options.platform, "platform", "", "image platform")
+	fs.StringVar(&options.httpAddr, "http-addr", "", "optional TCP HTTP listen address for browser demos, for example 127.0.0.1:8080")
 
 	if err := fs.Parse(args); err != nil {
 		return startupOptions{}, err
@@ -366,6 +332,132 @@ func validateNonRoot(euid int) error {
 		return fmt.Errorf("chamberd must not run as root")
 	}
 	return nil
+}
+
+type apiEndpoint struct {
+	name     string
+	listener net.Listener
+	server   *http.Server
+	cleanup  func()
+}
+
+type apiServeResult struct {
+	name string
+	err  error
+}
+
+func listenDaemonAPI(socketPath string, httpAddr string, uid int) ([]*apiEndpoint, error) {
+	if err := prepareUnixSocket(socketPath, uid); err != nil {
+		return nil, err
+	}
+	unixListener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("listen on unix socket: %w", err)
+	}
+	if err := os.Chmod(socketPath, 0600); err != nil {
+		_ = unixListener.Close()
+		_ = os.Remove(socketPath)
+		return nil, fmt.Errorf("secure unix socket: %w", err)
+	}
+
+	endpoints := []*apiEndpoint{
+		{
+			name:     "unix",
+			listener: unixListener,
+			cleanup: func() {
+				_ = os.Remove(socketPath)
+			},
+		},
+	}
+
+	if httpAddr == "" {
+		return endpoints, nil
+	}
+
+	tcpListener, err := net.Listen("tcp", httpAddr)
+	if err != nil {
+		cleanupAPIEndpoints(endpoints)
+		return nil, fmt.Errorf("listen on TCP address %s: %w", httpAddr, err)
+	}
+	endpoints = append(endpoints, &apiEndpoint{
+		name:     "tcp",
+		listener: tcpListener,
+	})
+	return endpoints, nil
+}
+
+func serveDaemonAPI(ctx context.Context, endpoints []*apiEndpoint, handler http.Handler, logger *slog.Logger) error {
+	if len(endpoints) == 0 {
+		return fmt.Errorf("at least one API listener is required")
+	}
+
+	serveErr := make(chan apiServeResult, len(endpoints))
+	for _, endpoint := range endpoints {
+		endpoint.server = &http.Server{Handler: handler}
+		go func(endpoint *apiEndpoint) {
+			serveErr <- apiServeResult{
+				name: endpoint.name,
+				err:  endpoint.server.Serve(endpoint.listener),
+			}
+		}(endpoint)
+		logger.Info("chamberd API listening", "transport", endpoint.name, "address", endpoint.listener.Addr().String())
+	}
+	logger.Info("chamberd started")
+
+	select {
+	case result := <-serveErr:
+		shutdownErr := shutdownAPIServers(endpoints)
+		drainErr := drainServeResults(serveErr, len(endpoints)-1)
+		if errors.Is(result.err, http.ErrServerClosed) {
+			return errors.Join(shutdownErr, drainErr)
+		}
+		return errors.Join(fmt.Errorf("serve %s daemon API: %w", result.name, result.err), shutdownErr, drainErr)
+	case <-ctx.Done():
+	}
+
+	shutdownErr := shutdownAPIServers(endpoints)
+	drainErr := drainServeResults(serveErr, len(endpoints))
+	if err := errors.Join(shutdownErr, drainErr); err != nil {
+		return err
+	}
+	logger.Info("chamberd stopped")
+	return nil
+}
+
+func shutdownAPIServers(endpoints []*apiEndpoint) error {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
+	defer cancel()
+
+	var joined error
+	for _, endpoint := range endpoints {
+		if endpoint.server == nil {
+			continue
+		}
+		if err := endpoint.server.Shutdown(shutdownCtx); err != nil {
+			joined = errors.Join(joined, fmt.Errorf("shutdown %s daemon API: %w", endpoint.name, err))
+		}
+	}
+	return joined
+}
+
+func drainServeResults(results <-chan apiServeResult, count int) error {
+	var joined error
+	for i := 0; i < count; i++ {
+		result := <-results
+		if result.err != nil && !errors.Is(result.err, http.ErrServerClosed) {
+			joined = errors.Join(joined, fmt.Errorf("serve %s daemon API: %w", result.name, result.err))
+		}
+	}
+	return joined
+}
+
+func cleanupAPIEndpoints(endpoints []*apiEndpoint) {
+	for _, endpoint := range endpoints {
+		_ = endpoint.listener.Close()
+		if endpoint.cleanup != nil {
+			endpoint.cleanup()
+		}
+	}
 }
 
 func prepareUnixSocket(path string, uid int) error {
