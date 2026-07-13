@@ -123,6 +123,23 @@ func (s *Service) Pull(
 		return PullResult{Operation: chooseOperation(failed, operation)}, failErr
 	}
 
+	existing, err := s.Store.GetImage(ctx, reference)
+	if err == nil && imageLayoutExists(existing.LayoutPath) {
+		completed, err := s.succeedOperation(ctx, operationID)
+		if err != nil {
+			return PullResult{Operation: operation, Image: existing}, s.daemonError(operationID, metadata.ErrMetadataFailed, err)
+		}
+		s.logInfo("pull completed from existing image", "operation_id", operationID)
+		return PullResult{
+			Operation: completed,
+			Image:     existing,
+		}, nil
+	}
+	if err != nil && !errors.Is(err, metadata.ErrNotFound) {
+		failed, failErr := s.failOperation(ctx, operationID, metadata.ErrMetadataFailed, err)
+		return PullResult{Operation: chooseOperation(failed, operation)}, failErr
+	}
+
 	pulled, err := s.Puller.Pull(ctx, chimage.PullRequest{
 		Reference:   reference,
 		Destination: destination,
@@ -544,6 +561,14 @@ func (s *Service) imageDestination(reference string) (string, error) {
 	}
 	sum := sha256.Sum256([]byte(reference))
 	return filepath.Join(s.ImageRoot, hex.EncodeToString(sum[:])), nil
+}
+
+func imageLayoutExists(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(path, "index.json"))
+	return err == nil && !info.IsDir()
 }
 
 func (s *Service) containerPath(containerID string) (string, error) {

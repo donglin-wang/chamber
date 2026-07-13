@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sync"
@@ -49,8 +50,50 @@ func TestPullSuccessCreatesDurableOperationBeforePull(t *testing.T) {
 
 	wantEvents := []string{
 		"create-operation:op-pull:running",
+		"get-image:docker.io/library/alpine:latest",
 		"pull:docker.io/library/alpine:latest",
 		"put-image:docker.io/library/alpine:latest",
+		"transition-operation:op-pull:running->succeeded",
+	}
+	if got := events.snapshot(); !reflect.DeepEqual(got, wantEvents) {
+		t.Fatalf("events = %#v, want %#v", got, wantEvents)
+	}
+}
+
+func TestPullExistingImageCompletesWithoutPulling(t *testing.T) {
+	store := newFakeStore()
+	events := newEventLog()
+	service := newTestService(t, store, events)
+	service.IDs = &sequenceIDs{values: []string{"op-pull"}}
+	existing := testImage(service.ImageRoot)
+	if err := os.MkdirAll(existing.LayoutPath, 0700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(existing.LayoutPath, "index.json"), []byte("{}"), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	store.images["docker.io/library/alpine:latest"] = existing
+	service.Puller = &fakePuller{
+		events: events,
+		err:    errors.New("puller should not be called"),
+	}
+
+	result, err := service.Pull(context.Background(), PullRequest{
+		Reference: "docker.io/library/alpine:latest",
+	})
+	if err != nil {
+		t.Fatalf("Pull() error = %v", err)
+	}
+	if result.Operation.State != metadata.OperationSucceeded {
+		t.Fatalf("Pull() operation state = %q, want %q", result.Operation.State, metadata.OperationSucceeded)
+	}
+	if result.Image.Digest != existing.Digest || result.Image.LayoutPath != existing.LayoutPath {
+		t.Fatalf("Pull() image = %#v, want existing image %#v", result.Image, existing)
+	}
+
+	wantEvents := []string{
+		"create-operation:op-pull:running",
+		"get-image:docker.io/library/alpine:latest",
 		"transition-operation:op-pull:running->succeeded",
 	}
 	if got := events.snapshot(); !reflect.DeepEqual(got, wantEvents) {
@@ -87,6 +130,7 @@ func TestPullMetadataWriteFailureFailsOperation(t *testing.T) {
 
 	wantEvents := []string{
 		"create-operation:op-pull:running",
+		"get-image:docker.io/library/alpine:latest",
 		"pull:docker.io/library/alpine:latest",
 		"put-image:docker.io/library/alpine:latest",
 		"transition-operation:op-pull:running->failed",
