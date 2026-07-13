@@ -16,6 +16,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 var _ chimage.Puller = (*Puller)(nil)
@@ -87,7 +88,13 @@ func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage
 	if err != nil {
 		return chimage.PulledImage{}, fmt.Errorf("write OCI image layout: %w", err)
 	}
-	if err := layoutPath.AppendImage(img, layout.WithPlatform(platform)); err != nil {
+	if err := layoutPath.AppendImage(
+		img,
+		layout.WithPlatform(platform),
+		layout.WithAnnotations(map[string]string{
+			imagespec.AnnotationRefName: ref.Name(),
+		}),
+	); err != nil {
 		return chimage.PulledImage{}, fmt.Errorf("write OCI image layout: %w", err)
 	}
 	if err := verifyOCILayout(tmp); err != nil {

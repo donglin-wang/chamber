@@ -73,6 +73,8 @@ cmd/chamberd/main.go
 internal/api/http.go
 internal/config/config.go
 internal/daemon/service.go
+internal/bundle/bundle.go
+internal/bundle/umoci/provisioner.go
 internal/image/puller.go
 internal/metadata/store.go
 internal/metadata/etcd/store.go
@@ -82,9 +84,10 @@ internal/shared/testutil/memorystore.go
 ```
 
 `internal/daemon` will own the use-case ordering. HTTP handlers decode and
-encode HTTP; they do not pull images, write etcd keys, or invoke `runc`
-directly. Adapters under `internal/image`, `internal/metadata/etcd`, and
-`internal/runtime/runc` deal with outside systems.
+encode HTTP; they do not pull images, write etcd keys, provision bundles, or
+invoke `runc` directly. Adapters under `internal/image`,
+`internal/bundle/umoci`, `internal/metadata/etcd`, and `internal/runtime/runc`
+deal with outside systems.
 
 The package name `runtime` overlaps with Go's standard-library package. That is
 legal, but import Chamber's package with an explicit alias such as `chruntime`
@@ -699,9 +702,70 @@ You are practicing:
 ## Challenge 7: define the OCI runtime boundary and verify `runc`
 
 The runtime adapter has exactly two responsibilities in Phase 1: ensure the
-configured runtime binary exists and start a container from a prepared runtime
-bundle. Bundle preparation is a separate interface because it translates an OCI
-image layout into a runtime bundle before the process starts.
+configured runtime binary exists and start a container from an already
+provisioned runtime bundle. Bundle provisioning is independent from runtime
+execution because it translates an OCI image layout into the files and optional
+mount instructions that the runtime will consume.
+
+Create `internal/bundle/bundle.go` first. This package is deliberately neutral:
+provisioners produce these values, and runtimes consume these values, but this
+package does not know about either side.
+
+If you are starting from the current repo state after Challenge 6,
+`internal/bundle` does not exist yet, while `internal/runtime/runtime.go` already
+exists with the older `PrepareRequest` and `BundlePreparer` types. In this
+challenge, create `internal/bundle/bundle.go`, then update
+`internal/runtime/runtime.go` in place: remove those older preparation types,
+import `internal/bundle`, and make `RunRequest` carry the neutral bundle result.
+
+```go
+package bundle
+
+import "context"
+
+// Mount describes one filesystem mount that must exist before the runtime
+// starts the container. Target is relative to the bundle's rootfs directory;
+// an empty target means the rootfs directory itself.
+type Mount struct {
+	Type    string
+	Source  string
+	Target  string
+	Options []string
+}
+
+type RootFS struct {
+	// Mounts is empty when BundlePath/rootfs is already a populated directory.
+	// Future overlayfs or snapshot-based provisioners can return mounts here
+	// and leave the runtime responsible for applying and later unmounting them.
+	Mounts []Mount
+}
+
+type ProvisionedBundle struct {
+	ContainerID string
+	BundlePath  string
+	RootFS      RootFS
+}
+
+type ProvisionRequest struct {
+	ContainerID string
+	ImageLayout string
+	ImageRef    string
+	Command     []string
+}
+
+type Provisioner interface {
+	// Provision creates the OCI runtime bundle for one container. It owns image
+	// unpacking, spec generation or patching, temporary staging, and the atomic
+	// move into the final bundle directory.
+	Provision(ctx context.Context, request ProvisionRequest) (ProvisionedBundle, error)
+}
+```
+
+For the first implementation, `ProvisionedBundle.RootFS.Mounts` will be empty
+because `umoci` writes the final `rootfs/` directory directly. Keeping the field
+now gives Chamber a containerd-shaped handoff for later overlayfs support:
+provisioning can return mount instructions without making the runtime import the
+provisioner or snapshot implementation.
 
 Create `internal/runtime/runtime.go`:
 
@@ -711,6 +775,8 @@ package runtime
 import (
 	"context"
 	"io"
+
+	chbundle "github.com/donglin-wang/chamber/internal/bundle"
 )
 
 type Binary struct {
@@ -720,12 +786,11 @@ type Binary struct {
 }
 
 type RunRequest struct {
-	ID         string
-	BundlePath string
-	StateRoot  string
-	Stdin      io.Reader
-	Stdout     io.Writer
-	Stderr     io.Writer
+	Bundle    chbundle.ProvisionedBundle
+	StateRoot string
+	Stdin     io.Reader
+	Stdout    io.Writer
+	Stderr    io.Writer
 }
 
 type Process interface {
@@ -744,20 +809,6 @@ type StartResult struct {
 	State   ObservedState
 }
 
-type PrepareRequest struct {
-	ContainerID string
-	ImageLayout string
-	ImageRef    string
-	Command     []string
-}
-
-type BundlePreparer interface {
-	Prepare(
-		ctx context.Context,
-		request PrepareRequest,
-	) (bundlePath string, err error)
-}
-
 type Runtime interface {
 	// Ensure downloads the configured binary from a trusted HTTPS source when
 	// absent, verifies its SHA-256 checksum, and returns its absolute path.
@@ -770,10 +821,21 @@ type Runtime interface {
 }
 ```
 
+`Runtime` depends on `bundle.ProvisionedBundle`, not on
+`bundle.Provisioner`. The daemon service coordinates the two independent
+interfaces.
+
 Implement `Runtime.Ensure` in the `runc` adapter. Pin both a version and an
 expected SHA-256 checksum. Download to a temporary file under `RuntimeBinDir`,
 stream bytes through `sha256.New`, call `Sync`, set mode `0755`, and rename
 into place only after the digest matches.
+
+In the current repo state, `internal/runtime/runc/runtime.go` already contains
+an `Ensure` implementation and `internal/runtime/runc/runtime_test.go` already
+covers the download, checksum, cache-hit, and replacement cases below. Preserve
+that implementation unless it needs small compile fixes after the boundary
+change; the new work in this challenge is mostly the `internal/bundle` contract
+and removing the old preparation interface from `internal/runtime`.
 
 A URL alone is not a trust decision. HTTPS protects transport; the pinned digest
 authenticates the expected artifact. Do not download a checksum and the binary
@@ -803,7 +865,7 @@ You are practicing:
 
 ---
 
-## Challenge 8: turn an image into a rootless runtime bundle
+## Challenge 8: provision a rootless runtime bundle
 
 The pulled OCI image layout is not yet something `runc` can execute:
 
@@ -814,19 +876,28 @@ oci-layout          ---->        rootfs/
 blobs/sha256/...
 ```
 
-Create the concrete bundle preparer in `internal/runtime/runc/runtime.go`:
+Create the concrete bundle provisioner in
+`internal/bundle/umoci/provisioner.go`:
 
 ```go
-type RuncBundlePreparer struct {
+package umoci
+
+import (
+	"context"
+
+	chbundle "github.com/donglin-wang/chamber/internal/bundle"
+)
+
+type Provisioner struct {
 	ContainerRoot string
 	UID            uint32
 	GID            uint32
 }
 
-func (p RuncBundlePreparer) Prepare(
+func (p Provisioner) Provision(
 	ctx context.Context,
-	request chruntime.PrepareRequest,
-) (bundlePath string, err error) {
+	request chbundle.ProvisionRequest,
+) (chbundle.ProvisionedBundle, error) {
 	// TODO:
 	// 1. reject an unsafe container ID;
 	// 2. create a temporary directory below ContainerRoot;
@@ -834,7 +905,9 @@ func (p RuncBundlePreparer) Prepare(
 	// 4. decode config.json into specs.Spec;
 	// 5. apply the rootless changes listed below;
 	// 6. write config.json with mode 0600;
-	// 7. atomically rename the temporary bundle into its final path.
+	// 7. atomically rename the temporary bundle into its final path;
+	// 8. return chbundle.ProvisionedBundle with BundlePath set and
+	//    RootFS.Mounts empty.
 	panic("TODO")
 }
 ```
@@ -869,10 +942,14 @@ func patchRootlessSpec(
 
 Assertions should inspect the decoded struct, not compare pretty-printed JSON.
 
-Keep the `context.Context` parameter on bundle preparation so later
-instrumentation can correlate unpack and spec-patching work. Do not log or emit
-the whole `config.json`; it may contain environment variables or command
-arguments.
+For the first path, `RootFS.Mounts` stays empty because the provisioner writes a
+real `rootfs/` directory. A later overlayfs provisioner can instead write
+`config.json`, create an empty `rootfs/` mount point, and return one or more
+mount descriptions for the runtime to apply before invoking `runc`.
+
+Keep the `context.Context` parameter on provisioning so later instrumentation can
+correlate unpack and spec-patching work. Do not log or emit the whole
+`config.json`; it may contain environment variables or command arguments.
 
 You are practicing:
 
@@ -892,14 +969,20 @@ not prove that `runc` created the container's init process.
 Invoke:
 
 ```text
-runc --root <StateRoot> run <ID>
+runc --root <StateRoot> run <container-id>
 ```
 
-Set `cmd.Dir` to the bundle path. Connect the provided standard streams. After
-`cmd.Start`, poll:
+Use `request.Bundle.ContainerID` as the runtime container ID and set `cmd.Dir` to
+`request.Bundle.BundlePath`. If `request.Bundle.RootFS.Mounts` is non-empty,
+create `<BundlePath>/rootfs`, apply those mounts before invoking `runc`, and
+make the returned process handle responsible for unmounting after the container
+exits. If startup fails before a process handle is returned, clean up any mounts
+before returning the error.
+
+Connect the provided standard streams. After `cmd.Start`, poll:
 
 ```text
-runc --root <StateRoot> state <ID>
+runc --root <StateRoot> state <container-id>
 ```
 
 Return only when one of these happens:
@@ -953,9 +1036,10 @@ import (
 	"log/slog"
 	"time"
 
-	chimage "github.com/donglinwang/chamber/internal/image"
-	"github.com/donglinwang/chamber/internal/metadata"
-	chruntime "github.com/donglinwang/chamber/internal/runtime"
+	chbundle "github.com/donglin-wang/chamber/internal/bundle"
+	chimage "github.com/donglin-wang/chamber/internal/image"
+	"github.com/donglin-wang/chamber/internal/metadata"
+	chruntime "github.com/donglin-wang/chamber/internal/runtime"
 )
 
 type Clock interface {
@@ -975,7 +1059,7 @@ type Service struct {
 	Puller      chimage.Puller
 	Runtime     chruntime.Runtime
 	Binary      chruntime.Binary
-	Bundles     chruntime.BundlePreparer
+	Provisioner chbundle.Provisioner
 	Clock       Clock
 	IDs         IDGenerator
 	Lifetime    context.Context
@@ -1054,10 +1138,12 @@ func (s *Service) Run(
 5. load the pulled image or fail the operation with `image_not_found`;
 6. create a durable container record in `creating`, copying operation and trace
    correlation fields;
-7. prepare the runtime bundle;
+7. provision the runtime bundle, store the returned bundle path on the container
+   record, and keep the full `ProvisionedBundle` for runtime start;
 8. transition `creating -> starting`;
 9. open stdout and stderr files below the container directory;
-10. call `Runtime.Run` with the daemon-lifetime context;
+10. call `Runtime.Run` with the daemon-lifetime context and the provisioned
+    bundle;
 11. on a start error, fail both the container and operation records;
 12. if the observed state is `running`, transition `starting -> running`;
 13. if the process already exited, collect its cached result and transition
@@ -1068,8 +1154,8 @@ func (s *Service) Run(
     finish the operation as `succeeded` for zero or `failed` for non-zero or
     runtime failure.
 
-If bundle preparation fails, transition `creating -> failed`; never silently
-delete the durable record.
+If provisioning fails, transition `creating -> failed`; never silently delete the
+durable record or leave a final-looking bundle directory behind.
 
 Use `Service.Lifetime`, not the HTTP request context, when calling
 `Runtime.Run`. The server cancels the request context as soon as the response
@@ -1099,7 +1185,7 @@ Test against fakes first. Assert call order and durable states for:
 - successful pull;
 - pull succeeds on disk but metadata write fails;
 - missing image on run;
-- bundle preparation fails;
+- bundle provisioning fails;
 - runtime start fails;
 - runtime starts and exits zero;
 - runtime starts and exits non-zero;
@@ -1110,7 +1196,9 @@ For each case, also assert:
 - an operation record exists before the first fake side effect;
 - the operation reaches the correct terminal state and stable error code;
 - the operation ID appears in the container record and correlated log;
-- request contexts reach the puller, bundle preparer, runtime, and store fakes;
+- request contexts reach the puller, provisioner, runtime, and store fakes;
+- the runtime fake receives the exact `ProvisionedBundle` returned by the
+  provisioner, including any rootfs mounts;
 - fake correlation IDs, when supplied, are copied to operation and container
   records;
 - command arguments and injected fake credentials appear in no log.
@@ -1131,7 +1219,7 @@ You are practicing:
 
 HTTP is a transport adapter. It should decode, validate, call the service,
 choose a public status code, and encode a response. It should not know how to
-pull an image, write etcd, prepare bundles, or execute `runc`.
+pull an image, write etcd, provision bundles, or execute `runc`.
 
 Create `internal/api/http.go`:
 
@@ -1143,8 +1231,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/donglinwang/chamber/internal/daemon"
-	"github.com/donglinwang/chamber/internal/metadata"
+	"github.com/donglin-wang/chamber/internal/daemon"
+	"github.com/donglin-wang/chamber/internal/metadata"
 )
 
 type PullRequest struct {
@@ -1296,7 +1384,7 @@ parse configuration
   -> check rootless user-namespace prerequisites
   -> open embedded etcd
   -> ensure and verify the runtime binary
-  -> construct puller, bundle preparer, service, and HTTP handler
+  -> construct puller, provisioner, service, and HTTP handler
   -> remove only a stale socket owned by this user
   -> net.Listen("unix", SocketPath)
   -> chmod socket 0600

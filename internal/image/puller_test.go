@@ -13,6 +13,8 @@ import (
 	"github.com/donglin-wang/chamber/internal/image/gocontainerregistry"
 	"github.com/donglin-wang/chamber/internal/shared/localfs"
 	"github.com/donglin-wang/chamber/internal/shared/testutil"
+	"github.com/google/go-containerregistry/pkg/v1/layout"
+	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 const busyboxReference = "index.docker.io/library/busybox:latest"
@@ -163,6 +165,7 @@ func assertPullSuccessReturnsDigestSizeAndUTCTime(t *testing.T, newPuller puller
 	if _, err := os.Stat(filepath.Join(destination, "index.json")); err != nil {
 		t.Fatalf("final OCI layout missing index.json: %v", err)
 	}
+	assertLayoutHasImageRef(t, destination, image.reference)
 }
 
 type imageFixture struct {
@@ -189,4 +192,27 @@ func privateTempDir(t *testing.T) string {
 		t.Fatalf("Chmod(%q) error = %v", path, err)
 	}
 	return path
+}
+
+func assertLayoutHasImageRef(t *testing.T, path string, reference string) {
+	t.Helper()
+
+	layoutPath, err := layout.FromPath(path)
+	if err != nil {
+		t.Fatalf("layout.FromPath(%q) error = %v", path, err)
+	}
+	index, err := layoutPath.ImageIndex()
+	if err != nil {
+		t.Fatalf("ImageIndex() error = %v", err)
+	}
+	manifest, err := index.IndexManifest()
+	if err != nil {
+		t.Fatalf("IndexManifest() error = %v", err)
+	}
+	for _, descriptor := range manifest.Manifests {
+		if descriptor.Annotations[imagespec.AnnotationRefName] == reference {
+			return
+		}
+	}
+	t.Fatalf("OCI layout ref annotation %q not found for reference %q", imagespec.AnnotationRefName, reference)
 }

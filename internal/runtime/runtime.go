@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"io"
+
+	chbundle "github.com/donglin-wang/chamber/internal/bundle"
 )
 
 type Binary struct {
@@ -12,12 +14,11 @@ type Binary struct {
 }
 
 type RunRequest struct {
-	ID         string
-	BundlePath string
-	StateRoot  string
-	Stdin      io.Reader
-	Stdout     io.Writer
-	Stderr     io.Writer
+	Bundle    chbundle.ProvisionedBundle
+	StateRoot string
+	Stdin     io.Reader
+	Stdout    io.Writer
+	Stderr    io.Writer
 }
 
 type Process interface {
@@ -34,20 +35,6 @@ const (
 type StartResult struct {
 	Process Process
 	State   ObservedState
-}
-
-type PrepareRequest struct {
-	ContainerID string
-	ImageLayout string
-	ImageRef    string
-	Command     []string
-}
-
-type BundlePreparer interface {
-	Prepare(
-		ctx context.Context,
-		request PrepareRequest,
-	) (bundlePath string, err error)
 }
 
 type Runtime interface {
