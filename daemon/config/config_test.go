@@ -3,14 +3,16 @@ package config
 import (
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/donglin-wang/chamber/daemon/metadata"
+	chbundle "github.com/donglin-wang/chamber/internal/bundle"
 	chimage "github.com/donglin-wang/chamber/internal/image"
-	"github.com/donglin-wang/chamber/internal/metadata"
 	chruntime "github.com/donglin-wang/chamber/internal/runtime"
 )
 
@@ -29,6 +31,8 @@ func TestOverrideFieldsMatchConfigFields(t *testing.T) {
 
 		wantType := reflect.PointerTo(configField.Type)
 		switch name {
+		case "Bundle":
+			wantType = reflect.TypeOf(chbundle.Override{})
 		case "Image":
 			wantType = reflect.TypeOf(chimage.Override{})
 		case "Runtime":
@@ -59,7 +63,7 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 		importPath := strings.Trim(importSpec.Path.Value, `"`)
 		switch importPath {
 		case "github.com/donglin-wang/chamber/internal/image/gocontainerregistry",
-			"github.com/donglin-wang/chamber/internal/metadata/etcd",
+			"github.com/donglin-wang/chamber/daemon/metadata/etcd",
 			"github.com/donglin-wang/chamber/internal/runtime/runc",
 			"github.com/donglin-wang/chamber/internal/shared/localfs":
 			t.Fatalf("config package must import generic package boundaries and not filesystem setup %q", importPath)
@@ -80,9 +84,12 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 
 	root := filepath.Join(xdgDataHome, "chamber")
 	want := Config{
-		SocketPath:    filepath.Join(root, "run", "chamber.sock"),
-		TmpRoot:       filepath.Join(root, "run", "tmp"),
-		ContainerRoot: filepath.Join(root, "containers"),
+		HTTPAddr:   "127.0.0.1:8080",
+		SocketPath: filepath.Join(root, "run", "chamber.sock"),
+		TmpRoot:    filepath.Join(root, "run", "tmp"),
+		Bundle: chbundle.Config{
+			Root: filepath.Join(root, "bundles"),
+		},
 		Image: chimage.Config{
 			Root: filepath.Join(root, "images"),
 		},
@@ -120,6 +127,9 @@ func TestLoadFallsBackToHomeWhenXDGDataHomeIsUnset(t *testing.T) {
 	if cfg.Image.Root != filepath.Join(root, "images") {
 		t.Fatalf("Image.Root = %q, want %q", cfg.Image.Root, filepath.Join(root, "images"))
 	}
+	if cfg.Bundle.Root != filepath.Join(root, "bundles") {
+		t.Fatalf("Bundle.Root = %q, want %q", cfg.Bundle.Root, filepath.Join(root, "bundles"))
+	}
 	if cfg.SocketPath != filepath.Join(root, "run", "chamber.sock") {
 		t.Fatalf("SocketPath = %q, want %q", cfg.SocketPath, filepath.Join(root, "run", "chamber.sock"))
 	}
@@ -147,9 +157,12 @@ func TestLoadPanicsWhenRootPathCannotBeDerived(t *testing.T) {
 
 func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 	defaultConfig := Config{
-		SocketPath:    "default/run/chamber.sock",
-		TmpRoot:       "default/tmp",
-		ContainerRoot: "default/containers",
+		HTTPAddr:   "127.0.0.1:8080",
+		SocketPath: "default/run/chamber.sock",
+		TmpRoot:    "default/tmp",
+		Bundle: chbundle.Config{
+			Root: "default/bundles",
+		},
 		Image: chimage.Config{
 			Root: "default/images",
 		},
@@ -174,9 +187,12 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		LogFormat: "text",
 	}
 	override := Override{
-		SocketPath:    ptr("override/run/chamber.sock"),
-		TmpRoot:       ptr("override/tmp"),
-		ContainerRoot: ptr("override/containers"),
+		HTTPAddr:   ptr("127.0.0.1:9090"),
+		SocketPath: ptr("override/run/chamber.sock"),
+		TmpRoot:    ptr("override/tmp"),
+		Bundle: chbundle.Override{
+			Root: ptr("override/bundles"),
+		},
 		Image: chimage.Override{
 			Root: ptr("override/images"),
 		},
@@ -207,9 +223,12 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 	}
 
 	want := Config{
-		SocketPath:    mustAbs(t, "override/run/chamber.sock"),
-		TmpRoot:       mustAbs(t, "override/tmp"),
-		ContainerRoot: mustAbs(t, "override/containers"),
+		HTTPAddr:   "127.0.0.1:9090",
+		SocketPath: mustAbs(t, "override/run/chamber.sock"),
+		TmpRoot:    mustAbs(t, "override/tmp"),
+		Bundle: chbundle.Config{
+			Root: mustAbs(t, "override/bundles"),
+		},
 		Image: chimage.Config{
 			Root: mustAbs(t, "override/images"),
 		},
@@ -241,9 +260,12 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 	root := t.TempDir()
 	defaultConfig := Config{
-		SocketPath:    filepath.Join(root, "default", "run", "chamber.sock"),
-		TmpRoot:       filepath.Join(root, "default", "tmp"),
-		ContainerRoot: filepath.Join(root, "default", "containers"),
+		HTTPAddr:   "127.0.0.1:8080",
+		SocketPath: filepath.Join(root, "default", "run", "chamber.sock"),
+		TmpRoot:    filepath.Join(root, "default", "tmp"),
+		Bundle: chbundle.Config{
+			Root: filepath.Join(root, "default", "bundles"),
+		},
 		Image: chimage.Config{
 			Root: filepath.Join(root, "default", "images"),
 		},
@@ -275,6 +297,56 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 
 	if !reflect.DeepEqual(cfg, defaultConfig) {
 		t.Fatalf("Resolve() config mismatch:\n got: %#v\nwant: %#v", cfg, defaultConfig)
+	}
+}
+
+func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chamberd.json")
+	content := `{
+		"http_addr": "127.0.0.1:9090",
+		"tmp_root": "file/tmp",
+		"bundle": { "root": "file/bundles" },
+		"image": { "root": "file/images" },
+		"runtime": {
+			"runtime_root": "file/runtime",
+			"name": "crun"
+		},
+		"open_telemetry_metrics_export_interval": 30000000000,
+		"log_level": "debug"
+	}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	cfg, err := LoadFile(path, Override{
+		HTTPAddr: ptr("127.0.0.1:7070"),
+	}, mapGetenv(map[string]string{
+		"HOME": t.TempDir(),
+	}))
+	if err != nil {
+		t.Fatalf("LoadFile returned error: %v", err)
+	}
+
+	if cfg.HTTPAddr != "127.0.0.1:7070" {
+		t.Fatalf("HTTPAddr = %q, want command-line override", cfg.HTTPAddr)
+	}
+	if cfg.TmpRoot != mustAbs(t, "file/tmp") {
+		t.Fatalf("TmpRoot = %q, want config file value", cfg.TmpRoot)
+	}
+	if cfg.Bundle.Root != mustAbs(t, "file/bundles") {
+		t.Fatalf("Bundle.Root = %q, want config file value", cfg.Bundle.Root)
+	}
+	if cfg.Image.Root != mustAbs(t, "file/images") {
+		t.Fatalf("Image.Root = %q, want config file value", cfg.Image.Root)
+	}
+	if cfg.Runtime.Name != "crun" {
+		t.Fatalf("Runtime.Name = %q, want crun", cfg.Runtime.Name)
+	}
+	if cfg.OpenTelemetryMetricsExportInterval != 30*time.Second {
+		t.Fatalf("OpenTelemetryMetricsExportInterval = %s, want 30s", cfg.OpenTelemetryMetricsExportInterval)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Fatalf("LogLevel = %q, want debug", cfg.LogLevel)
 	}
 }
 

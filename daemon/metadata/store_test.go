@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/donglin-wang/chamber/internal/metadata"
-	metadataetcd "github.com/donglin-wang/chamber/internal/metadata/etcd"
+	"github.com/donglin-wang/chamber/daemon/metadata"
+	metadataetcd "github.com/donglin-wang/chamber/daemon/metadata/etcd"
+	"github.com/donglin-wang/chamber/daemon/metadata/memory"
 	"github.com/donglin-wang/chamber/internal/shared/localfs"
-	"github.com/donglin-wang/chamber/internal/shared/testutil"
 )
 
 type traceContextKey struct{}
@@ -77,7 +77,7 @@ func TestStoreContract(t *testing.T) {
 	tests := map[string]func(t *testing.T) metadata.Store{
 		"memory": func(t *testing.T) metadata.Store {
 			t.Helper()
-			return testutil.NewMemoryStore()
+			return memory.NewMemoryStore()
 		},
 		"etcd": func(t *testing.T) metadata.Store {
 			t.Helper()
@@ -108,6 +108,7 @@ func TestStoreContract(t *testing.T) {
 			assertImageRoundTrip(t, store)
 			assertOperationLifecycle(t, store)
 			assertContainerLifecycle(t, store)
+			assertTerminalHelpers(t, store)
 			assertConcurrentOperationCreate(t, store)
 			assertConcurrentOperationTransition(t, store)
 			assertConcurrentTerminalOperationTransition(t, store)
@@ -216,6 +217,68 @@ func assertOperationLifecycle(t *testing.T, store metadata.Store) {
 	})
 	if !errors.Is(err, metadata.ErrStateConflict) {
 		t.Fatalf("TransitionOperation(invalid transition) error = %v, want %v", err, metadata.ErrStateConflict)
+	}
+}
+
+func assertTerminalHelpers(t *testing.T, store metadata.Store) {
+	t.Helper()
+
+	ctx := context.Background()
+	startedAt := time.Date(2026, 7, 11, 10, 12, 0, 0, time.UTC)
+	succeeding := metadata.Operation{
+		ID:         "op-helper-succeed",
+		Kind:       metadata.PullOperation,
+		State:      metadata.OperationRunning,
+		ResourceID: "docker.io/library/alpine:latest",
+		StartedAt:  startedAt,
+		UpdatedAt:  startedAt,
+	}
+	failing := metadata.Operation{
+		ID:         "op-helper-fail",
+		Kind:       metadata.RunOperation,
+		State:      metadata.OperationRunning,
+		ResourceID: "container-helper-fail",
+		StartedAt:  startedAt,
+		UpdatedAt:  startedAt,
+	}
+	container := metadata.Container{
+		ID:          failing.ResourceID,
+		OperationID: failing.ID,
+		ImageDigest: "sha256:helper",
+		ImageRef:    "docker.io/library/alpine:latest",
+		BundlePath:  "/tmp/chamber/bundles/container-helper-fail",
+		Runtime:     "runc",
+		State:       metadata.ContainerStarting,
+		CreatedAt:   startedAt,
+		UpdatedAt:   startedAt,
+	}
+	if err := store.CreateOperation(ctx, succeeding); err != nil {
+		t.Fatalf("CreateOperation(succeeding) error = %v", err)
+	}
+	if err := store.CreateOperation(ctx, failing); err != nil {
+		t.Fatalf("CreateOperation(failing) error = %v", err)
+	}
+	if err := store.CreateContainer(ctx, container); err != nil {
+		t.Fatalf("CreateContainer() error = %v", err)
+	}
+
+	succeeded, err := store.SucceedOperation(ctx, succeeding.ID)
+	if err != nil {
+		t.Fatalf("SucceedOperation() error = %v", err)
+	}
+	if succeeded.State != metadata.OperationSucceeded || succeeded.FinishedAt == nil {
+		t.Fatalf("SucceedOperation() = %#v, want succeeded with FinishedAt", succeeded)
+	}
+
+	failedContainer, failedOperation, err := store.FailContainerAndOperation(ctx, container.ID, metadata.ContainerStarting, failing.ID, metadata.ErrRuntimeStartFailed)
+	if err != nil {
+		t.Fatalf("FailContainerAndOperation() error = %v", err)
+	}
+	if failedContainer.State != metadata.ContainerFailed || failedContainer.ErrorCode != metadata.ErrRuntimeStartFailed {
+		t.Fatalf("FailContainerAndOperation() container = %#v, want failed runtime_start_failed", failedContainer)
+	}
+	if failedOperation.State != metadata.OperationFailed || failedOperation.ErrorCode != metadata.ErrRuntimeStartFailed {
+		t.Fatalf("FailContainerAndOperation() operation = %#v, want failed runtime_start_failed", failedOperation)
 	}
 }
 

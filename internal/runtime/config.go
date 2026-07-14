@@ -17,12 +17,12 @@ type Config struct {
 }
 
 type Override struct {
-	RuntimeRoot   *string
-	RuntimeBinDir *string
-	Name          *string
-	Version       *string
-	URL           *string
-	SHA256        *string
+	RuntimeRoot   *string `json:"runtime_root,omitempty"`
+	RuntimeBinDir *string `json:"runtime_bin_dir,omitempty"`
+	Name          *string `json:"name,omitempty"`
+	Version       *string `json:"version,omitempty"`
+	URL           *string `json:"url,omitempty"`
+	SHA256        *string `json:"sha256,omitempty"`
 }
 
 func DefaultConfig(rootPath string) Config {

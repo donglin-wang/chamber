@@ -14,11 +14,8 @@ type Binary struct {
 }
 
 type RunRequest struct {
-	Bundle    chbundle.ProvisionedBundle
-	StateRoot string
-	Stdin     io.Reader
-	Stdout    io.Writer
-	Stderr    io.Writer
+	Bundle chbundle.ProvisionedBundle
+	Stdin  io.Reader
 }
 
 type Process interface {
@@ -38,12 +35,18 @@ type StartResult struct {
 }
 
 type Runtime interface {
-	// Ensure downloads the configured binary from a trusted HTTPS source when
-	// absent, verifies its SHA-256 checksum, and returns its absolute path.
+	// Ensure prepares the runtime implementation for future Run calls.
 	Ensure(ctx context.Context) (Binary, error)
 
 	// Run starts the OCI runtime process and returns only after the child has
 	// either reached "running" or exited before that state could be observed.
 	// Wait observes or returns its cached exit result.
-	Run(ctx context.Context, binary Binary, request RunRequest) (StartResult, error)
+	Run(ctx context.Context, request RunRequest) (StartResult, error)
+
+	ReadLog(containerID string, stream string) ([]byte, error)
 }
+
+const (
+	StdoutLogStream = "stdout"
+	StderrLogStream = "stderr"
+)

@@ -1,7 +1,6 @@
 package runc
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -305,19 +304,13 @@ esac
 `)
 	bundlePath := privateTempDir(t)
 	stateRoot := filepath.Join(privateTempDir(t), "state")
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-
-	runtime := New(chruntime.Config{}, nil)
-	result, err := runtime.Run(context.Background(), chruntime.Binary{Path: binaryPath}, chruntime.RunRequest{
+	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
+	result, err := runtime.Run(context.Background(), chruntime.RunRequest{
 		Bundle: chbundle.ProvisionedBundle{
 			ContainerID: "container-1",
 			BundlePath:  bundlePath,
 		},
-		StateRoot: stateRoot,
-		Stdin:     strings.NewReader("stdin for fake runc"),
-		Stdout:    &stdout,
-		Stderr:    &stderr,
+		Stdin: strings.NewReader("stdin for fake runc"),
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -330,12 +323,6 @@ esac
 	assertLines(t, filepath.Join(logDir, "run-args"), []string{"--root", stateRoot, "run", "container-1"})
 	assertLines(t, filepath.Join(logDir, "state-args"), []string{"--root", stateRoot, "state", "container-1"})
 	assertFileContent(t, filepath.Join(logDir, "stdin"), "stdin for fake runc")
-	if stdout.String() != "stdout from fake runc" {
-		t.Fatalf("stdout = %q, want fake runc stdout", stdout.String())
-	}
-	if stderr.String() != "stderr from fake runc" {
-		t.Fatalf("stderr = %q, want fake runc stderr", stderr.String())
-	}
 
 	if err := os.WriteFile(filepath.Join(logDir, "release"), []byte("ok"), 0600); err != nil {
 		t.Fatalf("WriteFile(release) error = %v", err)
@@ -346,6 +333,24 @@ esac
 	}
 	if exitCode != 0 {
 		t.Fatalf("Process.Wait() exit code = %d, want 0", exitCode)
+	}
+	stdoutContent, err := runtime.ReadLog("container-1", chruntime.StdoutLogStream)
+	if err != nil {
+		t.Fatalf("ReadLog(stdout) error = %v", err)
+	}
+	if string(stdoutContent) != "stdout from fake runc" {
+		t.Fatalf("ReadLog(stdout) = %q, want fake runc stdout", string(stdoutContent))
+	}
+	stderrContent, err := runtime.ReadLog("container-1", chruntime.StderrLogStream)
+	if err != nil {
+		t.Fatalf("ReadLog(stderr) error = %v", err)
+	}
+	if string(stderrContent) != "stderr from fake runc" {
+		t.Fatalf("ReadLog(stderr) = %q, want fake runc stderr", string(stderrContent))
+	}
+	stdoutPath := filepath.Join(stateRoot, "logs", "container-1", "stdout.log")
+	if _, err := os.Stat(stdoutPath); err != nil {
+		t.Fatalf("Stat(%q) error = %v", stdoutPath, err)
 	}
 }
 
@@ -365,13 +370,12 @@ state)
 esac
 `)
 
-	runtime := New(chruntime.Config{}, nil)
-	result, err := runtime.Run(context.Background(), chruntime.Binary{Path: binaryPath}, chruntime.RunRequest{
+	runtime := runtimeWithBinary(t, binaryPath, privateTempDir(t))
+	result, err := runtime.Run(context.Background(), chruntime.RunRequest{
 		Bundle: chbundle.ProvisionedBundle{
 			ContainerID: "short.job",
 			BundlePath:  privateTempDir(t),
 		},
-		StateRoot: privateTempDir(t),
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -424,13 +428,12 @@ state)
 esac
 `)
 
-	runtime := New(chruntime.Config{}, nil)
-	result, err := runtime.Run(context.Background(), chruntime.Binary{Path: binaryPath}, chruntime.RunRequest{
+	runtime := runtimeWithBinary(t, binaryPath, privateTempDir(t))
+	result, err := runtime.Run(context.Background(), chruntime.RunRequest{
 		Bundle: chbundle.ProvisionedBundle{
 			ContainerID: "slow-start",
 			BundlePath:  privateTempDir(t),
 		},
-		StateRoot: privateTempDir(t),
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -463,12 +466,11 @@ func TestRunRejectsUnsafeContainerID(t *testing.T) {
 	for _, containerID := range invalidContainerIDs {
 		t.Run(containerID, func(t *testing.T) {
 			runtime := New(chruntime.Config{}, nil)
-			_, err := runtime.Run(context.Background(), chruntime.Binary{Path: "unused"}, chruntime.RunRequest{
+			_, err := runtime.Run(context.Background(), chruntime.RunRequest{
 				Bundle: chbundle.ProvisionedBundle{
 					ContainerID: containerID,
 					BundlePath:  privateTempDir(t),
 				},
-				StateRoot: privateTempDir(t),
 			})
 			if err == nil {
 				t.Fatal("Run() error = nil, want invalid container ID error")
@@ -482,7 +484,7 @@ func TestRunRejectsUnsafeContainerID(t *testing.T) {
 
 func TestRunRejectsRootFSMountsForNow(t *testing.T) {
 	runtime := New(chruntime.Config{}, nil)
-	_, err := runtime.Run(context.Background(), chruntime.Binary{Path: "unused"}, chruntime.RunRequest{
+	_, err := runtime.Run(context.Background(), chruntime.RunRequest{
 		Bundle: chbundle.ProvisionedBundle{
 			ContainerID: "with-mounts",
 			BundlePath:  privateTempDir(t),
@@ -494,13 +496,25 @@ func TestRunRejectsRootFSMountsForNow(t *testing.T) {
 				}},
 			},
 		},
-		StateRoot: privateTempDir(t),
 	})
 	if err == nil {
 		t.Fatal("Run() error = nil, want unsupported mounts error")
 	}
 	if !strings.Contains(err.Error(), "mounts are not yet supported") {
 		t.Fatalf("Run() error = %v, want unsupported mounts message", err)
+	}
+}
+
+func TestReadLogRejectsInvalidInput(t *testing.T) {
+	runtime := New(chruntime.Config{
+		RuntimeRoot: privateTempDir(t),
+	}, localfs.NewDirectoryManager())
+
+	if _, err := runtime.ReadLog("container-logs", "stdin"); err == nil {
+		t.Fatal("ReadLog(unsupported) error = nil, want error")
+	}
+	if _, err := runtime.ReadLog("", chruntime.StdoutLogStream); err == nil {
+		t.Fatal("ReadLog(empty container ID) error = nil, want error")
 	}
 }
 
@@ -517,6 +531,23 @@ func privateTempDir(t *testing.T) string {
 		t.Fatalf("Chmod(%q) error = %v", path, err)
 	}
 	return path
+}
+
+func runtimeWithBinary(t *testing.T, binaryPath string, stateRoot string) *Runtime {
+	t.Helper()
+
+	content, err := os.ReadFile(binaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", binaryPath, err)
+	}
+	return New(chruntime.Config{
+		RuntimeBinDir: filepath.Dir(binaryPath),
+		RuntimeRoot:   stateRoot,
+		Name:          filepath.Base(binaryPath),
+		Version:       "test-version",
+		URL:           "https://example.invalid/runc",
+		SHA256:        sha256Hex(content),
+	}, localfs.NewDirectoryManager())
 }
 
 func writeFakeRunc(t *testing.T, logDir string, body string) string {

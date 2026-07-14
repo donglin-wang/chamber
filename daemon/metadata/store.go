@@ -136,6 +136,8 @@ type Store interface {
 
 	CreateOperation(ctx context.Context, operation Operation) error
 	GetOperation(ctx context.Context, id string) (Operation, error)
+	SucceedOperation(ctx context.Context, id string) (Operation, error)
+	FailOperation(ctx context.Context, id string, code ErrorCode) (Operation, error)
 	TransitionOperation(
 		ctx context.Context,
 		id string,
@@ -152,6 +154,13 @@ type Store interface {
 		from ContainerState,
 		update ContainerUpdate,
 	) (Container, error)
+	FailContainerAndOperation(
+		ctx context.Context,
+		containerID string,
+		from ContainerState,
+		operationID string,
+		code ErrorCode,
+	) (Container, Operation, error)
 
 	Close() error
 }

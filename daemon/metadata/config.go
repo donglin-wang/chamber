@@ -1,4 +1,4 @@
-package image
+package metadata
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ type Override struct {
 
 func DefaultConfig(rootPath string) Config {
 	return Config{
-		Root: filepath.Join(rootPath, "images"),
+		Root: filepath.Join(rootPath, "metadata"),
 	}
 }
 
@@ -27,7 +27,7 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	var err error
 	defaultConfig.Root, err = absPath(defaultConfig.Root)
 	if err != nil {
-		return Config{}, fmt.Errorf("resolve image root: %w", err)
+		return Config{}, fmt.Errorf("resolve metadata root: %w", err)
 	}
 
 	return defaultConfig, nil

@@ -82,57 +82,37 @@ func (r *Runtime) Ensure(ctx context.Context) (chruntime.Binary, error) {
 	if r.directoryManager == nil {
 		return chruntime.Binary{}, fmt.Errorf("directory manager is required")
 	}
-	if config.Name == "" || config.Version == "" || config.URL == "" || config.SHA256 == "" {
-		return chruntime.Binary{}, fmt.Errorf("runc runtime requires name, version, url, and sha256")
-	}
-	if config.RuntimeBinDir == "" {
-		return chruntime.Binary{}, fmt.Errorf("runtime bin dir is required")
+	if config.Version == "" || config.URL == "" || config.SHA256 == "" {
+		return chruntime.Binary{}, fmt.Errorf("runc runtime requires version, url, and sha256")
 	}
 	expectedDigest, err := parseSHA256(config.SHA256)
 	if err != nil {
 		return chruntime.Binary{}, err
 	}
 
-	binDir, err := absPath(config.RuntimeBinDir)
+	binary, err := r.configuredBinary()
 	if err != nil {
-		return chruntime.Binary{}, fmt.Errorf("resolve runtime bin dir: %w", err)
+		return chruntime.Binary{}, err
 	}
+	binDir := filepath.Dir(binary.Path)
 	if err := r.directoryManager.EnsurePrivateDir(binDir); err != nil {
 		return chruntime.Binary{}, fmt.Errorf("prepare runtime bin dir: %w", err)
 	}
 
-	binaryPath := filepath.Join(binDir, config.Name)
-	if ok, err := fileMatchesSHA256(binaryPath, expectedDigest); err != nil {
+	if ok, err := fileMatchesSHA256(binary.Path, expectedDigest); err != nil {
 		return chruntime.Binary{}, fmt.Errorf("verify existing runtime binary: %w", err)
 	} else if ok {
-		return chruntime.Binary{
-			Name:    config.Name,
-			Version: config.Version,
-			Path:    binaryPath,
-		}, nil
+		return binary, nil
 	}
 
-	if err := r.download(ctx, config.URL, expectedDigest, binDir, binaryPath); err != nil {
+	if err := r.download(ctx, config.URL, expectedDigest, binDir, binary.Path); err != nil {
 		return chruntime.Binary{}, err
 	}
 
-	return chruntime.Binary{
-		Name:    config.Name,
-		Version: config.Version,
-		Path:    binaryPath,
-	}, nil
+	return binary, nil
 }
 
-func (r *Runtime) Run(ctx context.Context, binary chruntime.Binary, request chruntime.RunRequest) (chruntime.StartResult, error) {
-	if binary.Path == "" {
-		return chruntime.StartResult{}, fmt.Errorf("runtime binary path is required")
-	}
-	if request.StateRoot == "" {
-		return chruntime.StartResult{}, fmt.Errorf("runtime state root is required")
-	}
-	if err := r.directoryManagerOrDefault().EnsurePrivateDir(request.StateRoot); err != nil {
-		return chruntime.StartResult{}, fmt.Errorf("prepare runtime state root: %w", err)
-	}
+func (r *Runtime) Run(ctx context.Context, request chruntime.RunRequest) (chruntime.StartResult, error) {
 	if request.Bundle.BundlePath == "" {
 		return chruntime.StartResult{}, fmt.Errorf("runtime bundle path is required")
 	}
@@ -143,25 +123,142 @@ func (r *Runtime) Run(ctx context.Context, binary chruntime.Binary, request chru
 	if len(request.Bundle.RootFS.Mounts) > 0 {
 		return chruntime.StartResult{}, fmt.Errorf("runtime bundle rootfs mounts are not yet supported by runc Run")
 	}
+	binary, err := r.configuredBinary()
+	if err != nil {
+		return chruntime.StartResult{}, err
+	}
+	stateRoot, err := r.stateRoot()
+	if err != nil {
+		return chruntime.StartResult{}, err
+	}
+	directoryManager, err := r.requireDirectoryManager()
+	if err != nil {
+		return chruntime.StartResult{}, err
+	}
+	if err := directoryManager.EnsurePrivateDir(stateRoot); err != nil {
+		return chruntime.StartResult{}, fmt.Errorf("prepare runtime state root: %w", err)
+	}
+	stdout, stderr, err := r.openLogs(containerID)
+	if err != nil {
+		return chruntime.StartResult{}, err
+	}
 
-	cmd := exec.CommandContext(ctx, binary.Path, "--root", request.StateRoot, "run", containerID)
+	cmd := exec.CommandContext(ctx, binary.Path, "--root", stateRoot, "run", containerID)
 	cmd.Dir = request.Bundle.BundlePath
 	cmd.Stdin = request.Stdin
-	cmd.Stdout = request.Stdout
-	cmd.Stderr = request.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	if err := cmd.Start(); err != nil {
+		_ = stdout.Close()
+		_ = stderr.Close()
 		return chruntime.StartResult{}, fmt.Errorf("start runc container %q: %w", containerID, err)
 	}
 
-	process := newRuncProcess(cmd)
-	state, err := observeStartup(ctx, binary.Path, request.StateRoot, containerID, process)
+	process := newRuncProcess(cmd, stdout, stderr)
+	state, err := observeStartup(ctx, binary.Path, stateRoot, containerID, process)
 	if err != nil {
 		return chruntime.StartResult{}, err
 	}
 	return chruntime.StartResult{
 		Process: process,
 		State:   state,
+	}, nil
+}
+
+func (r *Runtime) ReadLog(containerID string, stream string) ([]byte, error) {
+	path, err := r.logPath(containerID, stream)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}
+
+func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
+	logDir, err := r.logDir(containerID)
+	if err != nil {
+		return nil, nil, err
+	}
+	directoryManager, err := r.requireDirectoryManager()
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := directoryManager.EnsurePrivateDir(logDir); err != nil {
+		return nil, nil, fmt.Errorf("prepare runc log directory: %w", err)
+	}
+
+	stdoutPath, err := r.logPath(containerID, chruntime.StdoutLogStream)
+	if err != nil {
+		return nil, nil, err
+	}
+	stderrPath, err := r.logPath(containerID, chruntime.StderrLogStream)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	stdout, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open stdout log: %w", err)
+	}
+	stderr, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		_ = stdout.Close()
+		return nil, nil, fmt.Errorf("open stderr log: %w", err)
+	}
+	return stdout, stderr, nil
+}
+
+func (r *Runtime) logPath(containerID string, stream string) (string, error) {
+	logDir, err := r.logDir(containerID)
+	if err != nil {
+		return "", err
+	}
+	switch stream {
+	case chruntime.StdoutLogStream, chruntime.StderrLogStream:
+		return filepath.Join(logDir, stream+".log"), nil
+	default:
+		return "", fmt.Errorf("unsupported log stream %q", stream)
+	}
+}
+
+func (r *Runtime) logDir(containerID string) (string, error) {
+	if !validContainerID.MatchString(containerID) {
+		return "", fmt.Errorf("invalid container ID %q", containerID)
+	}
+	runtimeRoot, err := r.stateRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(runtimeRoot, "logs", containerID), nil
+}
+
+func (r *Runtime) stateRoot() (string, error) {
+	if r.config.RuntimeRoot == "" {
+		return "", fmt.Errorf("runtime root is required")
+	}
+	runtimeRoot, err := absPath(r.config.RuntimeRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve runtime root: %w", err)
+	}
+	return runtimeRoot, nil
+}
+
+func (r *Runtime) configuredBinary() (chruntime.Binary, error) {
+	config := r.config
+	if config.Name == "" {
+		return chruntime.Binary{}, fmt.Errorf("runtime name is required")
+	}
+	if config.RuntimeBinDir == "" {
+		return chruntime.Binary{}, fmt.Errorf("runtime bin dir is required")
+	}
+	binDir, err := absPath(config.RuntimeBinDir)
+	if err != nil {
+		return chruntime.Binary{}, fmt.Errorf("resolve runtime bin dir: %w", err)
+	}
+	return chruntime.Binary{
+		Name:    config.Name,
+		Version: config.Version,
+		Path:    filepath.Join(binDir, config.Name),
 	}, nil
 }
 
@@ -176,11 +273,11 @@ func defaultRuntimeArtifact(arch string) (url string, sha256 string) {
 	}
 }
 
-func (r *Runtime) directoryManagerOrDefault() localfs.DirectoryManager {
+func (r *Runtime) requireDirectoryManager() (localfs.DirectoryManager, error) {
 	if r.directoryManager == nil {
-		return localfs.NewDirectoryManager()
+		return nil, fmt.Errorf("directory manager is required")
 	}
-	return r.directoryManager
+	return r.directoryManager, nil
 }
 
 type runcProcess struct {
@@ -193,12 +290,17 @@ type waitResult struct {
 	err      error
 }
 
-func newRuncProcess(cmd *exec.Cmd) *runcProcess {
+func newRuncProcess(cmd *exec.Cmd, closers ...io.Closer) *runcProcess {
 	process := &runcProcess{
 		done: make(chan struct{}),
 	}
 	go func() {
 		process.result = convertWaitResult(cmd.Wait())
+		for _, closer := range closers {
+			if closeErr := closer.Close(); closeErr != nil && process.result.err == nil {
+				process.result.err = fmt.Errorf("close runtime stdio: %w", closeErr)
+			}
+		}
 		close(process.done)
 	}()
 	return process

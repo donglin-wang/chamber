@@ -1,6 +1,26 @@
-package api
+package main
 
-import "net/http"
+import (
+	"net/http"
+)
+
+func registerDocsRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /docs", serveSwagger)
+	mux.HandleFunc("GET /swagger", serveSwagger)
+	mux.HandleFunc("GET /openapi.json", serveOpenAPI)
+}
+
+func serveSwagger(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(swaggerHTML))
+}
+
+func serveOpenAPI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(openAPIJSON))
+}
 
 const swaggerHTML = `<!doctype html>
 <html lang="en">
@@ -36,9 +56,31 @@ const openAPIJSON = `{
   "info": {
     "title": "Chamber Daemon API",
     "version": "v1",
-    "description": "Small demo surface for pulling OCI images and running containers through the local Chamber daemon."
+    "description": "HTTP-only Chamber daemon surface for pulling OCI images, running containers, listing containers, and reading stored logs."
   },
   "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Check whether the daemon HTTP server is running",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "HTTP server is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/images/pull": {
       "post": {
         "summary": "Pull an OCI image into Chamber storage",
@@ -47,7 +89,7 @@ const openAPIJSON = `{
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/PullRequest" },
+              "schema": { "$ref": "#/components/schemas/PullImageRequest" },
               "examples": {
                 "alpine": {
                   "value": { "reference": "docker.io/library/alpine:latest" }
@@ -61,63 +103,18 @@ const openAPIJSON = `{
             "description": "Image pulled",
             "headers": {
               "X-Chamber-Operation-ID": {
-                "schema": { "type": "string" },
-                "description": "Durable Chamber operation id"
+                "schema": { "type": "string" }
               }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/PullResponse" }
+                "schema": { "$ref": "#/components/schemas/PullImageResponse" }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Error" },
-          "405": { "$ref": "#/components/responses/Error" },
           "409": { "$ref": "#/components/responses/Error" },
-          "500": { "$ref": "#/components/responses/Error" }
-        }
-      }
-    },
-    "/v1/containers/run": {
-      "post": {
-        "summary": "Create and start a container from a pulled image",
-        "operationId": "runContainer",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/RunRequest" },
-              "examples": {
-                "alpineShell": {
-                  "value": {
-                    "image": "docker.io/library/alpine:latest",
-                    "command": ["/bin/sh", "-c", "id && echo chamber"]
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Container started or completed",
-            "headers": {
-              "X-Chamber-Operation-ID": {
-                "schema": { "type": "string" },
-                "description": "Durable Chamber operation id"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/RunResponse" }
-              }
-            }
-          },
-          "400": { "$ref": "#/components/responses/Error" },
-          "404": { "$ref": "#/components/responses/Error" },
-          "405": { "$ref": "#/components/responses/Error" },
-          "409": { "$ref": "#/components/responses/Error" },
-          "500": { "$ref": "#/components/responses/Error" }
+          "500": { "$ref": "#/components/responses/Error" },
+          "400": { "$ref": "#/components/responses/Error" }
         }
       }
     },
@@ -134,14 +131,54 @@ const openAPIJSON = `{
               }
             }
           },
-          "405": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/containers/run": {
+      "post": {
+        "summary": "Create and start a container from a pulled image",
+        "operationId": "runContainer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RunContainerRequest" },
+              "examples": {
+                "alpineShell": {
+                  "value": {
+                    "image": "docker.io/library/alpine:latest",
+                    "command": ["/bin/sh", "-c", "id && echo chamber"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Container started or completed",
+            "headers": {
+              "X-Chamber-Operation-ID": {
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RunContainerResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
           "500": { "$ref": "#/components/responses/Error" }
         }
       }
     },
     "/v1/containers/{id}/logs": {
       "get": {
-        "summary": "Read stored stdout or stderr logs for a container",
+        "summary": "Read stored container logs",
         "operationId": "containerLogs",
         "parameters": [
           {
@@ -149,16 +186,6 @@ const openAPIJSON = `{
             "in": "path",
             "required": true,
             "schema": { "type": "string" }
-          },
-          {
-            "name": "stream",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": ["stdout", "stderr"],
-              "default": "stdout"
-            }
           }
         ],
         "responses": {
@@ -172,7 +199,6 @@ const openAPIJSON = `{
           },
           "400": { "$ref": "#/components/responses/Error" },
           "404": { "$ref": "#/components/responses/Error" },
-          "405": { "$ref": "#/components/responses/Error" },
           "500": { "$ref": "#/components/responses/Error" }
         }
       }
@@ -181,13 +207,7 @@ const openAPIJSON = `{
   "components": {
     "responses": {
       "Error": {
-        "description": "Public daemon error",
-        "headers": {
-          "X-Chamber-Operation-ID": {
-            "schema": { "type": "string" },
-            "description": "Present when the daemon created an operation before failing"
-          }
-        },
+        "description": "HTTP error",
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/ErrorResponse" }
@@ -196,7 +216,7 @@ const openAPIJSON = `{
       }
     },
     "schemas": {
-      "PullRequest": {
+      "PullImageRequest": {
         "type": "object",
         "required": ["reference"],
         "additionalProperties": false,
@@ -207,7 +227,7 @@ const openAPIJSON = `{
           }
         }
       },
-      "PullResponse": {
+      "PullImageResponse": {
         "type": "object",
         "required": ["operation_id", "reference", "digest", "pulled_at"],
         "additionalProperties": false,
@@ -218,7 +238,7 @@ const openAPIJSON = `{
           "pulled_at": { "type": "string", "format": "date-time" }
         }
       },
-      "RunRequest": {
+      "RunContainerRequest": {
         "type": "object",
         "required": ["image", "command"],
         "additionalProperties": false,
@@ -235,7 +255,7 @@ const openAPIJSON = `{
           }
         }
       },
-      "RunResponse": {
+      "RunContainerResponse": {
         "type": "object",
         "required": ["operation_id", "id", "image_digest", "state"],
         "additionalProperties": false,
@@ -243,10 +263,7 @@ const openAPIJSON = `{
           "operation_id": { "type": "string" },
           "id": { "type": "string" },
           "image_digest": { "type": "string" },
-          "state": {
-            "type": "string",
-            "enum": ["creating", "starting", "running", "exited", "failed"]
-          }
+          "state": { "type": "string" }
         }
       },
       "ListContainersResponse": {
@@ -270,10 +287,7 @@ const openAPIJSON = `{
           "image": { "type": "string" },
           "image_digest": { "type": "string" },
           "runtime": { "type": "string" },
-          "state": {
-            "type": "string",
-            "enum": ["creating", "starting", "running", "exited", "failed"]
-          },
+          "state": { "type": "string" },
           "created_at": { "type": "string", "format": "date-time" },
           "updated_at": { "type": "string", "format": "date-time" },
           "exit_code": { "type": "integer" },
@@ -285,7 +299,6 @@ const openAPIJSON = `{
         "required": ["code", "message"],
         "additionalProperties": false,
         "properties": {
-          "operation_id": { "type": "string" },
           "code": { "type": "string" },
           "message": { "type": "string" }
         }
@@ -294,15 +307,3 @@ const openAPIJSON = `{
   }
 }
 `
-
-func serveDocs(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(swaggerHTML))
-}
-
-func serveOpenAPI(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(openAPIJSON))
-}

@@ -32,7 +32,6 @@ func TestPullerLocalContract(t *testing.T) {
 	for name, newPuller := range tests {
 		t.Run(name, func(t *testing.T) {
 			assertPullInvalidReference(t, newPuller)
-			assertPullUnsupportedPlatform(t, newPuller)
 			assertPullFetchFailureLeavesNoFinalLayout(t, newPuller)
 			assertPullRenameFailureIsReturned(t, newPuller)
 			assertPullSuccessReturnsDigestSizeAndUTCTime(t, newPuller, localImageReference(t))
@@ -61,21 +60,6 @@ func assertPullInvalidReference(t *testing.T, newPuller pullerFactory) {
 	})
 	if err == nil {
 		t.Fatal("Pull() error = nil, want invalid reference error")
-	}
-}
-
-func assertPullUnsupportedPlatform(t *testing.T, newPuller pullerFactory) {
-	t.Helper()
-
-	puller := newPuller(t)
-
-	_, err := puller.Pull(context.Background(), chimage.PullRequest{
-		Reference:   "docker.io/library/alpine:latest",
-		Destination: filepath.Join(privateTempDir(t), "layout"),
-		Platform:    "windows/amd64",
-	})
-	if err == nil {
-		t.Fatal("Pull() error = nil, want unsupported platform error")
 	}
 }
 

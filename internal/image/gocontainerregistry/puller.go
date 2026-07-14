@@ -41,10 +41,7 @@ func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage
 		return chimage.PulledImage{}, fmt.Errorf("parse image reference: %w", err)
 	}
 
-	platform, err := resolvePlatform(request.Platform)
-	if err != nil {
-		return chimage.PulledImage{}, err
-	}
+	platform := hostPlatform()
 
 	if request.Destination == "" {
 		return chimage.PulledImage{}, fmt.Errorf("image destination is required")
@@ -120,23 +117,11 @@ func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage
 	}, nil
 }
 
-func resolvePlatform(raw string) (v1.Platform, error) {
-	if raw == "" {
-		return v1.Platform{
-			OS:           "linux",
-			Architecture: runtime.GOARCH,
-		}, nil
+func hostPlatform() v1.Platform {
+	return v1.Platform{
+		OS:           "linux",
+		Architecture: runtime.GOARCH,
 	}
-
-	platform, err := v1.ParsePlatform(raw)
-	if err != nil {
-		return v1.Platform{}, fmt.Errorf("parse image platform: %w", err)
-	}
-	if platform.OS != "linux" || platform.Architecture != runtime.GOARCH || platform.OSVersion != "" || platform.Variant != "" {
-		return v1.Platform{}, fmt.Errorf("unsupported image platform %q: only linux/%s is supported", raw, runtime.GOARCH)
-	}
-
-	return *platform, nil
 }
 
 func verifyOCILayout(path string) error {

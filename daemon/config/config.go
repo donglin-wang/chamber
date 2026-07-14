@@ -1,20 +1,31 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/donglin-wang/chamber/daemon/metadata"
+	chbundle "github.com/donglin-wang/chamber/internal/bundle"
 	chimage "github.com/donglin-wang/chamber/internal/image"
-	"github.com/donglin-wang/chamber/internal/metadata"
 	chruntime "github.com/donglin-wang/chamber/internal/runtime"
 )
 
 type Config struct {
+	// API
+	HTTPAddr string
+
 	// Storage
-	SocketPath    string
-	TmpRoot       string
-	ContainerRoot string
+	SocketPath string
+	TmpRoot    string
+
+	// OCI Bundles
+	Bundle chbundle.Config
 
 	// Images
 	Image chimage.Config
@@ -37,24 +48,27 @@ type Config struct {
 }
 
 type Override struct {
-	SocketPath    *string
-	TmpRoot       *string
-	ContainerRoot *string
+	HTTPAddr *string `json:"http_addr,omitempty"`
 
-	Image    chimage.Override
-	Runtime  chruntime.Override
-	Metadata metadata.Override
+	SocketPath *string `json:"socket_path,omitempty"`
+	TmpRoot    *string `json:"tmp_root,omitempty"`
 
-	OpenTelemetryEndpoint              *string
-	OpenTelemetryInsecure              *bool
-	OpenTelemetryTraceSampleRatio      *float64
-	OpenTelemetryMetricsExportInterval *time.Duration
+	Bundle   chbundle.Override  `json:"bundle,omitempty"`
+	Image    chimage.Override   `json:"image,omitempty"`
+	Runtime  chruntime.Override `json:"runtime,omitempty"`
+	Metadata metadata.Override  `json:"metadata,omitempty"`
 
-	LogLevel  *string
-	LogFormat *string
+	OpenTelemetryEndpoint              *string        `json:"open_telemetry_endpoint,omitempty"`
+	OpenTelemetryInsecure              *bool          `json:"open_telemetry_insecure,omitempty"`
+	OpenTelemetryTraceSampleRatio      *float64       `json:"open_telemetry_trace_sample_ratio,omitempty"`
+	OpenTelemetryMetricsExportInterval *time.Duration `json:"open_telemetry_metrics_export_interval,omitempty"`
+
+	LogLevel  *string `json:"log_level,omitempty"`
+	LogFormat *string `json:"log_format,omitempty"`
 }
 
 const (
+	defaultHTTPAddr                           = "127.0.0.1:8080"
 	defaultOpenTelemetryTraceSampleRatio      = 1.0
 	defaultOpenTelemetryMetricsExportInterval = 10 * time.Second
 	defaultLogLevel                           = "info"
@@ -86,10 +100,11 @@ func Load(override Override, getenv func(string) string) (Config, error) {
 	rootPath := getRootPath(getenv)
 
 	defaultConfig := Config{
-		SocketPath:    filepath.Join(rootPath, "run", "chamber.sock"),
-		TmpRoot:       filepath.Join(rootPath, "run", "tmp"),
-		ContainerRoot: filepath.Join(rootPath, "containers"),
+		HTTPAddr:   defaultHTTPAddr,
+		SocketPath: filepath.Join(rootPath, "run", "chamber.sock"),
+		TmpRoot:    filepath.Join(rootPath, "run", "tmp"),
 
+		Bundle:   chbundle.DefaultConfig(rootPath),
 		Image:    chimage.DefaultConfig(rootPath),
 		Runtime:  chruntime.DefaultConfig(rootPath),
 		Metadata: metadata.DefaultConfig(rootPath),
@@ -103,15 +118,49 @@ func Load(override Override, getenv func(string) string) (Config, error) {
 	return Resolve(defaultConfig, override)
 }
 
+func LoadFile(path string, override Override, getenv func(string) string) (Config, error) {
+	fileOverride, err := ReadOverrideFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+
+	return Load(MergeOverride(fileOverride, override), getenv)
+}
+
+func ReadOverrideFile(path string) (Override, error) {
+	if path == "" {
+		return Override{}, nil
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return Override{}, fmt.Errorf("read config file: %w", err)
+	}
+
+	var override Override
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&override); err != nil {
+		return Override{}, fmt.Errorf("decode config file: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err == nil {
+		return Override{}, fmt.Errorf("decode config file: config file must contain one JSON object")
+	} else if !errors.Is(err, io.EOF) {
+		return Override{}, fmt.Errorf("decode config file: %w", err)
+	}
+
+	return override, nil
+}
+
 func Resolve(defaultConfig Config, override Override) (Config, error) {
+	if override.HTTPAddr != nil {
+		defaultConfig.HTTPAddr = *override.HTTPAddr
+	}
 	if override.SocketPath != nil {
 		defaultConfig.SocketPath = *override.SocketPath
 	}
 	if override.TmpRoot != nil {
 		defaultConfig.TmpRoot = *override.TmpRoot
-	}
-	if override.ContainerRoot != nil {
-		defaultConfig.ContainerRoot = *override.ContainerRoot
 	}
 	if override.OpenTelemetryEndpoint != nil {
 		defaultConfig.OpenTelemetryEndpoint = *override.OpenTelemetryEndpoint
@@ -133,6 +182,10 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	}
 
 	var err error
+	defaultConfig.Bundle, err = chbundle.Resolve(defaultConfig.Bundle, override.Bundle)
+	if err != nil {
+		return Config{}, err
+	}
 	defaultConfig.Image, err = chimage.Resolve(defaultConfig.Image, override.Image)
 	if err != nil {
 		return Config{}, err
@@ -150,11 +203,46 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	return defaultConfig, nil
 }
 
+func MergeOverride(base Override, overlay Override) Override {
+	if overlay.HTTPAddr != nil {
+		base.HTTPAddr = overlay.HTTPAddr
+	}
+	if overlay.SocketPath != nil {
+		base.SocketPath = overlay.SocketPath
+	}
+	if overlay.TmpRoot != nil {
+		base.TmpRoot = overlay.TmpRoot
+	}
+	if overlay.OpenTelemetryEndpoint != nil {
+		base.OpenTelemetryEndpoint = overlay.OpenTelemetryEndpoint
+	}
+	if overlay.OpenTelemetryInsecure != nil {
+		base.OpenTelemetryInsecure = overlay.OpenTelemetryInsecure
+	}
+	if overlay.OpenTelemetryTraceSampleRatio != nil {
+		base.OpenTelemetryTraceSampleRatio = overlay.OpenTelemetryTraceSampleRatio
+	}
+	if overlay.OpenTelemetryMetricsExportInterval != nil {
+		base.OpenTelemetryMetricsExportInterval = overlay.OpenTelemetryMetricsExportInterval
+	}
+	if overlay.LogLevel != nil {
+		base.LogLevel = overlay.LogLevel
+	}
+	if overlay.LogFormat != nil {
+		base.LogFormat = overlay.LogFormat
+	}
+
+	base.Bundle = mergeBundleOverride(base.Bundle, overlay.Bundle)
+	base.Image = mergeImageOverride(base.Image, overlay.Image)
+	base.Runtime = mergeRuntimeOverride(base.Runtime, overlay.Runtime)
+	base.Metadata = mergeMetadataOverride(base.Metadata, overlay.Metadata)
+	return base
+}
+
 func absolutizePaths(cfg *Config) {
 	paths := []*string{
 		&cfg.SocketPath,
 		&cfg.TmpRoot,
-		&cfg.ContainerRoot,
 	}
 
 	for _, path := range paths {
@@ -167,4 +255,47 @@ func absolutizePaths(cfg *Config) {
 		}
 		*path = abs
 	}
+}
+
+func mergeBundleOverride(base chbundle.Override, overlay chbundle.Override) chbundle.Override {
+	if overlay.Root != nil {
+		base.Root = overlay.Root
+	}
+	return base
+}
+
+func mergeImageOverride(base chimage.Override, overlay chimage.Override) chimage.Override {
+	if overlay.Root != nil {
+		base.Root = overlay.Root
+	}
+	return base
+}
+
+func mergeMetadataOverride(base metadata.Override, overlay metadata.Override) metadata.Override {
+	if overlay.Root != nil {
+		base.Root = overlay.Root
+	}
+	return base
+}
+
+func mergeRuntimeOverride(base chruntime.Override, overlay chruntime.Override) chruntime.Override {
+	if overlay.RuntimeRoot != nil {
+		base.RuntimeRoot = overlay.RuntimeRoot
+	}
+	if overlay.RuntimeBinDir != nil {
+		base.RuntimeBinDir = overlay.RuntimeBinDir
+	}
+	if overlay.Name != nil {
+		base.Name = overlay.Name
+	}
+	if overlay.Version != nil {
+		base.Version = overlay.Version
+	}
+	if overlay.URL != nil {
+		base.URL = overlay.URL
+	}
+	if overlay.SHA256 != nil {
+		base.SHA256 = overlay.SHA256
+	}
+	return base
 }

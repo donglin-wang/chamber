@@ -1,12 +1,13 @@
-package testutil
+package memory
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/donglin-wang/chamber/internal/metadata"
+	"github.com/donglin-wang/chamber/daemon/metadata"
 )
 
 type MemoryStore struct {
@@ -92,6 +93,21 @@ func (s *MemoryStore) GetOperation(ctx context.Context, id string) (metadata.Ope
 		return metadata.Operation{}, metadata.ErrNotFound
 	}
 	return cloneOperation(operation), nil
+}
+
+func (s *MemoryStore) SucceedOperation(ctx context.Context, id string) (metadata.Operation, error) {
+	return s.TransitionOperation(ctx, id, metadata.OperationRunning, metadata.OperationUpdate{
+		State: metadata.OperationSucceeded,
+		At:    time.Now().UTC(),
+	})
+}
+
+func (s *MemoryStore) FailOperation(ctx context.Context, id string, code metadata.ErrorCode) (metadata.Operation, error) {
+	return s.TransitionOperation(ctx, id, metadata.OperationRunning, metadata.OperationUpdate{
+		State:     metadata.OperationFailed,
+		At:        time.Now().UTC(),
+		ErrorCode: string(code),
+	})
 }
 
 func (s *MemoryStore) TransitionOperation(
@@ -219,6 +235,22 @@ func (s *MemoryStore) TransitionContainer(
 	container.ErrorCode = metadata.ErrorCode(update.ErrorCode)
 	s.containers[id] = cloneContainer(container)
 	return cloneContainer(container), nil
+}
+
+func (s *MemoryStore) FailContainerAndOperation(
+	ctx context.Context,
+	containerID string,
+	from metadata.ContainerState,
+	operationID string,
+	code metadata.ErrorCode,
+) (metadata.Container, metadata.Operation, error) {
+	container, containerErr := s.TransitionContainer(ctx, containerID, from, metadata.ContainerUpdate{
+		State:     metadata.ContainerFailed,
+		At:        time.Now().UTC(),
+		ErrorCode: string(code),
+	})
+	operation, operationErr := s.FailOperation(ctx, operationID, code)
+	return container, operation, errors.Join(containerErr, operationErr)
 }
 
 func (s *MemoryStore) Close() error {

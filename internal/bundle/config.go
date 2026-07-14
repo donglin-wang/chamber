@@ -1,4 +1,4 @@
-package metadata
+package bundle
 
 import (
 	"fmt"
@@ -10,12 +10,12 @@ type Config struct {
 }
 
 type Override struct {
-	Root *string
+	Root *string `json:"root,omitempty"`
 }
 
 func DefaultConfig(rootPath string) Config {
 	return Config{
-		Root: filepath.Join(rootPath, "metadata"),
+		Root: filepath.Join(rootPath, "bundles"),
 	}
 }
 
@@ -27,7 +27,7 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	var err error
 	defaultConfig.Root, err = absPath(defaultConfig.Root)
 	if err != nil {
-		return Config{}, fmt.Errorf("resolve metadata root: %w", err)
+		return Config{}, fmt.Errorf("resolve bundle root: %w", err)
 	}
 
 	return defaultConfig, nil

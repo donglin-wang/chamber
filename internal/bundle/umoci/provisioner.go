@@ -22,7 +22,7 @@ var containerIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 var _ chbundle.Provisioner = (*Provisioner)(nil)
 
 type Provisioner struct {
-	ContainerRoot    string
+	Config           chbundle.Config
 	UID              uint32
 	GID              uint32
 	DirectoryManager localfs.DirectoryManager
@@ -41,8 +41,8 @@ func (p Provisioner) Provision(
 	if err := validateContainerID(request.ContainerID); err != nil {
 		return chbundle.ProvisionedBundle{}, err
 	}
-	if p.ContainerRoot == "" {
-		return chbundle.ProvisionedBundle{}, fmt.Errorf("container root is required")
+	if p.Config.Root == "" {
+		return chbundle.ProvisionedBundle{}, fmt.Errorf("bundle root is required")
 	}
 	if request.ImageLayout == "" {
 		return chbundle.ProvisionedBundle{}, fmt.Errorf("image layout is required")
@@ -51,16 +51,16 @@ func (p Provisioner) Provision(
 		return chbundle.ProvisionedBundle{}, fmt.Errorf("image ref is required")
 	}
 
-	containerRoot, err := filepath.Abs(p.ContainerRoot)
+	bundleRoot, err := filepath.Abs(p.Config.Root)
 	if err != nil {
-		return chbundle.ProvisionedBundle{}, fmt.Errorf("resolve container root: %w", err)
+		return chbundle.ProvisionedBundle{}, fmt.Errorf("resolve bundle root: %w", err)
 	}
-	if err := p.DirectoryManager.EnsurePrivateDir(containerRoot); err != nil {
-		return chbundle.ProvisionedBundle{}, fmt.Errorf("prepare container root: %w", err)
+	if err := p.DirectoryManager.EnsurePrivateDir(bundleRoot); err != nil {
+		return chbundle.ProvisionedBundle{}, fmt.Errorf("prepare bundle root: %w", err)
 	}
 
-	finalBundle := filepath.Join(containerRoot, request.ContainerID)
-	tmpBundle, err := p.DirectoryManager.MkdirTemp(containerRoot, "."+request.ContainerID+".tmp-*")
+	finalBundle := filepath.Join(bundleRoot, request.ContainerID)
+	tmpBundle, err := p.DirectoryManager.MkdirTemp(bundleRoot, "."+request.ContainerID+".tmp-*")
 	if err != nil {
 		return chbundle.ProvisionedBundle{}, fmt.Errorf("create temporary bundle: %w", err)
 	}

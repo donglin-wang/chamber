@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/donglin-wang/chamber/internal/metadata"
+	"github.com/donglin-wang/chamber/daemon/metadata"
 	"github.com/donglin-wang/chamber/internal/shared/localfs"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
@@ -137,6 +138,21 @@ func (s *Store) GetOperation(ctx context.Context, id string) (metadata.Operation
 	return getValue[metadata.Operation](ctx, s.client, operationKey(id))
 }
 
+func (s *Store) SucceedOperation(ctx context.Context, id string) (metadata.Operation, error) {
+	return s.TransitionOperation(ctx, id, metadata.OperationRunning, metadata.OperationUpdate{
+		State: metadata.OperationSucceeded,
+		At:    time.Now().UTC(),
+	})
+}
+
+func (s *Store) FailOperation(ctx context.Context, id string, code metadata.ErrorCode) (metadata.Operation, error) {
+	return s.TransitionOperation(ctx, id, metadata.OperationRunning, metadata.OperationUpdate{
+		State:     metadata.OperationFailed,
+		At:        time.Now().UTC(),
+		ErrorCode: string(code),
+	})
+}
+
 func (s *Store) TransitionOperation(
 	ctx context.Context,
 	id string,
@@ -221,6 +237,22 @@ func (s *Store) TransitionContainer(
 		return metadata.Container{}, err
 	}
 	return cloneContainer(container), nil
+}
+
+func (s *Store) FailContainerAndOperation(
+	ctx context.Context,
+	containerID string,
+	from metadata.ContainerState,
+	operationID string,
+	code metadata.ErrorCode,
+) (metadata.Container, metadata.Operation, error) {
+	container, containerErr := s.TransitionContainer(ctx, containerID, from, metadata.ContainerUpdate{
+		State:     metadata.ContainerFailed,
+		At:        time.Now().UTC(),
+		ErrorCode: string(code),
+	})
+	operation, operationErr := s.FailOperation(ctx, operationID, code)
+	return container, operation, errors.Join(containerErr, operationErr)
 }
 
 func (s *Store) Close() error {
