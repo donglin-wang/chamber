@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chbundle "github.com/donglin-wang/chamber/internal/bundle"
-	chimage "github.com/donglin-wang/chamber/internal/image"
-	chruntime "github.com/donglin-wang/chamber/internal/runtime"
+	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chimage "github.com/donglin-wang/chamber/pkg/image"
+	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
 )
 
 func TestOverrideFieldsMatchConfigFields(t *testing.T) {
@@ -62,12 +62,63 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 	for _, importSpec := range file.Imports {
 		importPath := strings.Trim(importSpec.Path.Value, `"`)
 		switch importPath {
-		case "github.com/donglin-wang/chamber/internal/image/gocontainerregistry",
+		case "github.com/donglin-wang/chamber/pkg/image/gocontainerregistry",
+			"github.com/donglin-wang/chamber/pkg/bundle/umoci",
 			"github.com/donglin-wang/chamber/daemon/metadata/etcd",
-			"github.com/donglin-wang/chamber/internal/runtime/runc",
-			"github.com/donglin-wang/chamber/internal/shared/localfs":
+			"github.com/donglin-wang/chamber/pkg/runtime/runc",
+			"github.com/donglin-wang/chamber/pkg/shared/localfs":
 			t.Fatalf("config package must import generic package boundaries and not filesystem setup %q", importPath)
 		}
+	}
+}
+
+func TestProductionCodeDoesNotImportInternalPackages(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+	err := filepath.WalkDir(repoRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		for _, importPath := range parseImports(t, path) {
+			if strings.HasPrefix(importPath, "github.com/donglin-wang/chamber/internal/") {
+				t.Fatalf("production file %s imports internal package %q", path, importPath)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk repo: %v", err)
+	}
+}
+
+func TestPublicPackagesDoNotImportDaemonPackages(t *testing.T) {
+	pkgRoot := filepath.Clean("../../pkg")
+	err := filepath.WalkDir(pkgRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+
+		for _, importPath := range parseImports(t, path) {
+			if strings.HasPrefix(importPath, "github.com/donglin-wang/chamber/daemon/") {
+				t.Fatalf("public package file %s imports daemon package %q", path, importPath)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk public packages: %v", err)
 	}
 }
 
@@ -363,6 +414,22 @@ func mapGetenv(env map[string]string) func(string) string {
 	return func(key string) string {
 		return env[key]
 	}
+}
+
+func parseImports(t *testing.T, path string) []string {
+	t.Helper()
+
+	fileset := token.NewFileSet()
+	file, err := parser.ParseFile(fileset, path, nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+
+	imports := make([]string, 0, len(file.Imports))
+	for _, importSpec := range file.Imports {
+		imports = append(imports, strings.Trim(importSpec.Path.Value, `"`))
+	}
+	return imports
 }
 
 func ptr[T any](value T) *T {

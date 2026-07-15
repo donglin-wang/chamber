@@ -10,7 +10,7 @@ import (
 
 	daemonconfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chimage "github.com/donglin-wang/chamber/internal/image"
+	chimage "github.com/donglin-wang/chamber/pkg/image"
 	"github.com/google/uuid"
 )
 

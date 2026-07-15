@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	chruntime "github.com/donglin-wang/chamber/internal/runtime"
-	"github.com/donglin-wang/chamber/internal/shared/localfs"
+	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
+	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
 const (

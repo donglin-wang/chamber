@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	chbundle "github.com/donglin-wang/chamber/internal/bundle"
-	"github.com/donglin-wang/chamber/internal/shared/localfs"
+	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
+	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	ociumoci "github.com/opencontainers/umoci"
 	"github.com/opencontainers/umoci/oci/layer"

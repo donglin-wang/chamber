@@ -21,7 +21,7 @@ The SDK layer is deliberately lower-level than the daemon:
 - It performs explicit operations against caller-provided locations.
 - It should be useful from Go directly and later from other languages through thin wrappers, likely around a small Go-built helper binary rather than duplicated logic.
 - It should not quietly promise daemon-grade safety. Shared roots, locking, cleanup, and crash recovery are caller responsibilities unless explicitly delegated to `chamberd`.
-- Public SDK packages should live outside `internal/`, with stable user-facing types. Current `internal/...` packages can remain implementation details until a public facade is designed.
+- Public SDK packages live under `pkg/`, with stable user-facing types for the reusable image, bundle, runtime, and shared filesystem primitives.
 
 The daemon layer adds the reliability contract:
 
@@ -51,7 +51,7 @@ Model privilege cleanly:
 - Start with narrow, testable packages and invariants before widening into compatibility APIs.
 - Prefer explicit top-down dependency injection for filesystem, runtime, and backend choices.
 - Keep package-owned config at generic boundaries. Avoid letting global config import concrete adapters such as specific metadata or runtime implementations.
-- Keep shared helpers small and policy-shaped. `internal/shared/localfs` should encode private-directory and temp-file policy, not become a broad utility grab bag.
+- Keep shared helpers small and policy-shaped. `pkg/shared/localfs` should encode private-directory and temp-file policy, not become a broad utility grab bag.
 
 ## Current Implementation Shape
 
@@ -59,17 +59,17 @@ The current repo is still early and may not yet have the final public SDK layout
 
 Important current boundaries:
 
-- `internal/image`: puller contract and image-root config.
-- `internal/image/gocontainerregistry`: concrete OCI image puller.
-- `internal/bundle`: bundle provisioning contract and bundle-root config.
-- `internal/bundle/umoci`: concrete bundle provisioner using `umoci`.
-- `internal/runtime`: runtime contract and runtime config.
-- `internal/runtime/runc`: concrete `runc` adapter, including runtime binary ensure/download and log handling.
-- `internal/shared/localfs`: explicit filesystem dependency for private directories and temp files.
+- `pkg/image`: puller contract and image-root config.
+- `pkg/image/gocontainerregistry`: concrete OCI image puller.
+- `pkg/bundle`: bundle provisioning contract and bundle-root config.
+- `pkg/bundle/umoci`: concrete bundle provisioner using `umoci`.
+- `pkg/runtime`: runtime contract and runtime config.
+- `pkg/runtime/runc`: concrete `runc` adapter, including runtime binary ensure/download and log handling.
+- `pkg/shared/localfs`: explicit filesystem dependency for private directories and temp files.
 - `daemon/metadata`: daemon-owned durable vocabulary for images, containers, operations, states, and errors.
 - `daemon`: current daemon HTTP composition and operation orchestration.
 
-Future public Go SDK packages should likely wrap the current internal contracts rather than expose `internal` directly. Candidate public surfaces include image pull, bundle provisioning, runtime execution, and a convenience one-shot run package.
+Future public Go SDK work should build on these `pkg/` contracts without moving daemon reliability concepts into the SDK. Candidate future surfaces include a convenience one-shot run package.
 
 ## Daemon Contract
 

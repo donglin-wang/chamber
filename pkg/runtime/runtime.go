@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	chbundle "github.com/donglin-wang/chamber/internal/bundle"
+	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
 )
 
 type Binary struct {

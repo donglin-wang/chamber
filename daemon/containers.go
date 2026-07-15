@@ -11,8 +11,8 @@ import (
 
 	daemonconfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chbundle "github.com/donglin-wang/chamber/internal/bundle"
-	chruntime "github.com/donglin-wang/chamber/internal/runtime"
+	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/google/uuid"
 )
 

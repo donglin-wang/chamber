@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	chbundle "github.com/donglin-wang/chamber/internal/bundle"
-	chruntime "github.com/donglin-wang/chamber/internal/runtime"
-	"github.com/donglin-wang/chamber/internal/shared/localfs"
+	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
+	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
 func TestEnsureDownloadsValidRuntimeBinary(t *testing.T) {

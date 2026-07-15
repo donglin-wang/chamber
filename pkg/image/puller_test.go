@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	chimage "github.com/donglin-wang/chamber/internal/image"
-	"github.com/donglin-wang/chamber/internal/image/gocontainerregistry"
-	"github.com/donglin-wang/chamber/internal/shared/localfs"
-	"github.com/donglin-wang/chamber/internal/shared/testutil"
+	chimage "github.com/donglin-wang/chamber/pkg/image"
+	"github.com/donglin-wang/chamber/pkg/image/gocontainerregistry"
+	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/testutil"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 )

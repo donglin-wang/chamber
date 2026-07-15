@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chbundle "github.com/donglin-wang/chamber/internal/bundle"
-	chimage "github.com/donglin-wang/chamber/internal/image"
-	chruntime "github.com/donglin-wang/chamber/internal/runtime"
+	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chimage "github.com/donglin-wang/chamber/pkg/image"
+	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
 )
 
 type Config struct {
@@ -75,7 +75,7 @@ const (
 	defaultLogFormat                          = "json"
 )
 
-func getRootPath(getenv func(string) string) string {
+func DefaultRoot(getenv func(string) string) string {
 	rootPath := ""
 	xdg := getenv("XDG_DATA_HOME")
 	home := getenv("HOME")
@@ -97,7 +97,7 @@ func getRootPath(getenv func(string) string) string {
 }
 
 func Load(override Override, getenv func(string) string) (Config, error) {
-	rootPath := getRootPath(getenv)
+	rootPath := DefaultRoot(getenv)
 
 	defaultConfig := Config{
 		HTTPAddr:   defaultHTTPAddr,

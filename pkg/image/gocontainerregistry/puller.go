@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"time"
 
-	chimage "github.com/donglin-wang/chamber/internal/image"
-	"github.com/donglin-wang/chamber/internal/shared/localfs"
+	chimage "github.com/donglin-wang/chamber/pkg/image"
+	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"

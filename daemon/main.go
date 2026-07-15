@@ -15,10 +15,10 @@ import (
 
 	daemonconfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata/etcd"
-	"github.com/donglin-wang/chamber/internal/bundle/umoci"
-	"github.com/donglin-wang/chamber/internal/image/gocontainerregistry"
-	"github.com/donglin-wang/chamber/internal/runtime/runc"
-	"github.com/donglin-wang/chamber/internal/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/bundle/umoci"
+	"github.com/donglin-wang/chamber/pkg/image/gocontainerregistry"
+	"github.com/donglin-wang/chamber/pkg/runtime/runc"
+	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
 type startupOptions struct {
@@ -36,6 +36,10 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "storage" {
+		return runStorage(args[1:], os.Getenv, os.Stdout)
+	}
+
 	options, err := parseArgs(args)
 	if err != nil {
 		return err

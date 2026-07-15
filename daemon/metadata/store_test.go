@@ -11,7 +11,7 @@ import (
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	metadataetcd "github.com/donglin-wang/chamber/daemon/metadata/etcd"
 	"github.com/donglin-wang/chamber/daemon/metadata/memory"
-	"github.com/donglin-wang/chamber/internal/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
 type traceContextKey struct{}

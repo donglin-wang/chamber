@@ -12,9 +12,9 @@ import (
 	daemonconfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	"github.com/donglin-wang/chamber/daemon/metadata/memory"
-	chbundle "github.com/donglin-wang/chamber/internal/bundle"
-	chimage "github.com/donglin-wang/chamber/internal/image"
-	chruntime "github.com/donglin-wang/chamber/internal/runtime"
+	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chimage "github.com/donglin-wang/chamber/pkg/image"
+	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/google/uuid"
 )
 

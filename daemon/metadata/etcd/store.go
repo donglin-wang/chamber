@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	"github.com/donglin-wang/chamber/internal/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
 )
