@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	securejoin "github.com/cyphar/filepath-securejoin"
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -92,7 +94,14 @@ func (p Provisioner) Provision(
 		return chamberBundle.ProvisionedBundle{}, err
 	}
 
-	if err := patchBundleConfig(tmpBundle, p.UID, p.GID, request.Process); err != nil {
+	mounts, err := normalizeBindMounts(request.Mounts)
+	if err != nil {
+		return chamberBundle.ProvisionedBundle{}, err
+	}
+	if err := prepareBindMountTargets(filepath.Join(tmpBundle, "rootfs"), mounts); err != nil {
+		return chamberBundle.ProvisionedBundle{}, err
+	}
+	if err := patchBundleConfig(tmpBundle, p.UID, p.GID, request.Process, mounts); err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
 
@@ -108,7 +117,7 @@ func (p Provisioner) Provision(
 	}, nil
 }
 
-func patchBundleConfig(bundlePath string, uid uint32, gid uint32, process chamberBundle.ProcessSpec) error {
+func patchBundleConfig(bundlePath string, uid uint32, gid uint32, process chamberBundle.ProcessSpec, mounts []specs.Mount) error {
 	configPath := filepath.Join(bundlePath, "config.json")
 	file, err := os.Open(configPath)
 	if err != nil {
@@ -125,7 +134,7 @@ func patchBundleConfig(bundlePath string, uid uint32, gid uint32, process chambe
 		return fmt.Errorf("close runtime spec: %w", closeErr)
 	}
 
-	if err := patchRootlessSpec(&spec, uid, gid, process); err != nil {
+	if err := patchRootlessSpec(&spec, uid, gid, process, mounts); err != nil {
 		return err
 	}
 
@@ -149,6 +158,7 @@ func patchRootlessSpec(
 	uid uint32,
 	gid uint32,
 	process chamberBundle.ProcessSpec,
+	mounts []specs.Mount,
 ) error {
 	if spec == nil {
 		return fmt.Errorf("runtime spec is required")
@@ -166,6 +176,7 @@ func patchRootlessSpec(
 	spec.Linux.CgroupsPath = ""
 	spec.Linux.Resources = nil
 	spec.Mounts = removeCgroupMounts(spec.Mounts)
+	spec.Mounts = append(spec.Mounts, cloneMounts(mounts)...)
 	spec.Process.Terminal = process.Terminal
 
 	if len(process.Args) > 0 {
@@ -180,6 +191,111 @@ func patchRootlessSpec(
 	applyProcessUser(spec.Process, process.User)
 
 	return nil
+}
+
+func normalizeBindMounts(mounts []chamberBundle.Mount) ([]specs.Mount, error) {
+	normalized := make([]specs.Mount, 0, len(mounts))
+	for _, mount := range mounts {
+		mountType := strings.TrimSpace(mount.Type)
+		if mountType == "" {
+			mountType = "bind"
+		}
+		if mountType != "bind" {
+			return nil, fmt.Errorf("unsupported rootless mount type %q", mount.Type)
+		}
+
+		source := strings.TrimSpace(mount.Source)
+		if source == "" {
+			return nil, fmt.Errorf("bind mount source is required")
+		}
+		absoluteSource, err := filepath.Abs(source)
+		if err != nil {
+			return nil, fmt.Errorf("resolve bind mount source %q: %w", source, err)
+		}
+		if _, err := os.Stat(absoluteSource); err != nil {
+			return nil, fmt.Errorf("stat bind mount source %q: %w", absoluteSource, err)
+		}
+
+		target := path.Clean(strings.TrimSpace(mount.Target))
+		if !path.IsAbs(target) || target == "/" {
+			return nil, fmt.Errorf("bind mount target must be an absolute container path below root: %q", mount.Target)
+		}
+
+		options := slices.Clone(mount.Options)
+		if len(options) == 0 {
+			options = []string{"rbind", "rw"}
+		}
+
+		normalized = append(normalized, specs.Mount{
+			Destination: target,
+			Type:        "bind",
+			Source:      absoluteSource,
+			Options:     options,
+		})
+	}
+	return normalized, nil
+}
+
+func prepareBindMountTargets(rootfs string, mounts []specs.Mount) error {
+	for _, mount := range mounts {
+		sourceInfo, err := os.Stat(mount.Source)
+		if err != nil {
+			return fmt.Errorf("stat bind mount source %q: %w", mount.Source, err)
+		}
+
+		targetPath, err := rootfsPath(rootfs, mount.Destination)
+		if err != nil {
+			return err
+		}
+		if sourceInfo.IsDir() {
+			if err := os.MkdirAll(targetPath, 0700); err != nil {
+				return fmt.Errorf("prepare bind mount directory target %q: %w", mount.Destination, err)
+			}
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0700); err != nil {
+			return fmt.Errorf("prepare bind mount file target parent %q: %w", mount.Destination, err)
+		}
+		if info, err := os.Stat(targetPath); err == nil {
+			if info.IsDir() {
+				return fmt.Errorf("bind mount target %q is a directory but source is a file", mount.Destination)
+			}
+			continue
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("stat bind mount target %q: %w", mount.Destination, err)
+		}
+
+		file, err := os.OpenFile(targetPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			return fmt.Errorf("prepare bind mount file target %q: %w", mount.Destination, err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("close bind mount file target %q: %w", mount.Destination, err)
+		}
+	}
+	return nil
+}
+
+func rootfsPath(rootfs string, target string) (string, error) {
+	cleanTarget := path.Clean(target)
+	if !path.IsAbs(cleanTarget) || cleanTarget == "/" {
+		return "", fmt.Errorf("bind mount target must be an absolute container path below root: %q", target)
+	}
+	joined, err := securejoin.SecureJoin(rootfs, strings.TrimPrefix(cleanTarget, "/"))
+	if err != nil {
+		return "", fmt.Errorf("resolve bind mount target %q: %w", target, err)
+	}
+	return joined, nil
+}
+
+func cloneMounts(mounts []specs.Mount) []specs.Mount {
+	cloned := make([]specs.Mount, len(mounts))
+	for i, mount := range mounts {
+		cloned[i] = mount
+		cloned[i].Options = slices.Clone(mount.Options)
+	}
+	return cloned
 }
 
 func applyProcessUser(process *specs.Process, user chamberBundle.ProcessUser) {

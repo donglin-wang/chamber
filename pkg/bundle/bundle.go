@@ -2,9 +2,9 @@ package bundle
 
 import "context"
 
-// Mount describes one filesystem mount that must exist before the runtime
-// starts the container. Target is relative to the bundle's rootfs directory;
-// an empty target means the rootfs directory itself.
+// Mount describes one filesystem mount visible inside the container. For
+// ProvisionRequest.Mounts, Source is a host path and Target is an absolute
+// container path.
 type Mount struct {
 	Type    string
 	Source  string
@@ -30,6 +30,7 @@ type ProvisionRequest struct {
 	ImageLayout string
 	ImageRef    string
 	Process     ProcessSpec
+	Mounts      []Mount
 }
 
 type ProcessSpec struct {

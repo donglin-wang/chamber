@@ -57,7 +57,7 @@ func TestPatchRootlessSpec(t *testing.T) {
 			Username:       "app",
 		},
 	}
-	if err := patchRootlessSpec(spec, 501, 20, process); err != nil {
+	if err := patchRootlessSpec(spec, 501, 20, process, nil); err != nil {
 		t.Fatalf("patchRootlessSpec() error = %v", err)
 	}
 	process.Args[0] = "mutated"
@@ -129,7 +129,7 @@ func TestPatchBundleConfigWritesPrivateSpec(t *testing.T) {
 
 	if err := patchBundleConfig(bundlePath, 501, 20, chamberBundle.ProcessSpec{
 		Args: []string{"/bin/sh"},
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("patchBundleConfig() error = %v", err)
 	}
 
@@ -169,7 +169,7 @@ func TestPatchRootlessSpecKeepsExistingProcessFieldsWhenRequestFieldsAreEmpty(t 
 		Linux: &specs.Linux{},
 	}
 
-	if err := patchRootlessSpec(spec, 501, 20, chamberBundle.ProcessSpec{}); err != nil {
+	if err := patchRootlessSpec(spec, 501, 20, chamberBundle.ProcessSpec{}, nil); err != nil {
 		t.Fatalf("patchRootlessSpec() error = %v", err)
 	}
 	if !slices.Equal(spec.Process.Args, []string{"/bin/from-image"}) {
@@ -187,8 +187,143 @@ func TestPatchRootlessSpecKeepsExistingProcessFieldsWhenRequestFieldsAreEmpty(t 
 }
 
 func TestPatchRootlessSpecRejectsMissingProcess(t *testing.T) {
-	if err := patchRootlessSpec(&specs.Spec{Linux: &specs.Linux{}}, 501, 20, chamberBundle.ProcessSpec{}); err == nil {
+	if err := patchRootlessSpec(&specs.Spec{Linux: &specs.Linux{}}, 501, 20, chamberBundle.ProcessSpec{}, nil); err == nil {
 		t.Fatal("patchRootlessSpec() error = nil, want missing process error")
+	}
+}
+
+func TestPatchRootlessSpecAppendsBindMounts(t *testing.T) {
+	spec := &specs.Spec{
+		Process: &specs.Process{Args: []string{"/bin/from-image"}},
+		Mounts: []specs.Mount{
+			{Destination: "/proc", Type: "proc"},
+			{Destination: "/data", Type: "bind", Source: "/existing", Options: []string{"rbind", "ro"}},
+		},
+		Linux: &specs.Linux{},
+	}
+	mounts := []specs.Mount{
+		{Destination: "/workspace", Type: "bind", Source: "/host/workspace", Options: []string{"rbind", "rw"}},
+	}
+
+	if err := patchRootlessSpec(spec, 501, 20, chamberBundle.ProcessSpec{}, mounts); err != nil {
+		t.Fatalf("patchRootlessSpec() error = %v", err)
+	}
+	mounts[0].Options[0] = "mutated"
+
+	if len(spec.Mounts) != 3 {
+		t.Fatalf("Mounts length = %d, want 3", len(spec.Mounts))
+	}
+	if spec.Mounts[1].Destination != "/data" {
+		t.Fatalf("existing mount destination = %q, want /data", spec.Mounts[1].Destination)
+	}
+	got := spec.Mounts[2]
+	if got.Destination != "/workspace" || got.Type != "bind" || got.Source != "/host/workspace" {
+		t.Fatalf("appended mount = %#v, want workspace bind", got)
+	}
+	if !slices.Equal(got.Options, []string{"rbind", "rw"}) {
+		t.Fatalf("appended mount options = %#v, want copied defaults", got.Options)
+	}
+}
+
+func TestNormalizeBindMountsDefaultsAndExplicitOptions(t *testing.T) {
+	sourceDir := t.TempDir()
+	sourceFile := filepath.Join(t.TempDir(), "go.sum")
+	if err := os.WriteFile(sourceFile, []byte("content"), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	mounts, err := normalizeBindMounts([]chamberBundle.Mount{
+		{Source: sourceDir, Target: "/workspace"},
+		{Type: "bind", Source: sourceFile, Target: "/input/go.sum", Options: []string{"rbind", "ro"}},
+	})
+	if err != nil {
+		t.Fatalf("normalizeBindMounts() error = %v", err)
+	}
+	if len(mounts) != 2 {
+		t.Fatalf("mount count = %d, want 2", len(mounts))
+	}
+	if mounts[0].Type != "bind" || mounts[0].Destination != "/workspace" || !slices.Equal(mounts[0].Options, []string{"rbind", "rw"}) {
+		t.Fatalf("default mount = %#v, want default bind mount", mounts[0])
+	}
+	if mounts[1].Destination != "/input/go.sum" || !slices.Equal(mounts[1].Options, []string{"rbind", "ro"}) {
+		t.Fatalf("explicit mount = %#v, want explicit ro bind mount", mounts[1])
+	}
+}
+
+func TestNormalizeBindMountsRejectsInvalidRequests(t *testing.T) {
+	sourceDir := t.TempDir()
+	tests := map[string]chamberBundle.Mount{
+		"missing source": {Source: filepath.Join(sourceDir, "missing"), Target: "/workspace"},
+		"empty source":   {Target: "/workspace"},
+		"relative target": {
+			Source: sourceDir,
+			Target: "workspace",
+		},
+		"root target": {
+			Source: sourceDir,
+			Target: "/",
+		},
+		"unsupported type": {
+			Type:   "tmpfs",
+			Source: sourceDir,
+			Target: "/workspace",
+		},
+	}
+
+	for name, mount := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := normalizeBindMounts([]chamberBundle.Mount{mount}); err == nil {
+				t.Fatal("normalizeBindMounts() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestPrepareBindMountTargetsCreatesRootfsPlaceholders(t *testing.T) {
+	rootfs := filepath.Join(t.TempDir(), "rootfs")
+	if err := os.MkdirAll(rootfs, 0700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	sourceDir := t.TempDir()
+	sourceFile := filepath.Join(t.TempDir(), "go.mod")
+	if err := os.WriteFile(sourceFile, []byte("module example\n"), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	mounts, err := normalizeBindMounts([]chamberBundle.Mount{
+		{Source: sourceDir, Target: "/workspace"},
+		{Source: sourceFile, Target: "/inputs/go.mod"},
+	})
+	if err != nil {
+		t.Fatalf("normalizeBindMounts() error = %v", err)
+	}
+	if err := prepareBindMountTargets(rootfs, mounts); err != nil {
+		t.Fatalf("prepareBindMountTargets() error = %v", err)
+	}
+
+	workspaceInfo, err := os.Stat(filepath.Join(rootfs, "workspace"))
+	if err != nil {
+		t.Fatalf("Stat(workspace) error = %v", err)
+	}
+	if !workspaceInfo.IsDir() {
+		t.Fatal("workspace target is not a directory")
+	}
+	inputInfo, err := os.Stat(filepath.Join(rootfs, "inputs", "go.mod"))
+	if err != nil {
+		t.Fatalf("Stat(go.mod) error = %v", err)
+	}
+	if inputInfo.IsDir() {
+		t.Fatal("go.mod target is a directory, want file placeholder")
+	}
+}
+
+func TestRootfsPathRejectsEscapes(t *testing.T) {
+	rootfs := t.TempDir()
+	if _, err := rootfsPath(rootfs, "/"); err == nil {
+		t.Fatal("rootfsPath(/) error = nil, want error")
+	}
+	if _, err := rootfsPath(rootfs, "workspace"); err == nil {
+		t.Fatal("rootfsPath(relative) error = nil, want error")
 	}
 }
 
