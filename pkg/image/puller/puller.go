@@ -1,14 +1,17 @@
-package gocontainerregistry
+// Package puller provides Chamber's OCI image puller implementation.
+// It currently uses go-containerregistry for registry access and OCI layout
+// writing.
+package puller
 
 import (
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
+	goruntime "runtime"
 	"time"
 
-	chimage "github.com/donglin-wang/chamber/pkg/image"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -19,7 +22,7 @@ import (
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-var _ chimage.Puller = (*Puller)(nil)
+var _ chamberImage.Puller = (*Puller)(nil)
 
 type Puller struct {
 	directoryManager localfs.DirectoryManager
@@ -31,48 +34,53 @@ func New(directoryManager localfs.DirectoryManager) *Puller {
 	}
 }
 
-func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage.PulledImage, error) {
+func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (chamberImage.PulledImage, error) {
 	if p.directoryManager == nil {
-		return chimage.PulledImage{}, fmt.Errorf("directory manager is required")
+		return chamberImage.PulledImage{}, fmt.Errorf("directory manager is required")
 	}
 
 	ref, err := name.ParseReference(request.Reference)
 	if err != nil {
-		return chimage.PulledImage{}, fmt.Errorf("parse image reference: %w", err)
+		return chamberImage.PulledImage{}, fmt.Errorf("parse image reference: %w", err)
 	}
 
-	platform := hostPlatform()
+	platform := resolvePlatform(request.Platform)
 
 	if request.Destination == "" {
-		return chimage.PulledImage{}, fmt.Errorf("image destination is required")
+		return chamberImage.PulledImage{}, fmt.Errorf("image destination is required")
 	}
 	destination, err := filepath.Abs(request.Destination)
 	if err != nil {
-		return chimage.PulledImage{}, fmt.Errorf("resolve image destination: %w", err)
+		return chamberImage.PulledImage{}, fmt.Errorf("resolve image destination: %w", err)
 	}
 	parent := filepath.Dir(destination)
 	if err := p.directoryManager.EnsurePrivateDir(parent); err != nil {
-		return chimage.PulledImage{}, fmt.Errorf("prepare image destination parent: %w", err)
+		return chamberImage.PulledImage{}, fmt.Errorf("prepare image destination parent: %w", err)
 	}
 
-	img, err := remote.Image(
-		ref,
+	options := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithPlatform(platform),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	}
+	if request.Auth == nil {
+		options = append(options, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	} else {
+		options = append(options, remote.WithAuth(authenticator(request.Auth)))
+	}
+
+	img, err := remote.Image(ref, options...)
 	if err != nil {
-		return chimage.PulledImage{}, fmt.Errorf("fetch image: %w", err)
+		return chamberImage.PulledImage{}, fmt.Errorf("fetch image: %w", err)
 	}
 
 	digest, err := img.Digest()
 	if err != nil {
-		return chimage.PulledImage{}, fmt.Errorf("resolve image digest: %w", err)
+		return chamberImage.PulledImage{}, fmt.Errorf("resolve image digest: %w", err)
 	}
 
 	tmp, err := p.directoryManager.MkdirTemp(parent, "."+filepath.Base(destination)+".tmp-*")
 	if err != nil {
-		return chimage.PulledImage{}, fmt.Errorf("create temporary image layout: %w", err)
+		return chamberImage.PulledImage{}, fmt.Errorf("create temporary image layout: %w", err)
 	}
 	renamed := false
 	defer func() {
@@ -83,7 +91,7 @@ func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage
 
 	layoutPath, err := layout.Write(tmp, empty.Index)
 	if err != nil {
-		return chimage.PulledImage{}, fmt.Errorf("write OCI image layout: %w", err)
+		return chamberImage.PulledImage{}, fmt.Errorf("write OCI image layout: %w", err)
 	}
 	if err := layoutPath.AppendImage(
 		img,
@@ -92,23 +100,23 @@ func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage
 			imagespec.AnnotationRefName: request.Reference,
 		}),
 	); err != nil {
-		return chimage.PulledImage{}, fmt.Errorf("write OCI image layout: %w", err)
+		return chamberImage.PulledImage{}, fmt.Errorf("write OCI image layout: %w", err)
 	}
 	if err := verifyOCILayout(tmp); err != nil {
-		return chimage.PulledImage{}, fmt.Errorf("verify OCI image layout: %w", err)
+		return chamberImage.PulledImage{}, fmt.Errorf("verify OCI image layout: %w", err)
 	}
 
 	if err := os.Rename(tmp, destination); err != nil {
-		return chimage.PulledImage{}, fmt.Errorf("commit OCI image layout: %w", err)
+		return chamberImage.PulledImage{}, fmt.Errorf("commit OCI image layout: %w", err)
 	}
 	renamed = true
 
 	sizeBytes, err := dirSize(destination)
 	if err != nil {
-		return chimage.PulledImage{}, fmt.Errorf("measure OCI image layout: %w", err)
+		return chamberImage.PulledImage{}, fmt.Errorf("measure OCI image layout: %w", err)
 	}
 
-	return chimage.PulledImage{
+	return chamberImage.PulledImage{
 		Reference:  request.Reference,
 		Digest:     digest.String(),
 		LayoutPath: destination,
@@ -117,11 +125,32 @@ func (p *Puller) Pull(ctx context.Context, request chimage.PullRequest) (chimage
 	}, nil
 }
 
-func hostPlatform() v1.Platform {
-	return v1.Platform{
+func resolvePlatform(platform chamberImage.Platform) v1.Platform {
+	resolved := v1.Platform{
 		OS:           "linux",
-		Architecture: runtime.GOARCH,
+		Architecture: goruntime.GOARCH,
 	}
+	if platform.OS != "" {
+		resolved.OS = platform.OS
+	}
+	if platform.Architecture != "" {
+		resolved.Architecture = platform.Architecture
+	}
+	if platform.Variant != "" {
+		resolved.Variant = platform.Variant
+	}
+	return resolved
+}
+
+func authenticator(auth *chamberImage.Auth) authn.Authenticator {
+	config := authn.AuthConfig{
+		Username: auth.Username,
+		Password: auth.Password,
+	}
+	if auth.Token != "" {
+		config.RegistryToken = auth.Token
+	}
+	return authn.FromConfig(config)
 }
 
 func verifyOCILayout(path string) error {

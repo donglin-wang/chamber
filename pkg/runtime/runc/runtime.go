@@ -12,12 +12,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	goruntime "runtime"
 	"strings"
-	"time"
 
-	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	"github.com/donglin-wang/chamber/pkg/shared/containerid"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
@@ -30,17 +30,10 @@ const (
 	defaultARM64SHA256 = "1f6d8c553add066a6aaf838d3172d4c5ed3c6b065b6f7eed2f4a4aa4af261e59"
 )
 
-var validContainerID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
-
-var (
-	startupObservationTimeout = 500 * time.Millisecond
-	startupPollInterval       = 10 * time.Millisecond
-)
-
-var _ chruntime.Runtime = (*Runtime)(nil)
+var _ chamberRuntime.Runtime = (*Runtime)(nil)
 
 type Runtime struct {
-	config           chruntime.Config
+	config           chamberRuntime.Config
 	client           *http.Client
 	directoryManager localfs.DirectoryManager
 }
@@ -55,9 +48,9 @@ func WithHTTPClient(client *http.Client) Option {
 	}
 }
 
-func New(config chruntime.Config, directoryManager localfs.DirectoryManager, options ...Option) *Runtime {
+func New(config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...Option) *Runtime {
 	if config.Name == "" {
-		config.Name = chruntime.DefaultName
+		config.Name = chamberRuntime.DefaultName
 	}
 	if config.Version == "" {
 		config.Version = DefaultVersion
@@ -77,70 +70,70 @@ func New(config chruntime.Config, directoryManager localfs.DirectoryManager, opt
 	return runtime
 }
 
-func (r *Runtime) Ensure(ctx context.Context) (chruntime.Binary, error) {
+func (r *Runtime) Ensure(ctx context.Context) (chamberRuntime.Binary, error) {
 	config := r.config
 	if r.directoryManager == nil {
-		return chruntime.Binary{}, fmt.Errorf("directory manager is required")
+		return chamberRuntime.Binary{}, fmt.Errorf("directory manager is required")
 	}
 	if config.Version == "" || config.URL == "" || config.SHA256 == "" {
-		return chruntime.Binary{}, fmt.Errorf("runc runtime requires version, url, and sha256")
+		return chamberRuntime.Binary{}, fmt.Errorf("runc runtime requires version, url, and sha256")
 	}
 	expectedDigest, err := parseSHA256(config.SHA256)
 	if err != nil {
-		return chruntime.Binary{}, err
+		return chamberRuntime.Binary{}, err
 	}
 
 	binary, err := r.configuredBinary()
 	if err != nil {
-		return chruntime.Binary{}, err
+		return chamberRuntime.Binary{}, err
 	}
 	binDir := filepath.Dir(binary.Path)
 	if err := r.directoryManager.EnsurePrivateDir(binDir); err != nil {
-		return chruntime.Binary{}, fmt.Errorf("prepare runtime bin dir: %w", err)
+		return chamberRuntime.Binary{}, fmt.Errorf("prepare runtime bin dir: %w", err)
 	}
 
 	if ok, err := fileMatchesSHA256(binary.Path, expectedDigest); err != nil {
-		return chruntime.Binary{}, fmt.Errorf("verify existing runtime binary: %w", err)
+		return chamberRuntime.Binary{}, fmt.Errorf("verify existing runtime binary: %w", err)
 	} else if ok {
 		return binary, nil
 	}
 
 	if err := r.download(ctx, config.URL, expectedDigest, binDir, binary.Path); err != nil {
-		return chruntime.Binary{}, err
+		return chamberRuntime.Binary{}, err
 	}
 
 	return binary, nil
 }
 
-func (r *Runtime) Run(ctx context.Context, request chruntime.RunRequest) (chruntime.StartResult, error) {
+func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Process, error) {
 	if request.Bundle.BundlePath == "" {
-		return chruntime.StartResult{}, fmt.Errorf("runtime bundle path is required")
+		return nil, fmt.Errorf("runtime bundle path is required")
 	}
 	containerID := request.Bundle.ContainerID
-	if !validContainerID.MatchString(containerID) {
-		return chruntime.StartResult{}, fmt.Errorf("invalid container ID %q", containerID)
+	if err := containerid.Validate(containerID); err != nil {
+		return nil, err
 	}
 	if len(request.Bundle.RootFS.Mounts) > 0 {
-		return chruntime.StartResult{}, fmt.Errorf("runtime bundle rootfs mounts are not yet supported by runc Run")
+		return nil, fmt.Errorf("runtime bundle rootfs mounts are not yet supported by runc Run")
 	}
 	binary, err := r.configuredBinary()
 	if err != nil {
-		return chruntime.StartResult{}, err
+		return nil, err
 	}
 	stateRoot, err := r.stateRoot()
 	if err != nil {
-		return chruntime.StartResult{}, err
+		return nil, err
 	}
 	directoryManager, err := r.requireDirectoryManager()
 	if err != nil {
-		return chruntime.StartResult{}, err
+		return nil, err
 	}
 	if err := directoryManager.EnsurePrivateDir(stateRoot); err != nil {
-		return chruntime.StartResult{}, fmt.Errorf("prepare runtime state root: %w", err)
+		return nil, fmt.Errorf("prepare runtime state root: %w", err)
 	}
 	stdout, stderr, err := r.openLogs(containerID)
 	if err != nil {
-		return chruntime.StartResult{}, err
+		return nil, err
 	}
 
 	cmd := exec.CommandContext(ctx, binary.Path, "--root", stateRoot, "run", containerID)
@@ -152,18 +145,10 @@ func (r *Runtime) Run(ctx context.Context, request chruntime.RunRequest) (chrunt
 	if err := cmd.Start(); err != nil {
 		_ = stdout.Close()
 		_ = stderr.Close()
-		return chruntime.StartResult{}, fmt.Errorf("start runc container %q: %w", containerID, err)
+		return nil, fmt.Errorf("start runc container %q: %w", containerID, err)
 	}
 
-	process := newRuncProcess(cmd, stdout, stderr)
-	state, err := observeStartup(ctx, binary.Path, stateRoot, containerID, process)
-	if err != nil {
-		return chruntime.StartResult{}, err
-	}
-	return chruntime.StartResult{
-		Process: process,
-		State:   state,
-	}, nil
+	return newRuncProcess(cmd, stdout, stderr), nil
 }
 
 func (r *Runtime) ReadLog(containerID string, stream string) ([]byte, error) {
@@ -172,6 +157,62 @@ func (r *Runtime) ReadLog(containerID string, stream string) ([]byte, error) {
 		return nil, err
 	}
 	return os.ReadFile(path)
+}
+
+func (r *Runtime) State(ctx context.Context, containerID string) (chamberRuntime.ContainerState, error) {
+	if err := containerid.Validate(containerID); err != nil {
+		return chamberRuntime.ContainerState{}, err
+	}
+	binary, stateRoot, err := r.binaryAndStateRoot()
+	if err != nil {
+		return chamberRuntime.ContainerState{}, err
+	}
+	state, err := readRuncState(ctx, binary.Path, stateRoot, containerID)
+	if err != nil {
+		return chamberRuntime.ContainerState{}, err
+	}
+	return chamberRuntime.ContainerState{
+		ContainerID: containerID,
+		Status:      state.Status,
+	}, nil
+}
+
+func (r *Runtime) Signal(ctx context.Context, request chamberRuntime.SignalRequest) error {
+	if err := containerid.Validate(request.ContainerID); err != nil {
+		return err
+	}
+	if strings.TrimSpace(request.Signal) == "" {
+		return fmt.Errorf("%w: runtime signal is required", chamberErrors.ErrInvalidRequest)
+	}
+	binary, stateRoot, err := r.binaryAndStateRoot()
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, binary.Path, "--root", stateRoot, "kill", request.ContainerID, request.Signal)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("signal runc container %q: %w: %s", request.ContainerID, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func (r *Runtime) Delete(ctx context.Context, request chamberRuntime.DeleteRequest) error {
+	if err := containerid.Validate(request.ContainerID); err != nil {
+		return err
+	}
+	binary, stateRoot, err := r.binaryAndStateRoot()
+	if err != nil {
+		return err
+	}
+	args := []string{"--root", stateRoot, "delete"}
+	if request.Force {
+		args = append(args, "--force")
+	}
+	args = append(args, request.ContainerID)
+	cmd := exec.CommandContext(ctx, binary.Path, args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("delete runc container %q: %w: %s", request.ContainerID, err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
@@ -187,11 +228,11 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 		return nil, nil, fmt.Errorf("prepare runc log directory: %w", err)
 	}
 
-	stdoutPath, err := r.logPath(containerID, chruntime.StdoutLogStream)
+	stdoutPath, err := r.logPath(containerID, chamberRuntime.StdoutLogStream)
 	if err != nil {
 		return nil, nil, err
 	}
-	stderrPath, err := r.logPath(containerID, chruntime.StderrLogStream)
+	stderrPath, err := r.logPath(containerID, chamberRuntime.StderrLogStream)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -214,7 +255,7 @@ func (r *Runtime) logPath(containerID string, stream string) (string, error) {
 		return "", err
 	}
 	switch stream {
-	case chruntime.StdoutLogStream, chruntime.StderrLogStream:
+	case chamberRuntime.StdoutLogStream, chamberRuntime.StderrLogStream:
 		return filepath.Join(logDir, stream+".log"), nil
 	default:
 		return "", fmt.Errorf("unsupported log stream %q", stream)
@@ -222,14 +263,26 @@ func (r *Runtime) logPath(containerID string, stream string) (string, error) {
 }
 
 func (r *Runtime) logDir(containerID string) (string, error) {
-	if !validContainerID.MatchString(containerID) {
-		return "", fmt.Errorf("invalid container ID %q", containerID)
+	if err := containerid.Validate(containerID); err != nil {
+		return "", err
 	}
 	runtimeRoot, err := r.stateRoot()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(runtimeRoot, "logs", containerID), nil
+}
+
+func (r *Runtime) binaryAndStateRoot() (chamberRuntime.Binary, string, error) {
+	binary, err := r.configuredBinary()
+	if err != nil {
+		return chamberRuntime.Binary{}, "", err
+	}
+	stateRoot, err := r.stateRoot()
+	if err != nil {
+		return chamberRuntime.Binary{}, "", err
+	}
+	return binary, stateRoot, nil
 }
 
 func (r *Runtime) stateRoot() (string, error) {
@@ -243,19 +296,19 @@ func (r *Runtime) stateRoot() (string, error) {
 	return runtimeRoot, nil
 }
 
-func (r *Runtime) configuredBinary() (chruntime.Binary, error) {
+func (r *Runtime) configuredBinary() (chamberRuntime.Binary, error) {
 	config := r.config
 	if config.Name == "" {
-		return chruntime.Binary{}, fmt.Errorf("runtime name is required")
+		return chamberRuntime.Binary{}, fmt.Errorf("runtime name is required")
 	}
 	if config.RuntimeBinDir == "" {
-		return chruntime.Binary{}, fmt.Errorf("runtime bin dir is required")
+		return chamberRuntime.Binary{}, fmt.Errorf("runtime bin dir is required")
 	}
 	binDir, err := absPath(config.RuntimeBinDir)
 	if err != nil {
-		return chruntime.Binary{}, fmt.Errorf("resolve runtime bin dir: %w", err)
+		return chamberRuntime.Binary{}, fmt.Errorf("resolve runtime bin dir: %w", err)
 	}
-	return chruntime.Binary{
+	return chamberRuntime.Binary{
 		Name:    config.Name,
 		Version: config.Version,
 		Path:    filepath.Join(binDir, config.Name),
@@ -331,50 +384,26 @@ func convertWaitResult(err error) waitResult {
 	return waitResult{err: err}
 }
 
-func observeStartup(ctx context.Context, binaryPath string, stateRoot string, containerID string, process *runcProcess) (chruntime.ObservedState, error) {
-	ticker := time.NewTicker(startupPollInterval)
-	defer ticker.Stop()
-
-	deadline := time.NewTimer(startupObservationTimeout)
-	defer deadline.Stop()
-
-	for {
-		if running, err := containerIsRunning(ctx, binaryPath, stateRoot, containerID); err != nil {
-			if ctx.Err() != nil {
-				return "", fmt.Errorf("observe runc container %q startup: %w", containerID, err)
-			}
-		} else if running {
-			return chruntime.ProcessRunning, nil
-		}
-
-		select {
-		case <-process.done:
-			return chruntime.ProcessExited, nil
-		case <-deadline.C:
-			return chruntime.ProcessRunning, nil
-		case <-ctx.Done():
-			return "", fmt.Errorf("observe runc container %q startup: %w", containerID, ctx.Err())
-		case <-ticker.C:
-		}
-	}
-}
-
 type runcState struct {
+	ID     string `json:"id"`
 	Status string `json:"status"`
 }
 
-func containerIsRunning(ctx context.Context, binaryPath string, stateRoot string, containerID string) (bool, error) {
+func readRuncState(ctx context.Context, binaryPath string, stateRoot string, containerID string) (runcState, error) {
 	cmd := exec.CommandContext(ctx, binaryPath, "--root", stateRoot, "state", containerID)
 	output, err := cmd.Output()
 	if err != nil {
-		return false, err
+		return runcState{}, err
 	}
+	return decodeRuncState(output)
+}
 
+func decodeRuncState(output []byte) (runcState, error) {
 	var state runcState
 	if err := json.Unmarshal(output, &state); err != nil {
-		return false, err
+		return runcState{}, err
 	}
-	return state.Status == "running", nil
+	return state, nil
 }
 
 func (r *Runtime) download(ctx context.Context, url string, expectedDigest []byte, binDir string, binaryPath string) error {

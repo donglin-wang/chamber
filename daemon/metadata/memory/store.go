@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
 type MemoryStore struct {
@@ -102,11 +103,11 @@ func (s *MemoryStore) SucceedOperation(ctx context.Context, id string) (metadata
 	})
 }
 
-func (s *MemoryStore) FailOperation(ctx context.Context, id string, code metadata.ErrorCode) (metadata.Operation, error) {
+func (s *MemoryStore) FailOperation(ctx context.Context, id string, code chamberErrors.Code) (metadata.Operation, error) {
 	return s.TransitionOperation(ctx, id, metadata.OperationRunning, metadata.OperationUpdate{
 		State:     metadata.OperationFailed,
 		At:        time.Now().UTC(),
-		ErrorCode: string(code),
+		ErrorCode: code,
 	})
 }
 
@@ -131,16 +132,16 @@ func (s *MemoryStore) TransitionOperation(
 		return metadata.Operation{}, metadata.ErrNotFound
 	}
 	if operation.State != from {
-		return metadata.Operation{}, metadata.ErrStateConflict
+		return metadata.Operation{}, chamberErrors.ErrStateConflict
 	}
 	if !metadata.IsOperationTransitionValid(from, update.State) {
-		return metadata.Operation{}, metadata.ErrStateConflict
+		return metadata.Operation{}, chamberErrors.ErrStateConflict
 	}
 
 	operation.State = update.State
 	operation.UpdatedAt = update.At
 	operation.FinishedAt = cloneTimePtr(&update.At)
-	operation.ErrorCode = metadata.ErrorCode(update.ErrorCode)
+	operation.ErrorCode = update.ErrorCode
 	s.operations[id] = cloneOperation(operation)
 	return cloneOperation(operation), nil
 }
@@ -223,16 +224,16 @@ func (s *MemoryStore) TransitionContainer(
 		return metadata.Container{}, metadata.ErrNotFound
 	}
 	if container.State != from {
-		return metadata.Container{}, metadata.ErrStateConflict
+		return metadata.Container{}, chamberErrors.ErrStateConflict
 	}
 	if !metadata.IsContainerTransitionValid(from, update.State) {
-		return metadata.Container{}, metadata.ErrStateConflict
+		return metadata.Container{}, chamberErrors.ErrStateConflict
 	}
 
 	container.State = update.State
 	container.UpdatedAt = update.At
 	container.ExitCode = cloneIntPtr(update.ExitCode)
-	container.ErrorCode = metadata.ErrorCode(update.ErrorCode)
+	container.ErrorCode = update.ErrorCode
 	s.containers[id] = cloneContainer(container)
 	return cloneContainer(container), nil
 }
@@ -242,12 +243,12 @@ func (s *MemoryStore) FailContainerAndOperation(
 	containerID string,
 	from metadata.ContainerState,
 	operationID string,
-	code metadata.ErrorCode,
+	code chamberErrors.Code,
 ) (metadata.Container, metadata.Operation, error) {
 	container, containerErr := s.TransitionContainer(ctx, containerID, from, metadata.ContainerUpdate{
 		State:     metadata.ContainerFailed,
 		At:        time.Now().UTC(),
-		ErrorCode: string(code),
+		ErrorCode: code,
 	})
 	operation, operationErr := s.FailOperation(ctx, operationID, code)
 	return container, operation, errors.Join(containerErr, operationErr)

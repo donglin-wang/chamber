@@ -5,12 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
-	chimage "github.com/donglin-wang/chamber/pkg/image"
-	"github.com/donglin-wang/chamber/pkg/image/gocontainerregistry"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	"github.com/donglin-wang/chamber/pkg/shared/testutil"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
@@ -19,13 +20,13 @@ import (
 
 const busyboxReference = "index.docker.io/library/busybox:latest"
 
-type pullerFactory func(t *testing.T) chimage.Puller
+type pullerFactory func(t *testing.T) chamberImage.Puller
 
 func TestPullerLocalContract(t *testing.T) {
 	tests := map[string]pullerFactory{
-		"gocontainerregistry": func(t *testing.T) chimage.Puller {
+		"puller": func(t *testing.T) chamberImage.Puller {
 			t.Helper()
-			return gocontainerregistry.New(localfs.NewDirectoryManager())
+			return chamberImagePuller.New(localfs.NewDirectoryManager())
 		},
 	}
 
@@ -35,13 +36,14 @@ func TestPullerLocalContract(t *testing.T) {
 			assertPullFetchFailureLeavesNoFinalLayout(t, newPuller)
 			assertPullRenameFailureIsReturned(t, newPuller)
 			assertPullSuccessReturnsDigestSizeAndUTCTime(t, newPuller, localImageReference(t))
+			assertPullSuccessWithExplicitPlatformAndAuth(t, newPuller, localImageReference(t))
 		})
 	}
 }
 
-func TestGoContainerRegistryPullerRealWorldBusybox(t *testing.T) {
-	puller := gocontainerregistry.New(localfs.NewDirectoryManager())
-	assertPullSuccessReturnsDigestSizeAndUTCTime(t, func(t *testing.T) chimage.Puller {
+func TestImagePullerRealWorldBusybox(t *testing.T) {
+	puller := chamberImagePuller.New(localfs.NewDirectoryManager())
+	assertPullSuccessReturnsDigestSizeAndUTCTime(t, func(t *testing.T) chamberImage.Puller {
 		t.Helper()
 		return puller
 	}, imageFixture{
@@ -54,7 +56,7 @@ func assertPullInvalidReference(t *testing.T, newPuller pullerFactory) {
 
 	puller := newPuller(t)
 
-	_, err := puller.Pull(context.Background(), chimage.PullRequest{
+	_, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference:   "not a reference !!",
 		Destination: filepath.Join(privateTempDir(t), "layout"),
 	})
@@ -70,7 +72,7 @@ func assertPullFetchFailureLeavesNoFinalLayout(t *testing.T, newPuller pullerFac
 	destination := filepath.Join(privateTempDir(t), "layout")
 	puller := newPuller(t)
 
-	_, err := puller.Pull(context.Background(), chimage.PullRequest{
+	_, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference:   registry.Reference(t, "library/busybox", "latest"),
 		Destination: destination,
 	})
@@ -97,7 +99,7 @@ func assertPullRenameFailureIsReturned(t *testing.T, newPuller pullerFactory) {
 	image := localImageReference(t)
 	puller := newPuller(t)
 
-	_, err := puller.Pull(context.Background(), chimage.PullRequest{
+	_, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference:   image.reference,
 		Destination: destination,
 	})
@@ -116,7 +118,7 @@ func assertPullSuccessReturnsDigestSizeAndUTCTime(t *testing.T, newPuller puller
 	puller := newPuller(t)
 	before := time.Now().UTC()
 
-	pulled, err := puller.Pull(context.Background(), chimage.PullRequest{
+	pulled, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference:   image.reference,
 		Destination: destination,
 	})
@@ -148,6 +150,33 @@ func assertPullSuccessReturnsDigestSizeAndUTCTime(t *testing.T, newPuller puller
 	}
 	if _, err := os.Stat(filepath.Join(destination, "index.json")); err != nil {
 		t.Fatalf("final OCI layout missing index.json: %v", err)
+	}
+	assertLayoutHasImageRef(t, destination, image.reference)
+}
+
+func assertPullSuccessWithExplicitPlatformAndAuth(t *testing.T, newPuller pullerFactory, image imageFixture) {
+	t.Helper()
+
+	destination := filepath.Join(privateTempDir(t), "layout")
+	puller := newPuller(t)
+
+	pulled, err := puller.Pull(context.Background(), chamberImage.PullRequest{
+		Reference:   image.reference,
+		Destination: destination,
+		Platform: chamberImage.Platform{
+			OS:           "linux",
+			Architecture: runtime.GOARCH,
+		},
+		Auth: &chamberImage.Auth{
+			Username: "user",
+			Password: "pass",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Pull(explicit platform/auth) error = %v", err)
+	}
+	if pulled.LayoutPath != destination {
+		t.Fatalf("LayoutPath = %q, want %q", pulled.LayoutPath, destination)
 	}
 	assertLayoutHasImageRef(t, destination, image.reference)
 }

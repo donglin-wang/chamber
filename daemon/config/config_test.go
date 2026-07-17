@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chimage "github.com/donglin-wang/chamber/pkg/image"
-	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 )
 
 func TestOverrideFieldsMatchConfigFields(t *testing.T) {
@@ -32,11 +32,11 @@ func TestOverrideFieldsMatchConfigFields(t *testing.T) {
 		wantType := reflect.PointerTo(configField.Type)
 		switch name {
 		case "Bundle":
-			wantType = reflect.TypeOf(chbundle.Override{})
+			wantType = reflect.TypeOf(chamberBundle.Override{})
 		case "Image":
-			wantType = reflect.TypeOf(chimage.Override{})
+			wantType = reflect.TypeOf(chamberImage.Override{})
 		case "Runtime":
-			wantType = reflect.TypeOf(chruntime.Override{})
+			wantType = reflect.TypeOf(chamberRuntime.Override{})
 		case "Metadata":
 			wantType = reflect.TypeOf(metadata.Override{})
 		}
@@ -62,8 +62,8 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 	for _, importSpec := range file.Imports {
 		importPath := strings.Trim(importSpec.Path.Value, `"`)
 		switch importPath {
-		case "github.com/donglin-wang/chamber/pkg/image/gocontainerregistry",
-			"github.com/donglin-wang/chamber/pkg/bundle/umoci",
+		case "github.com/donglin-wang/chamber/pkg/image/puller",
+			"github.com/donglin-wang/chamber/pkg/bundle/rootless",
 			"github.com/donglin-wang/chamber/daemon/metadata/etcd",
 			"github.com/donglin-wang/chamber/pkg/runtime/runc",
 			"github.com/donglin-wang/chamber/pkg/shared/localfs":
@@ -138,13 +138,13 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:8080",
 		SocketPath: filepath.Join(root, "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "run", "tmp"),
-		Bundle: chbundle.Config{
+		Bundle: chamberBundle.Config{
 			Root: filepath.Join(root, "bundles"),
 		},
-		Image: chimage.Config{
+		Image: chamberImage.Config{
 			Root: filepath.Join(root, "images"),
 		},
-		Runtime: chruntime.Config{
+		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "bin"),
 			Name:          "runc",
@@ -211,13 +211,13 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:8080",
 		SocketPath: "default/run/chamber.sock",
 		TmpRoot:    "default/tmp",
-		Bundle: chbundle.Config{
+		Bundle: chamberBundle.Config{
 			Root: "default/bundles",
 		},
-		Image: chimage.Config{
+		Image: chamberImage.Config{
 			Root: "default/images",
 		},
-		Runtime: chruntime.Config{
+		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   "default/runtime",
 			RuntimeBinDir: "default/bin",
 			Name:          "default-runtime",
@@ -241,13 +241,13 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		HTTPAddr:   ptr("127.0.0.1:9090"),
 		SocketPath: ptr("override/run/chamber.sock"),
 		TmpRoot:    ptr("override/tmp"),
-		Bundle: chbundle.Override{
+		Bundle: chamberBundle.Override{
 			Root: ptr("override/bundles"),
 		},
-		Image: chimage.Override{
+		Image: chamberImage.Override{
 			Root: ptr("override/images"),
 		},
-		Runtime: chruntime.Override{
+		Runtime: chamberRuntime.Override{
 			RuntimeRoot:   ptr("override/runtime"),
 			RuntimeBinDir: ptr("override/bin"),
 			Name:          ptr("crun"),
@@ -277,13 +277,13 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:9090",
 		SocketPath: mustAbs(t, "override/run/chamber.sock"),
 		TmpRoot:    mustAbs(t, "override/tmp"),
-		Bundle: chbundle.Config{
+		Bundle: chamberBundle.Config{
 			Root: mustAbs(t, "override/bundles"),
 		},
-		Image: chimage.Config{
+		Image: chamberImage.Config{
 			Root: mustAbs(t, "override/images"),
 		},
-		Runtime: chruntime.Config{
+		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   mustAbs(t, "override/runtime"),
 			RuntimeBinDir: mustAbs(t, "override/bin"),
 			Name:          "crun",
@@ -314,13 +314,13 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:8080",
 		SocketPath: filepath.Join(root, "default", "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "default", "tmp"),
-		Bundle: chbundle.Config{
+		Bundle: chamberBundle.Config{
 			Root: filepath.Join(root, "default", "bundles"),
 		},
-		Image: chimage.Config{
+		Image: chamberImage.Config{
 			Root: filepath.Join(root, "default", "images"),
 		},
-		Runtime: chruntime.Config{
+		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "default", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "default", "bin"),
 			Name:          "default-runtime",

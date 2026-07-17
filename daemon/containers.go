@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
-	daemonconfig "github.com/donglin-wang/chamber/daemon/config"
+	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/google/uuid"
 )
 
@@ -42,15 +43,15 @@ type containerResponse struct {
 	CreatedAt   time.Time               `json:"created_at"`
 	UpdatedAt   time.Time               `json:"updated_at"`
 	ExitCode    *int                    `json:"exit_code,omitempty"`
-	ErrorCode   metadata.ErrorCode      `json:"error_code,omitempty"`
+	ErrorCode   chamberErrors.Code      `json:"error_code,omitempty"`
 }
 
 func registerContainerRoutes(
 	mux *http.ServeMux,
-	cfg daemonconfig.Config,
+	cfg chamberDaemonConfig.Config,
 	store metadata.Store,
-	runtime chruntime.Runtime,
-	provisioner chbundle.Provisioner,
+	runtime chamberRuntime.Runtime,
+	provisioner chamberBundle.Provisioner,
 	lifetime context.Context,
 ) {
 	runtimeCtx := lifetime
@@ -66,7 +67,7 @@ func registerContainerRoutes(
 
 		containers, err := store.ListContainers(r.Context())
 		if err != nil {
-			writeDaemonError(w, operationError("", metadata.ErrMetadataFailed, err))
+			writeDaemonError(w, operationError("", chamberErrors.ErrMetadataFailed, err))
 			return
 		}
 
@@ -82,16 +83,16 @@ func registerContainerRoutes(
 	mux.HandleFunc("POST /v1/containers/run", func(w http.ResponseWriter, r *http.Request) {
 		var request runContainerRequest
 		if err := decodeJSON(w, r, &request); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "request body must be a JSON object with image and command")
+			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "request body must be a JSON object with image and command")
 			return
 		}
 
 		if strings.TrimSpace(request.Image) == "" {
-			writeError(w, http.StatusBadRequest, "invalid_request", "image is required")
+			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "image is required")
 			return
 		}
 		if len(request.Command) == 0 || strings.TrimSpace(request.Command[0]) == "" {
-			writeError(w, http.StatusBadRequest, "invalid_request", "command is required")
+			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "command is required")
 			return
 		}
 
@@ -121,16 +122,16 @@ func registerContainerRoutes(
 	mux.HandleFunc("GET /v1/containers/{id}/logs", func(w http.ResponseWriter, r *http.Request) {
 		containerID := strings.TrimSpace(r.PathValue("id"))
 		if containerID == "" {
-			writeError(w, http.StatusBadRequest, "invalid_request", "container id is required")
+			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "container id is required")
 			return
 		}
 
 		stream := strings.TrimSpace(r.URL.Query().Get("stream"))
 		if stream == "" {
-			stream = chruntime.StdoutLogStream
+			stream = chamberRuntime.StdoutLogStream
 		}
-		if stream != chruntime.StdoutLogStream && stream != chruntime.StderrLogStream {
-			writeError(w, http.StatusBadRequest, "invalid_request", "unsupported log stream")
+		if stream != chamberRuntime.StdoutLogStream && stream != chamberRuntime.StderrLogStream {
+			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "unsupported log stream")
 			return
 		}
 
@@ -140,11 +141,11 @@ func registerContainerRoutes(
 		}
 		container, err := store.GetContainer(r.Context(), containerID)
 		if errors.Is(err, metadata.ErrNotFound) {
-			writeDaemonError(w, operationError("", metadata.ErrContainerNotFound, err))
+			writeDaemonError(w, operationError("", chamberErrors.ErrContainerNotFound, err))
 			return
 		}
 		if err != nil {
-			writeDaemonError(w, operationError("", metadata.ErrMetadataFailed, err))
+			writeDaemonError(w, operationError("", chamberErrors.ErrMetadataFailed, err))
 			return
 		}
 		if runtime == nil {
@@ -153,11 +154,11 @@ func registerContainerRoutes(
 		}
 		content, err := runtime.ReadLog(container.ID, stream)
 		if errors.Is(err, os.ErrNotExist) {
-			writeDaemonError(w, operationError("", metadata.ErrLogNotFound, err))
+			writeDaemonError(w, operationError("", chamberErrors.ErrLogNotFound, err))
 			return
 		}
 		if err != nil {
-			writeDaemonError(w, operationError("", metadata.ErrMetadataFailed, err))
+			writeDaemonError(w, operationError("", chamberErrors.ErrMetadataFailed, err))
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -175,10 +176,10 @@ type runContainerResult struct {
 
 func runContainer(
 	ctx context.Context,
-	cfg daemonconfig.Config,
+	cfg chamberDaemonConfig.Config,
 	store metadata.Store,
-	runtime chruntime.Runtime,
-	provisioner chbundle.Provisioner,
+	runtime chamberRuntime.Runtime,
+	provisioner chamberBundle.Provisioner,
 	runtimeCtx context.Context,
 	imageRef string,
 	command []string,
@@ -221,9 +222,9 @@ func runContainer(
 
 	image, err := store.GetImage(ctx, imageRef)
 	if err != nil {
-		code := metadata.ErrMetadataFailed
+		code := chamberErrors.ErrMetadataFailed
 		if errors.Is(err, metadata.ErrNotFound) {
-			code = metadata.ErrImageNotFound
+			code = chamberErrors.ErrImageNotFound
 		}
 		_, transitionErr := store.FailOperation(ctx, operationID, code)
 		failErr := operationError(operationID, code, errors.Join(err, transitionErr))
@@ -232,18 +233,20 @@ func runContainer(
 
 	runtimeName := cfg.Runtime.Name
 	if runtimeName == "" {
-		runtimeName = chruntime.DefaultName
+		runtimeName = chamberRuntime.DefaultName
 	}
 
-	provisioned, err := provisioner.Provision(ctx, chbundle.ProvisionRequest{
+	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
 		ContainerID: containerID,
 		ImageLayout: image.LayoutPath,
 		ImageRef:    image.Reference,
-		Command:     command,
+		Process: chamberBundle.ProcessSpec{
+			Args: command,
+		},
 	})
 	if err != nil {
-		failedOperation, transitionErr := store.FailOperation(ctx, operationID, metadata.ErrBundlePrepareFailed)
-		failErr := operationError(operationID, metadata.ErrBundlePrepareFailed, errors.Join(err, transitionErr))
+		failedOperation, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrBundlePrepareFailed)
+		failErr := operationError(operationID, chamberErrors.ErrBundlePrepareFailed, errors.Join(err, transitionErr))
 		if failedOperation.ID != "" {
 			operation = failedOperation
 		}
@@ -251,8 +254,8 @@ func runContainer(
 	}
 	if strings.TrimSpace(provisioned.BundlePath) == "" {
 		err := fmt.Errorf("bundle provisioner returned empty bundle path")
-		failedOperation, transitionErr := store.FailOperation(ctx, operationID, metadata.ErrBundlePrepareFailed)
-		failErr := operationError(operationID, metadata.ErrBundlePrepareFailed, errors.Join(err, transitionErr))
+		failedOperation, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrBundlePrepareFailed)
+		failErr := operationError(operationID, chamberErrors.ErrBundlePrepareFailed, errors.Join(err, transitionErr))
 		if failedOperation.ID != "" {
 			operation = failedOperation
 		}
@@ -272,8 +275,8 @@ func runContainer(
 		UpdatedAt:   now,
 	}
 	if err := store.CreateContainer(ctx, container); err != nil {
-		_, transitionErr := store.FailOperation(ctx, operationID, metadata.ErrMetadataFailed)
-		failErr := operationError(operationID, metadata.ErrMetadataFailed, errors.Join(err, transitionErr))
+		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrMetadataFailed)
+		failErr := operationError(operationID, chamberErrors.ErrMetadataFailed, errors.Join(err, transitionErr))
 		return runContainerResult{operation: operation}, failErr
 	}
 
@@ -282,17 +285,17 @@ func runContainer(
 		At:    time.Now().UTC(),
 	})
 	if err != nil {
-		_, transitionErr := store.FailOperation(ctx, operationID, metadata.ErrMetadataFailed)
-		failErr := operationError(operationID, metadata.ErrMetadataFailed, errors.Join(err, transitionErr))
+		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrMetadataFailed)
+		failErr := operationError(operationID, chamberErrors.ErrMetadataFailed, errors.Join(err, transitionErr))
 		return runContainerResult{operation: operation, container: container}, failErr
 	}
 
-	start, err := runtime.Run(runtimeCtx, chruntime.RunRequest{
+	process, err := runtime.Run(runtimeCtx, chamberRuntime.RunRequest{
 		Bundle: provisioned,
 	})
 	if err != nil {
-		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, metadata.ContainerStarting, operationID, metadata.ErrRuntimeStartFailed)
-		failErr := operationError(operationID, metadata.ErrRuntimeStartFailed, errors.Join(err, transitionErr))
+		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, metadata.ContainerStarting, operationID, chamberErrors.ErrRuntimeStartFailed)
+		failErr := operationError(operationID, chamberErrors.ErrRuntimeStartFailed, errors.Join(err, transitionErr))
 		if failedOperation.ID != "" {
 			operation = failedOperation
 		}
@@ -305,42 +308,19 @@ func runContainer(
 		}, failErr
 	}
 
-	switch start.State {
-	case chruntime.ProcessRunning:
-		running, err := store.TransitionContainer(ctx, containerID, metadata.ContainerStarting, metadata.ContainerUpdate{
-			State: metadata.ContainerRunning,
-			At:    time.Now().UTC(),
-		})
-		if err != nil {
-			go finishRunningProcess(store, operationID, containerID, metadata.ContainerStarting, start.Process)
-			return runContainerResult{operation: operation, container: starting}, operationError(operationID, metadata.ErrMetadataFailed, err)
-		}
-		go finishRunningProcess(store, operationID, containerID, metadata.ContainerRunning, start.Process)
-		return runContainerResult{operation: operation, container: running}, nil
-	case chruntime.ProcessExited:
-		exited, completed, err := finishExitedProcess(ctx, store, operationID, containerID, metadata.ContainerStarting, start.Process)
-		return runContainerResult{
-			operation: completed,
-			container: exited,
-		}, err
-	default:
-		err := fmt.Errorf("runtime returned unknown observed state %q", start.State)
-		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, metadata.ContainerStarting, operationID, metadata.ErrRuntimeStartFailed)
-		failErr := operationError(operationID, metadata.ErrRuntimeStartFailed, errors.Join(err, transitionErr))
-		if failedOperation.ID != "" {
-			operation = failedOperation
-		}
-		if failedContainer.ID != "" {
-			starting = failedContainer
-		}
-		return runContainerResult{
-			operation: operation,
-			container: starting,
-		}, failErr
+	running, err := store.TransitionContainer(ctx, containerID, metadata.ContainerStarting, metadata.ContainerUpdate{
+		State: metadata.ContainerRunning,
+		At:    time.Now().UTC(),
+	})
+	if err != nil {
+		go finishRunningProcess(store, operationID, containerID, metadata.ContainerStarting, process)
+		return runContainerResult{operation: operation, container: starting}, operationError(operationID, chamberErrors.ErrMetadataFailed, err)
 	}
+	go finishRunningProcess(store, operationID, containerID, metadata.ContainerRunning, process)
+	return runContainerResult{operation: operation, container: running}, nil
 }
 
-func finishRunningProcess(store metadata.Store, operationID string, containerID string, from metadata.ContainerState, process chruntime.Process) {
+func finishRunningProcess(store metadata.Store, operationID string, containerID string, from metadata.ContainerState, process chamberRuntime.Process) {
 	_, _, err := finishExitedProcess(context.Background(), store, operationID, containerID, from, process)
 	if err != nil {
 		// The HTTP request already returned. Leave the error in logs; the
@@ -349,23 +329,23 @@ func finishRunningProcess(store metadata.Store, operationID string, containerID 
 	}
 }
 
-func finishExitedProcess(ctx context.Context, store metadata.Store, operationID string, containerID string, from metadata.ContainerState, process chruntime.Process) (metadata.Container, metadata.Operation, error) {
+func finishExitedProcess(ctx context.Context, store metadata.Store, operationID string, containerID string, from metadata.ContainerState, process chamberRuntime.Process) (metadata.Container, metadata.Operation, error) {
 	if process == nil {
 		err := fmt.Errorf("runtime process is required")
-		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, from, operationID, metadata.ErrRuntimeWaitFailed)
-		failErr := operationError(operationID, metadata.ErrRuntimeWaitFailed, errors.Join(err, transitionErr))
+		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, from, operationID, chamberErrors.ErrRuntimeWaitFailed)
+		failErr := operationError(operationID, chamberErrors.ErrRuntimeWaitFailed, errors.Join(err, transitionErr))
 		return failedContainer, failedOperation, failErr
 	}
 
 	exitCode, waitErr := process.Wait()
 	exitCodePtr := &exitCode
-	code := metadata.ErrorCode("")
+	code := chamberErrors.Code("")
 	operationState := metadata.OperationSucceeded
 	if waitErr != nil {
-		code = metadata.ErrRuntimeWaitFailed
+		code = chamberErrors.ErrRuntimeWaitFailed
 		operationState = metadata.OperationFailed
 	} else if exitCode != 0 {
-		code = metadata.ErrContainerExitNonzero
+		code = chamberErrors.ErrContainerExitNonzero
 		operationState = metadata.OperationFailed
 	}
 
@@ -373,10 +353,10 @@ func finishExitedProcess(ctx context.Context, store metadata.Store, operationID 
 		State:     metadata.ContainerExited,
 		At:        time.Now().UTC(),
 		ExitCode:  exitCodePtr,
-		ErrorCode: string(code),
+		ErrorCode: code,
 	})
 	if containerErr != nil {
-		return exited, metadata.Operation{}, operationError(operationID, metadata.ErrMetadataFailed, errors.Join(waitErr, containerErr))
+		return exited, metadata.Operation{}, operationError(operationID, chamberErrors.ErrMetadataFailed, errors.Join(waitErr, containerErr))
 	}
 
 	var operation metadata.Operation
@@ -389,7 +369,7 @@ func finishExitedProcess(ctx context.Context, store metadata.Store, operationID 
 	if operationErr != nil {
 		errorCode := code
 		if errorCode == "" {
-			errorCode = metadata.ErrMetadataFailed
+			errorCode = chamberErrors.ErrMetadataFailed
 		}
 		return exited, operation, operationError(operationID, errorCode, errors.Join(waitErr, operationErr))
 	}

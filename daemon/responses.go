@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
 const maxRequestBodyBytes int64 = 1 << 20
@@ -20,7 +21,7 @@ type errorResponse struct {
 
 type daemonError struct {
 	OperationID string
-	Code        metadata.ErrorCode
+	Code        chamberErrors.Code
 	Err         error
 }
 
@@ -88,22 +89,22 @@ func writeDaemonError(w http.ResponseWriter, err error) {
 }
 
 func publicError(err error, daemonErr *daemonError) (int, string, string) {
-	code := metadata.ErrorCode("")
+	code := chamberErrors.Code("")
 	if daemonErr != nil {
 		code = daemonErr.Code
 	}
 
 	switch {
-	case code == metadata.ErrInvalidRequest, errors.Is(err, metadata.ErrInvalidRequest):
-		return http.StatusBadRequest, string(metadata.ErrInvalidRequest), "invalid request"
-	case code == metadata.ErrImageNotFound, errors.Is(err, metadata.ErrImageNotFound):
-		return http.StatusNotFound, string(metadata.ErrImageNotFound), "image not found"
-	case code == metadata.ErrContainerNotFound, errors.Is(err, metadata.ErrContainerNotFound):
-		return http.StatusNotFound, string(metadata.ErrContainerNotFound), "container not found"
-	case code == metadata.ErrLogNotFound, errors.Is(err, metadata.ErrLogNotFound):
-		return http.StatusNotFound, string(metadata.ErrLogNotFound), "container log not found"
-	case code == metadata.ErrStateConflict,
-		errors.Is(err, metadata.ErrStateConflict),
+	case code == chamberErrors.ErrInvalidRequest, errors.Is(err, chamberErrors.ErrInvalidRequest):
+		return http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "invalid request"
+	case code == chamberErrors.ErrImageNotFound, errors.Is(err, chamberErrors.ErrImageNotFound):
+		return http.StatusNotFound, string(chamberErrors.ErrImageNotFound), "image not found"
+	case code == chamberErrors.ErrContainerNotFound, errors.Is(err, chamberErrors.ErrContainerNotFound):
+		return http.StatusNotFound, string(chamberErrors.ErrContainerNotFound), "container not found"
+	case code == chamberErrors.ErrLogNotFound, errors.Is(err, chamberErrors.ErrLogNotFound):
+		return http.StatusNotFound, string(chamberErrors.ErrLogNotFound), "container log not found"
+	case code == chamberErrors.ErrStateConflict,
+		errors.Is(err, chamberErrors.ErrStateConflict),
 		errors.Is(err, metadata.ErrAlreadyExists):
 		return http.StatusConflict, "conflict", "operation conflict"
 	default:
@@ -114,7 +115,7 @@ func publicError(err error, daemonErr *daemonError) (int, string, string) {
 	}
 }
 
-func operationError(operationID string, code metadata.ErrorCode, err error) error {
+func operationError(operationID string, code chamberErrors.Code, err error) error {
 	return &daemonError{
 		OperationID: operationID,
 		Code:        code,

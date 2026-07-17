@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	daemonconfig "github.com/donglin-wang/chamber/daemon/config"
+	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 )
 
 func runStorage(args []string, getenv func(string) string, stdout io.Writer) error {
@@ -40,7 +40,7 @@ func runStorageRemove(args []string, getenv func(string) string, stdout io.Write
 		return fmt.Errorf("refusing to remove Chamber storage without --yes")
 	}
 
-	root := daemonconfig.DefaultRoot(getenv)
+	root := chamberDaemonConfig.DefaultRoot(getenv)
 	if err := validateStorageRoot(root); err != nil {
 		return err
 	}

@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	daemonconfig "github.com/donglin-wang/chamber/daemon/config"
+	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	"github.com/donglin-wang/chamber/daemon/metadata/memory"
-	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chimage "github.com/donglin-wang/chamber/pkg/image"
-	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/google/uuid"
 )
 
@@ -150,7 +150,7 @@ func TestContainerLogsReadByContainerID(t *testing.T) {
 		ImageRef:    "docker.io/library/alpine:latest",
 		ImageDigest: "sha256:image",
 		BundlePath:  "/tmp/chamber-test/not-a-log-location",
-		Runtime:     chruntime.DefaultName,
+		Runtime:     chamberRuntime.DefaultName,
 		State:       metadata.ContainerExited,
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
@@ -179,19 +179,19 @@ func TestContainerLogsReadByContainerID(t *testing.T) {
 	}
 }
 
-func testConfig(t *testing.T) daemonconfig.Config {
+func testConfig(t *testing.T) chamberDaemonConfig.Config {
 	t.Helper()
 
 	root := t.TempDir()
-	return daemonconfig.Config{
+	return chamberDaemonConfig.Config{
 		HTTPAddr: "127.0.0.1:0",
-		Bundle: chbundle.Config{
+		Bundle: chamberBundle.Config{
 			Root: root + "/bundles",
 		},
-		Image: chimage.Config{
+		Image: chamberImage.Config{
 			Root: root + "/images",
 		},
-		Runtime: chruntime.Config{
+		Runtime: chamberRuntime.Config{
 			RuntimeRoot: root + "/runtime",
 		},
 	}
@@ -201,11 +201,11 @@ type fakeProvisioner struct {
 	bundlePath string
 }
 
-func (p fakeProvisioner) Provision(ctx context.Context, request chbundle.ProvisionRequest) (chbundle.ProvisionedBundle, error) {
+func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundle.ProvisionRequest) (chamberBundle.ProvisionedBundle, error) {
 	if err := ctx.Err(); err != nil {
-		return chbundle.ProvisionedBundle{}, err
+		return chamberBundle.ProvisionedBundle{}, err
 	}
-	return chbundle.ProvisionedBundle{
+	return chamberBundle.ProvisionedBundle{
 		ContainerID: request.ContainerID,
 		BundlePath:  p.bundlePath,
 	}, nil
@@ -217,18 +217,27 @@ type fakeRuntime struct {
 	wantLog string
 }
 
-func (r fakeRuntime) Ensure(ctx context.Context) (chruntime.Binary, error) {
-	return chruntime.Binary{}, ctx.Err()
+func (r fakeRuntime) Ensure(ctx context.Context) (chamberRuntime.Binary, error) {
+	return chamberRuntime.Binary{}, ctx.Err()
 }
 
-func (r fakeRuntime) Run(ctx context.Context, request chruntime.RunRequest) (chruntime.StartResult, error) {
+func (r fakeRuntime) Run(ctx context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Process, error) {
 	if err := ctx.Err(); err != nil {
-		return chruntime.StartResult{}, err
+		return nil, err
 	}
-	return chruntime.StartResult{
-		Process: fakeProcess{},
-		State:   chruntime.ProcessExited,
-	}, nil
+	return fakeProcess{}, nil
+}
+
+func (r fakeRuntime) State(ctx context.Context, containerID string) (chamberRuntime.ContainerState, error) {
+	return chamberRuntime.ContainerState{}, ctx.Err()
+}
+
+func (r fakeRuntime) Signal(ctx context.Context, request chamberRuntime.SignalRequest) error {
+	return ctx.Err()
+}
+
+func (r fakeRuntime) Delete(ctx context.Context, request chamberRuntime.DeleteRequest) error {
+	return ctx.Err()
 }
 
 func (r fakeRuntime) ReadLog(containerID string, stream string) ([]byte, error) {
@@ -247,11 +256,11 @@ func (fakeProcess) Wait() (int, error) {
 
 type fakePuller struct{}
 
-func (fakePuller) Pull(ctx context.Context, request chimage.PullRequest) (chimage.PulledImage, error) {
+func (fakePuller) Pull(ctx context.Context, request chamberImage.PullRequest) (chamberImage.PulledImage, error) {
 	if err := ctx.Err(); err != nil {
-		return chimage.PulledImage{}, err
+		return chamberImage.PulledImage{}, err
 	}
-	return chimage.PulledImage{
+	return chamberImage.PulledImage{
 		Reference:  request.Reference,
 		Digest:     "sha256:abc123",
 		LayoutPath: request.Destination,

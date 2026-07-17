@@ -53,23 +53,46 @@ Model privilege cleanly:
 - Keep package-owned config at generic boundaries. Avoid letting global config import concrete adapters such as specific metadata or runtime implementations.
 - Keep shared helpers small and policy-shaped. `pkg/shared/localfs` should encode private-directory and temp-file policy, not become a broad utility grab bag.
 
+## Naming And Import Conventions
+
+- If a Chamber package import needs an alias, use a readable `chamber...` alias rather than a shortened `ch...` alias.
+  Examples: `chamberErrors`, `chamberBundle`, `chamberImage`, `chamberRuntime`, `chamberDaemonConfig`.
+- When importing a Chamber package that is a concrete adapter around a third-party implementation, make the alias say it is the Chamber adapter, not the upstream project.
+  Example: use `chamberRootlessProvisioner` for `github.com/donglin-wang/chamber/pkg/bundle/rootless` rather than `umoci` at composition boundaries.
+- Prefer specific adapter aliases at daemon composition boundaries when they clarify the role:
+  `chamberImagePuller`, `chamberRuncRuntime`, and `chamberEtcdMetadataStore`.
+- `localfs.DirectoryManager` values should be named `directoryManager` or a similarly explicit name. Do not shorten them to `directories`; that sounds like a collection of paths rather than the filesystem policy dependency.
+- Concrete Chamber adapter packages should be named for the Chamber role they implement, not for the third-party library they currently use. Mention the backing library in the package comment, type comment, and implementation docs.
+- Keep upstream third-party imports visually distinct from Chamber adapter packages. For example, inside `pkg/bundle/rootless`, alias the upstream `github.com/opencontainers/umoci` import as `ociumoci` so readers can tell it apart from Chamber's rootless OCI adapter package.
+
 ## Current Implementation Shape
 
 The current repo is still early and may not yet have the final public SDK layout.
 
 Important current boundaries:
 
-- `pkg/image`: puller contract and image-root config.
-- `pkg/image/gocontainerregistry`: concrete OCI image puller.
-- `pkg/bundle`: bundle provisioning contract and bundle-root config.
-- `pkg/bundle/umoci`: concrete bundle provisioner using `umoci`.
-- `pkg/runtime`: runtime contract and runtime config.
-- `pkg/runtime/runc`: concrete `runc` adapter, including runtime binary ensure/download and log handling.
-- `pkg/shared/localfs`: explicit filesystem dependency for private directories and temp files.
-- `daemon/metadata`: daemon-owned durable vocabulary for images, containers, operations, states, and errors.
+- `pkg/image`: public puller contract, pull request platform/auth fields, image-root config, and small layout helpers. Callers provide explicit destinations and own SDK-level storage placement, locking, cleanup, and recovery.
+- `pkg/image/puller`: concrete OCI image puller using `go-containerregistry`. It honors platform/auth request fields and must keep the atomic temp-then-rename layout write behavior. Future sibling implementation packages may include `pkg/image/pusher` and `pkg/image/inspector`.
+- `pkg/bundle`: public bundle provisioning contract, bundle-root config, `ProcessSpec`, and `RootFS.Mounts`. `RootFS.Mounts` is intentionally ahead of runtime support as a future overlayfs/snapshot hook.
+- `pkg/bundle/rootless`: concrete rootless OCI bundle provisioner using `umoci`. It owns unpacking, rootless OCI spec patching, private `config.json` writes, temporary staging, and atomic final bundle placement.
+- `pkg/runtime`: public runtime contract and runtime config. The `Runtime` interface includes `Ensure`, `Run`, `State`, `Signal`, `Delete`, and `ReadLog`. `Run` returns only a `Process`; it must not pretend to return current container lifecycle state. Use `State` for actual runtime state.
+- `pkg/runtime/runc`: concrete `runc` adapter, including runtime binary ensure/download, state/signal/delete calls, and runtime-owned log handling. It must continue rejecting non-empty `RootFS.Mounts` until mount application exists.
+- `pkg/shared/errors`: canonical public Chamber error-code taxonomy. The daemon and SDK adapters should use these durable codes for contract errors and response mapping.
+- `pkg/shared/containerid`: shared container ID validation used by provisioning and runtime adapters so bundle creation cannot accept IDs the runtime later rejects.
+- `pkg/shared/localfs`: explicit filesystem dependency for private directories and temp files. It owns filesystem policy primitives, not broad utility behavior.
+- `pkg/shared/testutil`: shared tests helpers. Its location is not ideal, but keep it there for now.
+- `daemon/metadata`: daemon-owned durable vocabulary for images, containers, operations, and states. Keep daemon-only sentinel storage errors such as `ErrNotFound` and `ErrAlreadyExists` here, but use `pkg/shared/errors.Code` for durable operation/container error codes.
 - `daemon`: current daemon HTTP composition and operation orchestration.
 
 Future public Go SDK work should build on these `pkg/` contracts without moving daemon reliability concepts into the SDK. Candidate future surfaces include a convenience one-shot run package.
+
+Boundary rules for future changes:
+
+- Do not add build or push support until the pull/provision/run contracts are solid.
+- Do not move daemon reliability concepts such as durable operations, leases, recovery, cancellation policy, or garbage collection into the low-level SDK packages.
+- Do not make global daemon config import concrete adapters. Global config should depend on generic package config types; composition chooses concrete implementations.
+- Do not let the daemon guess SDK-owned paths. Persist paths returned by SDK operations, such as `ProvisionedBundle.BundlePath`, and call runtime-owned APIs such as `ReadLog`.
+- Keep rootless defaults first-class. Rootful support should be introduced as an explicit privilege-boundary expansion, not as a quiet option on existing APIs.
 
 ## Daemon Contract
 

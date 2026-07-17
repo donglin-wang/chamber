@@ -11,6 +11,7 @@ import (
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	metadataetcd "github.com/donglin-wang/chamber/daemon/metadata/etcd"
 	"github.com/donglin-wang/chamber/daemon/metadata/memory"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
@@ -207,16 +208,16 @@ func assertOperationLifecycle(t *testing.T, store metadata.Store) {
 		State: metadata.OperationFailed,
 		At:    finishedAt.Add(time.Second),
 	})
-	if !errors.Is(err, metadata.ErrStateConflict) {
-		t.Fatalf("TransitionOperation(stale from) error = %v, want %v", err, metadata.ErrStateConflict)
+	if !errors.Is(err, chamberErrors.ErrStateConflict) {
+		t.Fatalf("TransitionOperation(stale from) error = %v, want %v", err, chamberErrors.ErrStateConflict)
 	}
 
 	_, err = store.TransitionOperation(ctx, operation.ID, metadata.OperationSucceeded, metadata.OperationUpdate{
 		State: metadata.OperationFailed,
 		At:    finishedAt.Add(time.Second),
 	})
-	if !errors.Is(err, metadata.ErrStateConflict) {
-		t.Fatalf("TransitionOperation(invalid transition) error = %v, want %v", err, metadata.ErrStateConflict)
+	if !errors.Is(err, chamberErrors.ErrStateConflict) {
+		t.Fatalf("TransitionOperation(invalid transition) error = %v, want %v", err, chamberErrors.ErrStateConflict)
 	}
 }
 
@@ -270,14 +271,14 @@ func assertTerminalHelpers(t *testing.T, store metadata.Store) {
 		t.Fatalf("SucceedOperation() = %#v, want succeeded with FinishedAt", succeeded)
 	}
 
-	failedContainer, failedOperation, err := store.FailContainerAndOperation(ctx, container.ID, metadata.ContainerStarting, failing.ID, metadata.ErrRuntimeStartFailed)
+	failedContainer, failedOperation, err := store.FailContainerAndOperation(ctx, container.ID, metadata.ContainerStarting, failing.ID, chamberErrors.ErrRuntimeStartFailed)
 	if err != nil {
 		t.Fatalf("FailContainerAndOperation() error = %v", err)
 	}
-	if failedContainer.State != metadata.ContainerFailed || failedContainer.ErrorCode != metadata.ErrRuntimeStartFailed {
+	if failedContainer.State != metadata.ContainerFailed || failedContainer.ErrorCode != chamberErrors.ErrRuntimeStartFailed {
 		t.Fatalf("FailContainerAndOperation() container = %#v, want failed runtime_start_failed", failedContainer)
 	}
-	if failedOperation.State != metadata.OperationFailed || failedOperation.ErrorCode != metadata.ErrRuntimeStartFailed {
+	if failedOperation.State != metadata.OperationFailed || failedOperation.ErrorCode != chamberErrors.ErrRuntimeStartFailed {
 		t.Fatalf("FailContainerAndOperation() operation = %#v, want failed runtime_start_failed", failedOperation)
 	}
 }
@@ -372,16 +373,16 @@ func assertContainerLifecycle(t *testing.T, store metadata.Store) {
 		State: metadata.ContainerRunning,
 		At:    exitedAt.Add(time.Second),
 	})
-	if !errors.Is(err, metadata.ErrStateConflict) {
-		t.Fatalf("TransitionContainer(stale from) error = %v, want %v", err, metadata.ErrStateConflict)
+	if !errors.Is(err, chamberErrors.ErrStateConflict) {
+		t.Fatalf("TransitionContainer(stale from) error = %v, want %v", err, chamberErrors.ErrStateConflict)
 	}
 
 	_, err = store.TransitionContainer(ctx, container.ID, metadata.ContainerFailed, metadata.ContainerUpdate{
 		State: metadata.ContainerRunning,
 		At:    exitedAt.Add(time.Second),
 	})
-	if !errors.Is(err, metadata.ErrStateConflict) {
-		t.Fatalf("TransitionContainer(invalid transition) error = %v, want %v", err, metadata.ErrStateConflict)
+	if !errors.Is(err, chamberErrors.ErrStateConflict) {
+		t.Fatalf("TransitionContainer(invalid transition) error = %v, want %v", err, chamberErrors.ErrStateConflict)
 	}
 }
 
@@ -431,7 +432,7 @@ func assertConcurrentOperationTransition(t *testing.T, store metadata.Store) {
 		return err
 	})
 
-	assertOneSuccess(t, errs, metadata.ErrStateConflict)
+	assertOneSuccess(t, errs, chamberErrors.ErrStateConflict)
 
 	got, err := store.GetOperation(ctx, operation.ID)
 	if err != nil {
@@ -474,7 +475,7 @@ func assertConcurrentTerminalOperationTransition(t *testing.T, store metadata.St
 		return err
 	})
 
-	assertOneSuccess(t, errs, metadata.ErrStateConflict)
+	assertOneSuccess(t, errs, chamberErrors.ErrStateConflict)
 
 	got, err := store.GetOperation(ctx, operation.ID)
 	if err != nil {
@@ -515,7 +516,7 @@ func assertConcurrentContainerTransition(t *testing.T, store metadata.Store) {
 		return err
 	})
 
-	assertOneSuccess(t, errs, metadata.ErrStateConflict)
+	assertOneSuccess(t, errs, chamberErrors.ErrStateConflict)
 
 	got, err := store.GetContainer(ctx, container.ID)
 	if err != nil {

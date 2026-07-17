@@ -29,7 +29,22 @@ type ProvisionRequest struct {
 	ContainerID string
 	ImageLayout string
 	ImageRef    string
-	Command     []string
+	Process     ProcessSpec
+}
+
+type ProcessSpec struct {
+	Args     []string
+	Env      []string
+	Cwd      string
+	User     ProcessUser
+	Terminal bool
+}
+
+type ProcessUser struct {
+	UID            *uint32
+	GID            *uint32
+	AdditionalGIDs []uint32
+	Username       string
 }
 
 type Provisioner interface {

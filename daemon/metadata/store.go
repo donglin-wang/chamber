@@ -4,26 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
-)
 
-type ErrorCode string
-
-func (e ErrorCode) Error() string {
-	return string(e)
-}
-
-const (
-	ErrInvalidRequest       ErrorCode = "invalid_request"
-	ErrImageNotFound        ErrorCode = "image_not_found"
-	ErrPullFailed           ErrorCode = "pull_failed"
-	ErrMetadataFailed       ErrorCode = "metadata_failed"
-	ErrContainerNotFound    ErrorCode = "container_not_found"
-	ErrLogNotFound          ErrorCode = "log_not_found"
-	ErrBundlePrepareFailed  ErrorCode = "bundle_prepare_failed"
-	ErrRuntimeStartFailed   ErrorCode = "runtime_start_failed"
-	ErrRuntimeWaitFailed    ErrorCode = "runtime_wait_failed"
-	ErrContainerExitNonzero ErrorCode = "container_exit_nonzero"
-	ErrStateConflict        ErrorCode = "state_conflict"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
 var (
@@ -57,19 +39,19 @@ const (
 )
 
 type Container struct {
-	ID          string         `json:"id"`
-	OperationID string         `json:"operation_id"`
-	TraceID     string         `json:"trace_id,omitempty"`
-	SpanID      string         `json:"span_id,omitempty"`
-	ImageDigest string         `json:"image_digest"`
-	ImageRef    string         `json:"image_ref"`
-	BundlePath  string         `json:"bundle_path"`
-	Runtime     string         `json:"runtime"`
-	State       ContainerState `json:"state"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	ExitCode    *int           `json:"exit_code,omitempty"`
-	ErrorCode   ErrorCode      `json:"error_code,omitempty"`
+	ID          string             `json:"id"`
+	OperationID string             `json:"operation_id"`
+	TraceID     string             `json:"trace_id,omitempty"`
+	SpanID      string             `json:"span_id,omitempty"`
+	ImageDigest string             `json:"image_digest"`
+	ImageRef    string             `json:"image_ref"`
+	BundlePath  string             `json:"bundle_path"`
+	Runtime     string             `json:"runtime"`
+	State       ContainerState     `json:"state"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+	ExitCode    *int               `json:"exit_code,omitempty"`
+	ErrorCode   chamberErrors.Code `json:"error_code,omitempty"`
 }
 
 type OperationKind string
@@ -89,16 +71,16 @@ const (
 )
 
 type Operation struct {
-	ID         string         `json:"id"`
-	Kind       OperationKind  `json:"kind"`
-	State      OperationState `json:"state"`
-	ResourceID string         `json:"resource_id"`
-	TraceID    string         `json:"trace_id,omitempty"`
-	SpanID     string         `json:"span_id,omitempty"`
-	StartedAt  time.Time      `json:"started_at"`
-	UpdatedAt  time.Time      `json:"updated_at"`
-	FinishedAt *time.Time     `json:"finished_at,omitempty"`
-	ErrorCode  ErrorCode      `json:"error_code,omitempty"`
+	ID         string             `json:"id"`
+	Kind       OperationKind      `json:"kind"`
+	State      OperationState     `json:"state"`
+	ResourceID string             `json:"resource_id"`
+	TraceID    string             `json:"trace_id,omitempty"`
+	SpanID     string             `json:"span_id,omitempty"`
+	StartedAt  time.Time          `json:"started_at"`
+	UpdatedAt  time.Time          `json:"updated_at"`
+	FinishedAt *time.Time         `json:"finished_at,omitempty"`
+	ErrorCode  chamberErrors.Code `json:"error_code,omitempty"`
 }
 
 type StateTransition[T ~string] struct {
@@ -137,7 +119,7 @@ type Store interface {
 	CreateOperation(ctx context.Context, operation Operation) error
 	GetOperation(ctx context.Context, id string) (Operation, error)
 	SucceedOperation(ctx context.Context, id string) (Operation, error)
-	FailOperation(ctx context.Context, id string, code ErrorCode) (Operation, error)
+	FailOperation(ctx context.Context, id string, code chamberErrors.Code) (Operation, error)
 	TransitionOperation(
 		ctx context.Context,
 		id string,
@@ -159,7 +141,7 @@ type Store interface {
 		containerID string,
 		from ContainerState,
 		operationID string,
-		code ErrorCode,
+		code chamberErrors.Code,
 	) (Container, Operation, error)
 
 	Close() error
@@ -169,11 +151,11 @@ type ContainerUpdate struct {
 	State     ContainerState
 	At        time.Time
 	ExitCode  *int
-	ErrorCode string
+	ErrorCode chamberErrors.Code
 }
 
 type OperationUpdate struct {
 	State     OperationState
 	At        time.Time
-	ErrorCode string
+	ErrorCode chamberErrors.Code
 }

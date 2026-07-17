@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
-	daemonconfig "github.com/donglin-wang/chamber/daemon/config"
+	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chimage "github.com/donglin-wang/chamber/pkg/image"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/google/uuid"
 )
 
@@ -25,16 +26,16 @@ type pullImageResponse struct {
 	PulledAt    time.Time `json:"pulled_at"`
 }
 
-func registerImageRoutes(mux *http.ServeMux, cfg daemonconfig.Config, store metadata.Store, puller chimage.Puller) {
+func registerImageRoutes(mux *http.ServeMux, cfg chamberDaemonConfig.Config, store metadata.Store, puller chamberImage.Puller) {
 	mux.HandleFunc("POST /v1/images/pull", func(w http.ResponseWriter, r *http.Request) {
 		var request pullImageRequest
 		if err := decodeJSON(w, r, &request); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "request body must be a JSON object with a reference")
+			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "request body must be a JSON object with a reference")
 			return
 		}
 
 		if strings.TrimSpace(request.Reference) == "" {
-			writeError(w, http.StatusBadRequest, "invalid_request", "reference is required")
+			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "reference is required")
 			return
 		}
 
@@ -58,7 +59,7 @@ type pullImageResult struct {
 	image     metadata.Image
 }
 
-func pullImage(ctx context.Context, cfg daemonconfig.Config, store metadata.Store, puller chimage.Puller, reference string) (pullImageResult, error) {
+func pullImage(ctx context.Context, cfg chamberDaemonConfig.Config, store metadata.Store, puller chamberImage.Puller, reference string) (pullImageResult, error) {
 	if store == nil {
 		return pullImageResult{}, fmt.Errorf("metadata store is required")
 	}
@@ -84,18 +85,18 @@ func pullImage(ctx context.Context, cfg daemonconfig.Config, store metadata.Stor
 		return pullImageResult{}, fmt.Errorf("create pull operation: %w", err)
 	}
 
-	destination, err := chimage.Destination(cfg.Image.Root, reference)
+	destination, err := chamberImage.Destination(cfg.Image.Root, reference)
 	if err != nil {
-		_, transitionErr := store.FailOperation(ctx, operationID, metadata.ErrInvalidRequest)
-		failErr := operationError(operationID, metadata.ErrInvalidRequest, errors.Join(err, transitionErr))
+		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrInvalidRequest)
+		failErr := operationError(operationID, chamberErrors.ErrInvalidRequest, errors.Join(err, transitionErr))
 		return pullImageResult{operation: operation}, failErr
 	}
 
 	existing, err := store.GetImage(ctx, reference)
-	if err == nil && chimage.LayoutExists(existing.LayoutPath) {
+	if err == nil && chamberImage.LayoutExists(existing.LayoutPath) {
 		completed, err := store.SucceedOperation(ctx, operationID)
 		if err != nil {
-			return pullImageResult{operation: operation, image: existing}, operationError(operationID, metadata.ErrMetadataFailed, err)
+			return pullImageResult{operation: operation, image: existing}, operationError(operationID, chamberErrors.ErrMetadataFailed, err)
 		}
 		return pullImageResult{
 			operation: completed,
@@ -103,18 +104,18 @@ func pullImage(ctx context.Context, cfg daemonconfig.Config, store metadata.Stor
 		}, nil
 	}
 	if err != nil && !errors.Is(err, metadata.ErrNotFound) {
-		_, transitionErr := store.FailOperation(ctx, operationID, metadata.ErrMetadataFailed)
-		failErr := operationError(operationID, metadata.ErrMetadataFailed, errors.Join(err, transitionErr))
+		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrMetadataFailed)
+		failErr := operationError(operationID, chamberErrors.ErrMetadataFailed, errors.Join(err, transitionErr))
 		return pullImageResult{operation: operation}, failErr
 	}
 
-	pulled, err := puller.Pull(ctx, chimage.PullRequest{
+	pulled, err := puller.Pull(ctx, chamberImage.PullRequest{
 		Reference:   reference,
 		Destination: destination,
 	})
 	if err != nil {
-		_, transitionErr := store.FailOperation(ctx, operationID, metadata.ErrPullFailed)
-		failErr := operationError(operationID, metadata.ErrPullFailed, errors.Join(err, transitionErr))
+		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrPullFailed)
+		failErr := operationError(operationID, chamberErrors.ErrPullFailed, errors.Join(err, transitionErr))
 		return pullImageResult{operation: operation}, failErr
 	}
 
@@ -134,14 +135,14 @@ func pullImage(ctx context.Context, cfg daemonconfig.Config, store metadata.Stor
 		LastUsedAt: pulledAt,
 	}
 	if err := store.PutImage(ctx, image); err != nil {
-		_, transitionErr := store.FailOperation(ctx, operationID, metadata.ErrMetadataFailed)
-		failErr := operationError(operationID, metadata.ErrMetadataFailed, errors.Join(err, transitionErr))
+		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrMetadataFailed)
+		failErr := operationError(operationID, chamberErrors.ErrMetadataFailed, errors.Join(err, transitionErr))
 		return pullImageResult{operation: operation, image: image}, failErr
 	}
 
 	completed, err := store.SucceedOperation(ctx, operationID)
 	if err != nil {
-		return pullImageResult{operation: operation, image: image}, operationError(operationID, metadata.ErrMetadataFailed, err)
+		return pullImageResult{operation: operation, image: image}, operationError(operationID, chamberErrors.ErrMetadataFailed, err)
 	}
 
 	return pullImageResult{

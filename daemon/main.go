@@ -13,17 +13,17 @@ import (
 	"syscall"
 	"time"
 
-	daemonconfig "github.com/donglin-wang/chamber/daemon/config"
-	"github.com/donglin-wang/chamber/daemon/metadata/etcd"
-	"github.com/donglin-wang/chamber/pkg/bundle/umoci"
-	"github.com/donglin-wang/chamber/pkg/image/gocontainerregistry"
-	"github.com/donglin-wang/chamber/pkg/runtime/runc"
+	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
+	chamberEtcdMetadataStore "github.com/donglin-wang/chamber/daemon/metadata/etcd"
+	chamberRootlessProvisioner "github.com/donglin-wang/chamber/pkg/bundle/rootless"
+	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
+	chamberRuncRuntime "github.com/donglin-wang/chamber/pkg/runtime/runc"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
 type startupOptions struct {
 	configPath string
-	override   daemonconfig.Override
+	override   chamberDaemonConfig.Override
 }
 
 func main() {
@@ -45,7 +45,7 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	cfg, err := daemonconfig.LoadFile(options.configPath, options.override, os.Getenv)
+	cfg, err := chamberDaemonConfig.LoadFile(options.configPath, options.override, os.Getenv)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -54,25 +54,25 @@ func run(ctx context.Context, args []string) error {
 	defer stopSignals()
 
 	directoryManager := localfs.NewDirectoryManager()
-	store, err := etcd.Open(lifetime, cfg.Metadata, directoryManager)
+	store, err := chamberEtcdMetadataStore.Open(lifetime, cfg.Metadata, directoryManager)
 	if err != nil {
 		return fmt.Errorf("open metadata store: %w", err)
 	}
 	defer store.Close()
 
-	runtime := runc.New(cfg.Runtime, directoryManager)
+	runtime := chamberRuncRuntime.New(cfg.Runtime, directoryManager)
 	if _, err := runtime.Ensure(lifetime); err != nil {
 		return fmt.Errorf("ensure runtime: %w", err)
 	}
 
 	mux := newServer()
-	registerImageRoutes(mux, cfg, store, gocontainerregistry.New(directoryManager))
+	registerImageRoutes(mux, cfg, store, chamberImagePuller.New(directoryManager))
 	registerContainerRoutes(
 		mux,
 		cfg,
 		store,
 		runtime,
-		umoci.Provisioner{
+		chamberRootlessProvisioner.Provisioner{
 			Config:           cfg.Bundle,
 			UID:              uint32(os.Geteuid()),
 			GID:              uint32(os.Getegid()),

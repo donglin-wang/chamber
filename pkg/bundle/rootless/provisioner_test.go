@@ -1,4 +1,4 @@
-package umoci
+package rootless
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -15,7 +16,9 @@ func TestPatchRootlessSpec(t *testing.T) {
 	spec := &specs.Spec{
 		Process: &specs.Process{
 			Args:     []string{"/bin/old"},
-			Terminal: true,
+			Env:      []string{"OLD=value"},
+			Cwd:      "/",
+			Terminal: false,
 		},
 		Mounts: []specs.Mount{
 			{Destination: "/proc", Type: "proc"},
@@ -40,11 +43,26 @@ func TestPatchRootlessSpec(t *testing.T) {
 		},
 	}
 
-	command := []string{"/bin/sh", "-c", "echo hi"}
-	if err := patchRootlessSpec(spec, 501, 20, command); err != nil {
+	uid := uint32(1000)
+	gid := uint32(1001)
+	process := chamberBundle.ProcessSpec{
+		Args:     []string{"/bin/sh", "-c", "echo hi"},
+		Env:      []string{"KEY=value"},
+		Cwd:      "/work",
+		Terminal: true,
+		User: chamberBundle.ProcessUser{
+			UID:            &uid,
+			GID:            &gid,
+			AdditionalGIDs: []uint32{44, 55},
+			Username:       "app",
+		},
+	}
+	if err := patchRootlessSpec(spec, 501, 20, process); err != nil {
 		t.Fatalf("patchRootlessSpec() error = %v", err)
 	}
-	command[0] = "mutated"
+	process.Args[0] = "mutated"
+	process.Env[0] = "mutated"
+	process.User.AdditionalGIDs[0] = 99
 
 	assertIDMappings(t, spec.Linux.UIDMappings, 501)
 	assertIDMappings(t, spec.Linux.GIDMappings, 20)
@@ -66,8 +84,23 @@ func TestPatchRootlessSpec(t *testing.T) {
 	if !slices.Equal(spec.Process.Args, []string{"/bin/sh", "-c", "echo hi"}) {
 		t.Fatalf("Process.Args = %#v, want command override", spec.Process.Args)
 	}
-	if spec.Process.Terminal {
-		t.Fatal("Process.Terminal = true, want false for daemon-managed stdio")
+	if !slices.Equal(spec.Process.Env, []string{"KEY=value"}) {
+		t.Fatalf("Process.Env = %#v, want env override", spec.Process.Env)
+	}
+	if spec.Process.Cwd != "/work" {
+		t.Fatalf("Process.Cwd = %q, want /work", spec.Process.Cwd)
+	}
+	if !spec.Process.Terminal {
+		t.Fatal("Process.Terminal = false, want process override")
+	}
+	if spec.Process.User.UID != 1000 || spec.Process.User.GID != 1001 {
+		t.Fatalf("Process.User UID/GID = %d/%d, want 1000/1001", spec.Process.User.UID, spec.Process.User.GID)
+	}
+	if !slices.Equal(spec.Process.User.AdditionalGids, []uint32{44, 55}) {
+		t.Fatalf("Process.User.AdditionalGids = %#v, want copied groups", spec.Process.User.AdditionalGids)
+	}
+	if spec.Process.User.Username != "app" {
+		t.Fatalf("Process.User.Username = %q, want app", spec.Process.User.Username)
 	}
 	for _, mount := range spec.Mounts {
 		if mount.Type == "cgroup" || mount.Type == "cgroup2" || mount.Destination == "/sys/fs/cgroup" {
@@ -94,7 +127,9 @@ func TestPatchBundleConfigWritesPrivateSpec(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	if err := patchBundleConfig(bundlePath, 501, 20, []string{"/bin/sh"}); err != nil {
+	if err := patchBundleConfig(bundlePath, 501, 20, chamberBundle.ProcessSpec{
+		Args: []string{"/bin/sh"},
+	}); err != nil {
 		t.Fatalf("patchBundleConfig() error = %v", err)
 	}
 
@@ -123,56 +158,37 @@ func TestPatchBundleConfigWritesPrivateSpec(t *testing.T) {
 	assertIDMappings(t, patched.Linux.GIDMappings, 20)
 }
 
-func TestPatchRootlessSpecKeepsExistingCommandWhenRequestCommandIsEmpty(t *testing.T) {
+func TestPatchRootlessSpecKeepsExistingProcessFieldsWhenRequestFieldsAreEmpty(t *testing.T) {
 	spec := &specs.Spec{
-		Process: &specs.Process{Args: []string{"/bin/from-image"}},
-		Linux:   &specs.Linux{},
+		Process: &specs.Process{
+			Args:     []string{"/bin/from-image"},
+			Env:      []string{"FROM=image"},
+			Cwd:      "/",
+			Terminal: true,
+		},
+		Linux: &specs.Linux{},
 	}
 
-	if err := patchRootlessSpec(spec, 501, 20, nil); err != nil {
+	if err := patchRootlessSpec(spec, 501, 20, chamberBundle.ProcessSpec{}); err != nil {
 		t.Fatalf("patchRootlessSpec() error = %v", err)
 	}
 	if !slices.Equal(spec.Process.Args, []string{"/bin/from-image"}) {
 		t.Fatalf("Process.Args = %#v, want original image args", spec.Process.Args)
 	}
+	if !slices.Equal(spec.Process.Env, []string{"FROM=image"}) {
+		t.Fatalf("Process.Env = %#v, want original image env", spec.Process.Env)
+	}
+	if spec.Process.Cwd != "/" {
+		t.Fatalf("Process.Cwd = %q, want original image cwd", spec.Process.Cwd)
+	}
+	if spec.Process.Terminal {
+		t.Fatal("Process.Terminal = true, want zero-value request to force non-terminal")
+	}
 }
 
 func TestPatchRootlessSpecRejectsMissingProcess(t *testing.T) {
-	if err := patchRootlessSpec(&specs.Spec{Linux: &specs.Linux{}}, 501, 20, nil); err == nil {
+	if err := patchRootlessSpec(&specs.Spec{Linux: &specs.Linux{}}, 501, 20, chamberBundle.ProcessSpec{}); err == nil {
 		t.Fatal("patchRootlessSpec() error = nil, want missing process error")
-	}
-}
-
-func TestValidateContainerID(t *testing.T) {
-	valid := []string{
-		"container-1",
-		"container_1",
-		"container.1",
-		"C1",
-	}
-	for _, id := range valid {
-		t.Run("valid_"+id, func(t *testing.T) {
-			if err := validateContainerID(id); err != nil {
-				t.Fatalf("validateContainerID(%q) error = %v", id, err)
-			}
-		})
-	}
-
-	invalid := []string{
-		"",
-		".",
-		"..",
-		"../escape",
-		"/absolute",
-		"has/slash",
-		"has space",
-	}
-	for _, id := range invalid {
-		t.Run("invalid_"+id, func(t *testing.T) {
-			if err := validateContainerID(id); err == nil {
-				t.Fatalf("validateContainerID(%q) error = nil, want error", id)
-			}
-		})
 	}
 }
 

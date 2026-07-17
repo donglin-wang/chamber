@@ -16,6 +16,20 @@ var ErrRootRequired = errors.New("image root is required")
 type PullRequest struct {
 	Reference   string
 	Destination string
+	Platform    Platform
+	Auth        *Auth
+}
+
+type Platform struct {
+	OS           string
+	Architecture string
+	Variant      string
+}
+
+type Auth struct {
+	Username string
+	Password string
+	Token    string
 }
 
 type PulledImage struct {

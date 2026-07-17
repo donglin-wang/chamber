@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
@@ -25,7 +25,7 @@ func TestEnsureDownloadsValidRuntimeBinary(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	binDir := privateTempDir(t)
-	runtime := New(chruntime.Config{
+	runtime := New(chamberRuntime.Config{
 		RuntimeBinDir: binDir,
 		Name:          "runc",
 		Version:       "test-version",
@@ -58,7 +58,7 @@ func TestEnsureRejectsWrongDigest(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	binDir := privateTempDir(t)
-	runtime := New(chruntime.Config{
+	runtime := New(chamberRuntime.Config{
 		RuntimeBinDir: binDir,
 		Name:          "runc",
 		Version:       "test-version",
@@ -84,7 +84,7 @@ func TestEnsureRejectsNonOKResponse(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	runtime := New(chruntime.Config{
+	runtime := New(chamberRuntime.Config{
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
 		Version:       "test-version",
@@ -118,7 +118,7 @@ func TestEnsureRejectsInterruptedBody(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	binDir := privateTempDir(t)
-	runtime := New(chruntime.Config{
+	runtime := New(chamberRuntime.Config{
 		RuntimeBinDir: binDir,
 		Name:          "runc",
 		Version:       "test-version",
@@ -149,7 +149,7 @@ func TestEnsureUsesExistingValidBinary(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	runtime := New(chruntime.Config{
+	runtime := New(chamberRuntime.Config{
 		RuntimeBinDir: binDir,
 		Name:          "runc",
 		Version:       "test-version",
@@ -185,7 +185,7 @@ func TestEnsureReplacesExistingInvalidBinary(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	runtime := New(chruntime.Config{
+	runtime := New(chamberRuntime.Config{
 		RuntimeBinDir: binDir,
 		Name:          "runc",
 		Version:       "test-version",
@@ -215,7 +215,7 @@ func TestEnsureReturnsAbsolutePath(t *testing.T) {
 		_ = os.RemoveAll(relativeBinDir)
 	})
 
-	runtime := New(chruntime.Config{
+	runtime := New(chamberRuntime.Config{
 		RuntimeBinDir: relativeBinDir,
 		Name:          "runc",
 		Version:       "test-version",
@@ -233,7 +233,7 @@ func TestEnsureReturnsAbsolutePath(t *testing.T) {
 }
 
 func TestEnsureRequiresCompleteConfiguration(t *testing.T) {
-	runtime := New(chruntime.Config{
+	runtime := New(chamberRuntime.Config{
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
 		Version:       "test-version",
@@ -273,7 +273,7 @@ func TestDefaultRuntimeArtifactSupportsLinuxReleaseArchitectures(t *testing.T) {
 	}
 }
 
-func TestRunStartsRuncAndReportsRunning(t *testing.T) {
+func TestRunStartsRuncAndReturnsProcess(t *testing.T) {
 	logDir := privateTempDir(t)
 	binaryPath := writeFakeRunc(t, logDir, `
 case "$cmd" in
@@ -289,14 +289,6 @@ run)
 	done
 	exit 0
 	;;
-state)
-	write_args "$logdir/state-args" "$@"
-	if [ -f "$logdir/run-started" ]; then
-		printf '{"status":"running"}'
-	else
-		printf '{"status":"creating"}'
-	fi
-	;;
 *)
 	exit 64
 	;;
@@ -305,8 +297,8 @@ esac
 	bundlePath := privateTempDir(t)
 	stateRoot := filepath.Join(privateTempDir(t), "state")
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
-	result, err := runtime.Run(context.Background(), chruntime.RunRequest{
-		Bundle: chbundle.ProvisionedBundle{
+	process, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
+		Bundle: chamberBundle.ProvisionedBundle{
 			ContainerID: "container-1",
 			BundlePath:  bundlePath,
 		},
@@ -315,33 +307,33 @@ esac
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if result.State != chruntime.ProcessRunning {
-		t.Fatalf("StartResult.State = %q, want %q", result.State, chruntime.ProcessRunning)
+	if process == nil {
+		t.Fatal("Run() process = nil, want process")
 	}
+	waitForFile(t, filepath.Join(logDir, "run-started"))
 
 	assertFileContent(t, filepath.Join(logDir, "run-pwd"), bundlePath)
 	assertLines(t, filepath.Join(logDir, "run-args"), []string{"--root", stateRoot, "run", "container-1"})
-	assertLines(t, filepath.Join(logDir, "state-args"), []string{"--root", stateRoot, "state", "container-1"})
 	assertFileContent(t, filepath.Join(logDir, "stdin"), "stdin for fake runc")
 
 	if err := os.WriteFile(filepath.Join(logDir, "release"), []byte("ok"), 0600); err != nil {
 		t.Fatalf("WriteFile(release) error = %v", err)
 	}
-	exitCode, err := result.Process.Wait()
+	exitCode, err := process.Wait()
 	if err != nil {
 		t.Fatalf("Process.Wait() error = %v", err)
 	}
 	if exitCode != 0 {
 		t.Fatalf("Process.Wait() exit code = %d, want 0", exitCode)
 	}
-	stdoutContent, err := runtime.ReadLog("container-1", chruntime.StdoutLogStream)
+	stdoutContent, err := runtime.ReadLog("container-1", chamberRuntime.StdoutLogStream)
 	if err != nil {
 		t.Fatalf("ReadLog(stdout) error = %v", err)
 	}
 	if string(stdoutContent) != "stdout from fake runc" {
 		t.Fatalf("ReadLog(stdout) = %q, want fake runc stdout", string(stdoutContent))
 	}
-	stderrContent, err := runtime.ReadLog("container-1", chruntime.StderrLogStream)
+	stderrContent, err := runtime.ReadLog("container-1", chamberRuntime.StderrLogStream)
 	if err != nil {
 		t.Fatalf("ReadLog(stderr) error = %v", err)
 	}
@@ -354,15 +346,12 @@ esac
 	}
 }
 
-func TestRunReturnsExitedWhenProcessExitsBeforeRunning(t *testing.T) {
+func TestRunReturnsProcessForFastExit(t *testing.T) {
 	logDir := privateTempDir(t)
 	binaryPath := writeFakeRunc(t, logDir, `
 case "$cmd" in
 run)
 	exit 7
-	;;
-state)
-	printf '{"status":"creating"}'
 	;;
 *)
 	exit 64
@@ -371,8 +360,8 @@ esac
 `)
 
 	runtime := runtimeWithBinary(t, binaryPath, privateTempDir(t))
-	result, err := runtime.Run(context.Background(), chruntime.RunRequest{
-		Bundle: chbundle.ProvisionedBundle{
+	process, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
+		Bundle: chamberBundle.ProvisionedBundle{
 			ContainerID: "short.job",
 			BundlePath:  privateTempDir(t),
 		},
@@ -380,12 +369,12 @@ esac
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if result.State != chruntime.ProcessExited {
-		t.Fatalf("StartResult.State = %q, want %q", result.State, chruntime.ProcessExited)
+	if process == nil {
+		t.Fatal("Run() process = nil, want process")
 	}
 
 	for i := 0; i < 2; i++ {
-		exitCode, err := result.Process.Wait()
+		exitCode, err := process.Wait()
 		if err != nil {
 			t.Fatalf("Process.Wait() call %d error = %v", i+1, err)
 		}
@@ -399,28 +388,13 @@ esac
 	}
 }
 
-func TestRunReportsRunningWhenStartupObservationDeadlineExpires(t *testing.T) {
-	oldTimeout := startupObservationTimeout
-	oldPollInterval := startupPollInterval
-	startupObservationTimeout = 50 * time.Millisecond
-	startupPollInterval = 5 * time.Millisecond
-	t.Cleanup(func() {
-		startupObservationTimeout = oldTimeout
-		startupPollInterval = oldPollInterval
-	})
-
+func TestStateReadsRuncState(t *testing.T) {
 	logDir := privateTempDir(t)
 	binaryPath := writeFakeRunc(t, logDir, `
 case "$cmd" in
-run)
-	touch "$logdir/run-started"
-	while [ ! -f "$logdir/release" ]; do
-		sleep 0.01
-	done
-	exit 0
-	;;
 state)
-	printf '{"status":"creating"}'
+	write_args "$logdir/state-args" "$@"
+	printf '{"id":"stateful","status":"running"}'
 	;;
 *)
 	exit 64
@@ -428,30 +402,66 @@ state)
 esac
 `)
 
-	runtime := runtimeWithBinary(t, binaryPath, privateTempDir(t))
-	result, err := runtime.Run(context.Background(), chruntime.RunRequest{
-		Bundle: chbundle.ProvisionedBundle{
-			ContainerID: "slow-start",
-			BundlePath:  privateTempDir(t),
-		},
+	stateRoot := privateTempDir(t)
+	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
+	state, err := runtime.State(context.Background(), "stateful")
+	if err != nil {
+		t.Fatalf("State() error = %v", err)
+	}
+	if state.ContainerID != "stateful" || state.Status != "running" {
+		t.Fatalf("State() = %#v, want stateful/running", state)
+	}
+	assertLines(t, filepath.Join(logDir, "state-args"), []string{"--root", stateRoot, "state", "stateful"})
+}
+
+func TestSignalSendsRuncKill(t *testing.T) {
+	logDir := privateTempDir(t)
+	binaryPath := writeFakeRunc(t, logDir, `
+case "$cmd" in
+kill)
+	write_args "$logdir/kill-args" "$@"
+	;;
+*)
+	exit 64
+	;;
+esac
+`)
+
+	stateRoot := privateTempDir(t)
+	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
+	err := runtime.Signal(context.Background(), chamberRuntime.SignalRequest{
+		ContainerID: "signaled",
+		Signal:      "TERM",
 	})
 	if err != nil {
-		t.Fatalf("Run() error = %v", err)
+		t.Fatalf("Signal() error = %v", err)
 	}
-	if result.State != chruntime.ProcessRunning {
-		t.Fatalf("StartResult.State = %q, want %q after observation deadline", result.State, chruntime.ProcessRunning)
-	}
+	assertLines(t, filepath.Join(logDir, "kill-args"), []string{"--root", stateRoot, "kill", "signaled", "TERM"})
+}
 
-	if err := os.WriteFile(filepath.Join(logDir, "release"), []byte("ok"), 0600); err != nil {
-		t.Fatalf("WriteFile(release) error = %v", err)
-	}
-	exitCode, err := result.Process.Wait()
+func TestDeleteRemovesRuncContainer(t *testing.T) {
+	logDir := privateTempDir(t)
+	binaryPath := writeFakeRunc(t, logDir, `
+case "$cmd" in
+delete)
+	write_args "$logdir/delete-args" "$@"
+	;;
+*)
+	exit 64
+	;;
+esac
+`)
+
+	stateRoot := privateTempDir(t)
+	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
+	err := runtime.Delete(context.Background(), chamberRuntime.DeleteRequest{
+		ContainerID: "deleted",
+		Force:       true,
+	})
 	if err != nil {
-		t.Fatalf("Process.Wait() error = %v", err)
+		t.Fatalf("Delete() error = %v", err)
 	}
-	if exitCode != 0 {
-		t.Fatalf("Process.Wait() exit code = %d, want 0", exitCode)
-	}
+	assertLines(t, filepath.Join(logDir, "delete-args"), []string{"--root", stateRoot, "delete", "--force", "deleted"})
 }
 
 func TestRunRejectsUnsafeContainerID(t *testing.T) {
@@ -465,9 +475,9 @@ func TestRunRejectsUnsafeContainerID(t *testing.T) {
 
 	for _, containerID := range invalidContainerIDs {
 		t.Run(containerID, func(t *testing.T) {
-			runtime := New(chruntime.Config{}, nil)
-			_, err := runtime.Run(context.Background(), chruntime.RunRequest{
-				Bundle: chbundle.ProvisionedBundle{
+			runtime := New(chamberRuntime.Config{}, nil)
+			_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
+				Bundle: chamberBundle.ProvisionedBundle{
 					ContainerID: containerID,
 					BundlePath:  privateTempDir(t),
 				},
@@ -483,13 +493,13 @@ func TestRunRejectsUnsafeContainerID(t *testing.T) {
 }
 
 func TestRunRejectsRootFSMountsForNow(t *testing.T) {
-	runtime := New(chruntime.Config{}, nil)
-	_, err := runtime.Run(context.Background(), chruntime.RunRequest{
-		Bundle: chbundle.ProvisionedBundle{
+	runtime := New(chamberRuntime.Config{}, nil)
+	_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
+		Bundle: chamberBundle.ProvisionedBundle{
 			ContainerID: "with-mounts",
 			BundlePath:  privateTempDir(t),
-			RootFS: chbundle.RootFS{
-				Mounts: []chbundle.Mount{{
+			RootFS: chamberBundle.RootFS{
+				Mounts: []chamberBundle.Mount{{
 					Type:   "bind",
 					Source: "/tmp/source",
 					Target: "target",
@@ -506,14 +516,14 @@ func TestRunRejectsRootFSMountsForNow(t *testing.T) {
 }
 
 func TestReadLogRejectsInvalidInput(t *testing.T) {
-	runtime := New(chruntime.Config{
+	runtime := New(chamberRuntime.Config{
 		RuntimeRoot: privateTempDir(t),
 	}, localfs.NewDirectoryManager())
 
 	if _, err := runtime.ReadLog("container-logs", "stdin"); err == nil {
 		t.Fatal("ReadLog(unsupported) error = nil, want error")
 	}
-	if _, err := runtime.ReadLog("", chruntime.StdoutLogStream); err == nil {
+	if _, err := runtime.ReadLog("", chamberRuntime.StdoutLogStream); err == nil {
 		t.Fatal("ReadLog(empty container ID) error = nil, want error")
 	}
 }
@@ -540,7 +550,7 @@ func runtimeWithBinary(t *testing.T, binaryPath string, stateRoot string) *Runti
 	if err != nil {
 		t.Fatalf("ReadFile(%q) error = %v", binaryPath, err)
 	}
-	return New(chruntime.Config{
+	return New(chamberRuntime.Config{
 		RuntimeBinDir: filepath.Dir(binaryPath),
 		RuntimeRoot:   stateRoot,
 		Name:          filepath.Base(binaryPath),
@@ -605,6 +615,23 @@ func assertLines(t *testing.T, path string, want []string) {
 		if got[i] != want[i] {
 			t.Fatalf("line %d in %q = %q, want %q; all lines %#v", i+1, path, got[i], want[i], got)
 		}
+	}
+}
+
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("Stat(%q) error = %v", path, err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %q", path)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

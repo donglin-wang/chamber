@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chbundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chimage "github.com/donglin-wang/chamber/pkg/image"
-	chruntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 )
 
 type Config struct {
@@ -25,13 +25,13 @@ type Config struct {
 	TmpRoot    string
 
 	// OCI Bundles
-	Bundle chbundle.Config
+	Bundle chamberBundle.Config
 
 	// Images
-	Image chimage.Config
+	Image chamberImage.Config
 
 	// OCI Runtime
-	Runtime chruntime.Config
+	Runtime chamberRuntime.Config
 
 	// Metadata
 	Metadata metadata.Config
@@ -53,10 +53,10 @@ type Override struct {
 	SocketPath *string `json:"socket_path,omitempty"`
 	TmpRoot    *string `json:"tmp_root,omitempty"`
 
-	Bundle   chbundle.Override  `json:"bundle,omitempty"`
-	Image    chimage.Override   `json:"image,omitempty"`
-	Runtime  chruntime.Override `json:"runtime,omitempty"`
-	Metadata metadata.Override  `json:"metadata,omitempty"`
+	Bundle   chamberBundle.Override  `json:"bundle,omitempty"`
+	Image    chamberImage.Override   `json:"image,omitempty"`
+	Runtime  chamberRuntime.Override `json:"runtime,omitempty"`
+	Metadata metadata.Override       `json:"metadata,omitempty"`
 
 	OpenTelemetryEndpoint              *string        `json:"open_telemetry_endpoint,omitempty"`
 	OpenTelemetryInsecure              *bool          `json:"open_telemetry_insecure,omitempty"`
@@ -104,9 +104,9 @@ func Load(override Override, getenv func(string) string) (Config, error) {
 		SocketPath: filepath.Join(rootPath, "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(rootPath, "run", "tmp"),
 
-		Bundle:   chbundle.DefaultConfig(rootPath),
-		Image:    chimage.DefaultConfig(rootPath),
-		Runtime:  chruntime.DefaultConfig(rootPath),
+		Bundle:   chamberBundle.DefaultConfig(rootPath),
+		Image:    chamberImage.DefaultConfig(rootPath),
+		Runtime:  chamberRuntime.DefaultConfig(rootPath),
 		Metadata: metadata.DefaultConfig(rootPath),
 
 		OpenTelemetryTraceSampleRatio:      defaultOpenTelemetryTraceSampleRatio,
@@ -182,15 +182,15 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	}
 
 	var err error
-	defaultConfig.Bundle, err = chbundle.Resolve(defaultConfig.Bundle, override.Bundle)
+	defaultConfig.Bundle, err = chamberBundle.Resolve(defaultConfig.Bundle, override.Bundle)
 	if err != nil {
 		return Config{}, err
 	}
-	defaultConfig.Image, err = chimage.Resolve(defaultConfig.Image, override.Image)
+	defaultConfig.Image, err = chamberImage.Resolve(defaultConfig.Image, override.Image)
 	if err != nil {
 		return Config{}, err
 	}
-	defaultConfig.Runtime, err = chruntime.Resolve(defaultConfig.Runtime, override.Runtime)
+	defaultConfig.Runtime, err = chamberRuntime.Resolve(defaultConfig.Runtime, override.Runtime)
 	if err != nil {
 		return Config{}, err
 	}
@@ -257,14 +257,14 @@ func absolutizePaths(cfg *Config) {
 	}
 }
 
-func mergeBundleOverride(base chbundle.Override, overlay chbundle.Override) chbundle.Override {
+func mergeBundleOverride(base chamberBundle.Override, overlay chamberBundle.Override) chamberBundle.Override {
 	if overlay.Root != nil {
 		base.Root = overlay.Root
 	}
 	return base
 }
 
-func mergeImageOverride(base chimage.Override, overlay chimage.Override) chimage.Override {
+func mergeImageOverride(base chamberImage.Override, overlay chamberImage.Override) chamberImage.Override {
 	if overlay.Root != nil {
 		base.Root = overlay.Root
 	}
@@ -278,7 +278,7 @@ func mergeMetadataOverride(base metadata.Override, overlay metadata.Override) me
 	return base
 }
 
-func mergeRuntimeOverride(base chruntime.Override, overlay chruntime.Override) chruntime.Override {
+func mergeRuntimeOverride(base chamberRuntime.Override, overlay chamberRuntime.Override) chamberRuntime.Override {
 	if overlay.RuntimeRoot != nil {
 		base.RuntimeRoot = overlay.RuntimeRoot
 	}
