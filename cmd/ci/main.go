@@ -48,7 +48,7 @@ func main() {
 	configureLogging()
 	cfg := parseFlags()
 	if err := run(&cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "chamber-ci: %v\n", err)
+		logging.Error(context.Background(), "CI failed", "error", err)
 		os.Exit(1)
 	}
 	os.Exit(cfg.exitCode)
@@ -87,7 +87,7 @@ func run(cfg *config) error {
 	if err := directoryManager.MkdirPrivate(root); err != nil {
 		return fmt.Errorf("create CI root: %w", err)
 	}
-	fmt.Printf("root: %s\n", root)
+	logging.Info(ctx, "CI root ready", "root", root)
 
 	paths := ciPaths(root)
 	for _, path := range []string{
@@ -109,7 +109,7 @@ func run(cfg *config) error {
 		return fmt.Errorf("create runtime: %w", err)
 	}
 	binary := runtime.Binary()
-	fmt.Printf("runtime: %s %s at %s\n", binary.Name, binary.Version, binary.Path)
+	logging.Info(ctx, "CI runtime ready", "runtime", binary.Name, "version", binary.Version, "path", binary.Path)
 
 	puller, err := chamberImagePuller.New(chamberImage.Config{
 		Root:    paths.imageRoot,
@@ -152,14 +152,14 @@ func run(cfg *config) error {
 			keep:         cfg.keep,
 		})
 		results = append(results, result)
-		printResult(result)
+		logResult(ctx, result)
 	}
 
 	cfg.exitCode = finalExitCode(results)
 	if cfg.exitCode != 0 {
 		return nil
 	}
-	fmt.Println("chamber-ci: all jobs passed")
+	logging.Info(ctx, "CI passed")
 	return nil
 }
 
@@ -223,11 +223,11 @@ func ensureImage(ctx context.Context, puller chamberImage.Puller, imageRoot stri
 		return "", fmt.Errorf("resolve image destination: %w", err)
 	}
 	if chamberImage.LayoutExists(destination) {
-		fmt.Printf("image: reusing %s at %s\n", imageRef, destination)
+		logging.Info(ctx, "CI image reused", "image_ref", imageRef, "image_layout", destination)
 		return destination, nil
 	}
 
-	fmt.Printf("image: pulling %s\n", imageRef)
+	logging.Info(ctx, "CI image pull started", "image_ref", imageRef)
 	pulled, err := puller.Pull(ctx, chamberImage.PullRequest{
 		Reference:   imageRef,
 		Destination: destination,
@@ -238,7 +238,7 @@ func ensureImage(ctx context.Context, puller chamberImage.Puller, imageRoot stri
 	if err != nil {
 		return "", fmt.Errorf("pull image %q: %w", imageRef, err)
 	}
-	fmt.Printf("image: pulled %s digest=%s bytes=%d\n", pulled.Reference, pulled.Digest, pulled.SizeBytes)
+	logging.Info(ctx, "CI image pulled", "image_ref", pulled.Reference, "digest", pulled.Digest, "bytes", pulled.SizeBytes)
 	return pulled.LayoutPath, nil
 }
 
@@ -256,7 +256,7 @@ func runJob(ctx context.Context, runtime chamberRuntime.Runtime, provisioner cha
 	containerID := "chamber-ci-" + request.job.name + "-" + uuid.NewString()
 	result := jobResult{name: request.job.name, exitCode: 1}
 
-	fmt.Printf("\n==> %s: %v\n", request.job.name, request.job.args)
+	logging.Info(ctx, "CI job started", "job", request.job.name, "args", request.job.args)
 	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
 		ContainerID: containerID,
 		ImageLayout: request.imageLayout,
@@ -317,28 +317,22 @@ func runJob(ctx context.Context, runtime chamberRuntime.Runtime, provisioner cha
 	return result
 }
 
-func printResult(result jobResult) {
+func logResult(ctx context.Context, result jobResult) {
 	if len(result.stdout) > 0 {
-		fmt.Printf("--- %s stdout ---\n%s", result.name, result.stdout)
-		if result.stdout[len(result.stdout)-1] != '\n' {
-			fmt.Println()
-		}
+		logging.Info(ctx, "CI job output", "job", result.name, "stream", "stdout", "output", string(result.stdout))
 	}
 	if len(result.stderr) > 0 {
-		fmt.Printf("--- %s stderr ---\n%s", result.name, result.stderr)
-		if result.stderr[len(result.stderr)-1] != '\n' {
-			fmt.Println()
-		}
+		logging.Info(ctx, "CI job output", "job", result.name, "stream", "stderr", "output", string(result.stderr))
 	}
 	if result.err != nil {
-		fmt.Printf("<== %s failed: exit=%d error=%v\n", result.name, result.exitCode, result.err)
+		logging.Error(ctx, "CI job failed", "job", result.name, "exit_code", result.exitCode, "error", result.err)
 		return
 	}
 	if result.exitCode != 0 {
-		fmt.Printf("<== %s failed: exit=%d\n", result.name, result.exitCode)
+		logging.Error(ctx, "CI job failed", "job", result.name, "exit_code", result.exitCode)
 		return
 	}
-	fmt.Printf("<== %s passed\n", result.name)
+	logging.Info(ctx, "CI job passed", "job", result.name)
 }
 
 func finalExitCode(results []jobResult) int {
