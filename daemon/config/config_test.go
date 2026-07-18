@@ -14,6 +14,7 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
 func TestOverrideFieldsMatchConfigFields(t *testing.T) {
@@ -39,6 +40,8 @@ func TestOverrideFieldsMatchConfigFields(t *testing.T) {
 			wantType = reflect.TypeOf(chamberRuntime.Override{})
 		case "Metadata":
 			wantType = reflect.TypeOf(metadata.Override{})
+		case "Logging":
+			wantType = reflect.TypeOf(chamberLogging.Override{})
 		}
 		if overrideField.Type != wantType {
 			t.Fatalf("Override.%s has type %s, want %s", name, overrideField.Type, wantType)
@@ -134,20 +137,24 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 	}
 
 	root := filepath.Join(xdgDataHome, "chamber")
+	defaultLogging := chamberLogging.DefaultConfig()
 	want := Config{
 		HTTPAddr:   "127.0.0.1:8080",
 		SocketPath: filepath.Join(root, "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "run", "tmp"),
 		Bundle: chamberBundle.Config{
-			Root: filepath.Join(root, "bundles"),
+			Root:    filepath.Join(root, "bundles"),
+			Logging: defaultLogging,
 		},
 		Image: chamberImage.Config{
-			Root: filepath.Join(root, "images"),
+			Root:    filepath.Join(root, "images"),
+			Logging: defaultLogging,
 		},
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "bin"),
 			Name:          "runc",
+			Logging:       defaultLogging,
 		},
 		Metadata: metadata.Config{
 			Root: filepath.Join(root, "metadata"),
@@ -155,8 +162,7 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 
 		OpenTelemetryTraceSampleRatio:      1.0,
 		OpenTelemetryMetricsExportInterval: 10 * time.Second,
-		LogLevel:                           "info",
-		LogFormat:                          "json",
+		Logging:                            defaultLogging,
 	}
 
 	if !reflect.DeepEqual(cfg, want) {
@@ -234,8 +240,10 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		OpenTelemetryTraceSampleRatio:      0.25,
 		OpenTelemetryMetricsExportInterval: time.Second,
 
-		LogLevel:  "warn",
-		LogFormat: "text",
+		Logging: chamberLogging.Config{
+			Level:  "warn",
+			Format: "text",
+		},
 	}
 	override := Override{
 		HTTPAddr:   ptr("127.0.0.1:9090"),
@@ -264,8 +272,10 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		OpenTelemetryTraceSampleRatio:      ptr(0.75),
 		OpenTelemetryMetricsExportInterval: ptr(30 * time.Second),
 
-		LogLevel:  ptr("debug"),
-		LogFormat: ptr("console"),
+		Logging: chamberLogging.Override{
+			Level:  ptr("debug"),
+			Format: ptr("text"),
+		},
 	}
 
 	cfg, err := Resolve(defaultConfig, override)
@@ -279,9 +289,17 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		TmpRoot:    mustAbs(t, "override/tmp"),
 		Bundle: chamberBundle.Config{
 			Root: mustAbs(t, "override/bundles"),
+			Logging: chamberLogging.Config{
+				Level:  "debug",
+				Format: "text",
+			},
 		},
 		Image: chamberImage.Config{
 			Root: mustAbs(t, "override/images"),
+			Logging: chamberLogging.Config{
+				Level:  "debug",
+				Format: "text",
+			},
 		},
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   mustAbs(t, "override/runtime"),
@@ -290,6 +308,10 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 			Version:       "v1.2.3",
 			URL:           "https://example.test/runtime",
 			SHA256:        "override-sha",
+			Logging: chamberLogging.Config{
+				Level:  "debug",
+				Format: "text",
+			},
 		},
 		Metadata: metadata.Config{
 			Root: mustAbs(t, "override/metadata"),
@@ -300,8 +322,10 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		OpenTelemetryTraceSampleRatio:      0.75,
 		OpenTelemetryMetricsExportInterval: 30 * time.Second,
 
-		LogLevel:  "debug",
-		LogFormat: "console",
+		Logging: chamberLogging.Config{
+			Level:  "debug",
+			Format: "text",
+		},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("Resolve() config mismatch:\n got: %#v\nwant: %#v", cfg, want)
@@ -316,9 +340,17 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 		TmpRoot:    filepath.Join(root, "default", "tmp"),
 		Bundle: chamberBundle.Config{
 			Root: filepath.Join(root, "default", "bundles"),
+			Logging: chamberLogging.Config{
+				Level:  "warn",
+				Format: "text",
+			},
 		},
 		Image: chamberImage.Config{
 			Root: filepath.Join(root, "default", "images"),
+			Logging: chamberLogging.Config{
+				Level:  "warn",
+				Format: "text",
+			},
 		},
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "default", "runtime"),
@@ -327,6 +359,10 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 			Version:       "v0.0.1",
 			URL:           "https://example.test/default-runtime",
 			SHA256:        "default-sha",
+			Logging: chamberLogging.Config{
+				Level:  "warn",
+				Format: "text",
+			},
 		},
 		Metadata: metadata.Config{
 			Root: filepath.Join(root, "default", "metadata"),
@@ -337,8 +373,10 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 		OpenTelemetryTraceSampleRatio:      0.25,
 		OpenTelemetryMetricsExportInterval: time.Second,
 
-		LogLevel:  "warn",
-		LogFormat: "text",
+		Logging: chamberLogging.Config{
+			Level:  "warn",
+			Format: "text",
+		},
 	}
 
 	cfg, err := Resolve(defaultConfig, Override{})
@@ -363,7 +401,7 @@ func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
 			"name": "crun"
 		},
 		"open_telemetry_metrics_export_interval": 30000000000,
-		"log_level": "debug"
+		"logging": { "level": "debug" }
 	}`
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config file: %v", err)
@@ -396,8 +434,8 @@ func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
 	if cfg.OpenTelemetryMetricsExportInterval != 30*time.Second {
 		t.Fatalf("OpenTelemetryMetricsExportInterval = %s, want 30s", cfg.OpenTelemetryMetricsExportInterval)
 	}
-	if cfg.LogLevel != "debug" {
-		t.Fatalf("LogLevel = %q, want debug", cfg.LogLevel)
+	if cfg.Logging.Level != "debug" {
+		t.Fatalf("Logging.Level = %q, want debug", cfg.Logging.Level)
 	}
 }
 

@@ -3,6 +3,7 @@ module github.com/donglin-wang/chamber
 go 1.26.4
 
 require (
+	github.com/apex/log v1.9.0
 	github.com/cyphar/filepath-securejoin v0.5.0
 	github.com/google/go-containerregistry v0.21.7
 	github.com/google/uuid v1.6.0
@@ -15,7 +16,6 @@ require (
 
 require (
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230106234847-43070de90fa1 // indirect
-	github.com/apex/log v1.9.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

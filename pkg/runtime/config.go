@@ -3,6 +3,8 @@ package runtime
 import (
 	"fmt"
 	"path/filepath"
+
+	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
 const DefaultName = "runc"
@@ -14,15 +16,17 @@ type Config struct {
 	Version       string
 	URL           string
 	SHA256        string
+	Logging       chamberLogging.Config
 }
 
 type Override struct {
-	RuntimeRoot   *string `json:"runtime_root,omitempty"`
-	RuntimeBinDir *string `json:"runtime_bin_dir,omitempty"`
-	Name          *string `json:"name,omitempty"`
-	Version       *string `json:"version,omitempty"`
-	URL           *string `json:"url,omitempty"`
-	SHA256        *string `json:"sha256,omitempty"`
+	RuntimeRoot   *string                 `json:"runtime_root,omitempty"`
+	RuntimeBinDir *string                 `json:"runtime_bin_dir,omitempty"`
+	Name          *string                 `json:"name,omitempty"`
+	Version       *string                 `json:"version,omitempty"`
+	URL           *string                 `json:"url,omitempty"`
+	SHA256        *string                 `json:"sha256,omitempty"`
+	Logging       chamberLogging.Override `json:"logging,omitempty"`
 }
 
 func DefaultConfig(rootPath string) Config {
@@ -30,6 +34,7 @@ func DefaultConfig(rootPath string) Config {
 		RuntimeRoot:   filepath.Join(rootPath, "run", "runtime"),
 		RuntimeBinDir: filepath.Join(rootPath, "bin"),
 		Name:          DefaultName,
+		Logging:       chamberLogging.Config{},
 	}
 }
 
@@ -52,8 +57,12 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	if override.SHA256 != nil {
 		defaultConfig.SHA256 = *override.SHA256
 	}
-
 	var err error
+	defaultConfig.Logging, err = chamberLogging.Resolve(defaultConfig.Logging, override.Logging)
+	if err != nil {
+		return Config{}, fmt.Errorf("resolve runtime logging: %w", err)
+	}
+
 	defaultConfig.RuntimeRoot, err = absPath(defaultConfig.RuntimeRoot)
 	if err != nil {
 		return Config{}, fmt.Errorf("resolve runtime root: %w", err)

@@ -17,12 +17,17 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	ociumoci "github.com/opencontainers/umoci"
 	"github.com/opencontainers/umoci/oci/layer"
 )
 
 var _ chamberBundle.Provisioner = (*Provisioner)(nil)
+
+func init() {
+	installApexBridge()
+}
 
 type Provisioner struct {
 	Config           chamberBundle.Config
@@ -38,6 +43,10 @@ func (p Provisioner) Provision(
 	if err := ctx.Err(); err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
+	if err := chamberLogging.Configure(p.Config.Logging, nil); err != nil {
+		return chamberBundle.ProvisionedBundle{}, err
+	}
+	installApexBridge()
 	if p.DirectoryManager == nil {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("directory manager is required")
 	}
@@ -63,6 +72,12 @@ func (p Provisioner) Provision(
 	}
 
 	finalBundle := filepath.Join(bundleRoot, request.ContainerID)
+	chamberLogging.Info(ctx, "provisioning bundle",
+		"container_id", request.ContainerID,
+		"image_ref", request.ImageRef,
+		"image_layout", request.ImageLayout,
+		"bundle_path", finalBundle,
+	)
 	tmpBundle, err := p.DirectoryManager.MkdirTemp(bundleRoot, "."+request.ContainerID+".tmp-*")
 	if err != nil {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("create temporary bundle: %w", err)
@@ -110,11 +125,16 @@ func (p Provisioner) Provision(
 	}
 	committed = true
 
-	return chamberBundle.ProvisionedBundle{
+	provisioned := chamberBundle.ProvisionedBundle{
 		ContainerID: request.ContainerID,
 		BundlePath:  finalBundle,
 		RootFS:      chamberBundle.RootFS{},
-	}, nil
+	}
+	chamberLogging.Info(ctx, "provisioned bundle",
+		"container_id", provisioned.ContainerID,
+		"bundle_path", provisioned.BundlePath,
+	)
+	return provisioned, nil
 }
 
 func patchBundleConfig(bundlePath string, uid uint32, gid uint32, process chamberBundle.ProcessSpec, mounts []specs.Mount) error {

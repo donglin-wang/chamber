@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRuncRuntime "github.com/donglin-wang/chamber/pkg/runtime/runc"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/logging"
 	"github.com/google/uuid"
 )
 
@@ -43,12 +45,17 @@ type jobResult struct {
 }
 
 func main() {
+	configureLogging()
 	cfg := parseFlags()
 	if err := run(&cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "chamber-ci: %v\n", err)
 		os.Exit(1)
 	}
 	os.Exit(cfg.exitCode)
+}
+
+func configureLogging() {
+	logging.SetLogger(logging.NewJSONLogger(os.Stderr, slog.LevelInfo))
 }
 
 func parseFlags() config {
@@ -65,6 +72,7 @@ func parseFlags() config {
 func run(cfg *config) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
 	defer cancel()
+	loggingConfig := logging.DefaultConfig()
 
 	workspace, err := filepath.Abs(cfg.workdir)
 	if err != nil {
@@ -99,6 +107,7 @@ func run(cfg *config) error {
 		RuntimeRoot:   paths.runtimeRoot,
 		RuntimeBinDir: paths.runtimeBinDir,
 		Name:          chamberRuntime.DefaultName,
+		Logging:       loggingConfig,
 	}, directoryManager)
 	if binary, err := runtime.Ensure(ctx); err != nil {
 		return fmt.Errorf("ensure runtime: %w", err)
@@ -106,14 +115,20 @@ func run(cfg *config) error {
 		fmt.Printf("runtime: %s %s at %s\n", binary.Name, binary.Version, binary.Path)
 	}
 
-	puller := chamberImagePuller.New(directoryManager)
+	puller := chamberImagePuller.New(chamberImage.Config{
+		Root:    paths.imageRoot,
+		Logging: loggingConfig,
+	}, directoryManager)
 	imageLayout, err := ensureImage(ctx, puller, paths.imageRoot, cfg.image)
 	if err != nil {
 		return err
 	}
 
 	provisioner := chamberRootlessProvisioner.Provisioner{
-		Config:           chamberBundle.Config{Root: paths.bundleRoot},
+		Config: chamberBundle.Config{
+			Root:    paths.bundleRoot,
+			Logging: loggingConfig,
+		},
 		UID:              uint32(os.Geteuid()),
 		GID:              uint32(os.Getegid()),
 		DirectoryManager: directoryManager,

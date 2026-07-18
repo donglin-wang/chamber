@@ -14,6 +14,7 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
 type Config struct {
@@ -43,8 +44,7 @@ type Config struct {
 	OpenTelemetryMetricsExportInterval time.Duration
 
 	// Logging
-	LogLevel  string
-	LogFormat string
+	Logging chamberLogging.Config
 }
 
 type Override struct {
@@ -63,16 +63,13 @@ type Override struct {
 	OpenTelemetryTraceSampleRatio      *float64       `json:"open_telemetry_trace_sample_ratio,omitempty"`
 	OpenTelemetryMetricsExportInterval *time.Duration `json:"open_telemetry_metrics_export_interval,omitempty"`
 
-	LogLevel  *string `json:"log_level,omitempty"`
-	LogFormat *string `json:"log_format,omitempty"`
+	Logging chamberLogging.Override `json:"logging,omitempty"`
 }
 
 const (
 	defaultHTTPAddr                           = "127.0.0.1:8080"
 	defaultOpenTelemetryTraceSampleRatio      = 1.0
 	defaultOpenTelemetryMetricsExportInterval = 10 * time.Second
-	defaultLogLevel                           = "info"
-	defaultLogFormat                          = "json"
 )
 
 func DefaultRoot(getenv func(string) string) string {
@@ -111,8 +108,7 @@ func Load(override Override, getenv func(string) string) (Config, error) {
 
 		OpenTelemetryTraceSampleRatio:      defaultOpenTelemetryTraceSampleRatio,
 		OpenTelemetryMetricsExportInterval: defaultOpenTelemetryMetricsExportInterval,
-		LogLevel:                           defaultLogLevel,
-		LogFormat:                          defaultLogFormat,
+		Logging:                            chamberLogging.DefaultConfig(),
 	}
 
 	return Resolve(defaultConfig, override)
@@ -153,6 +149,7 @@ func ReadOverrideFile(path string) (Override, error) {
 }
 
 func Resolve(defaultConfig Config, override Override) (Config, error) {
+	var err error
 	if override.HTTPAddr != nil {
 		defaultConfig.HTTPAddr = *override.HTTPAddr
 	}
@@ -174,14 +171,15 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	if override.OpenTelemetryMetricsExportInterval != nil {
 		defaultConfig.OpenTelemetryMetricsExportInterval = *override.OpenTelemetryMetricsExportInterval
 	}
-	if override.LogLevel != nil {
-		defaultConfig.LogLevel = *override.LogLevel
-	}
-	if override.LogFormat != nil {
-		defaultConfig.LogFormat = *override.LogFormat
+	defaultConfig.Logging, err = chamberLogging.Resolve(defaultConfig.Logging, override.Logging)
+	if err != nil {
+		return Config{}, fmt.Errorf("resolve logging: %w", err)
 	}
 
-	var err error
+	defaultConfig.Bundle.Logging = defaultConfig.Logging
+	defaultConfig.Image.Logging = defaultConfig.Logging
+	defaultConfig.Runtime.Logging = defaultConfig.Logging
+
 	defaultConfig.Bundle, err = chamberBundle.Resolve(defaultConfig.Bundle, override.Bundle)
 	if err != nil {
 		return Config{}, err
@@ -225,12 +223,7 @@ func MergeOverride(base Override, overlay Override) Override {
 	if overlay.OpenTelemetryMetricsExportInterval != nil {
 		base.OpenTelemetryMetricsExportInterval = overlay.OpenTelemetryMetricsExportInterval
 	}
-	if overlay.LogLevel != nil {
-		base.LogLevel = overlay.LogLevel
-	}
-	if overlay.LogFormat != nil {
-		base.LogFormat = overlay.LogFormat
-	}
+	base.Logging = mergeLoggingOverride(base.Logging, overlay.Logging)
 
 	base.Bundle = mergeBundleOverride(base.Bundle, overlay.Bundle)
 	base.Image = mergeImageOverride(base.Image, overlay.Image)
@@ -261,6 +254,7 @@ func mergeBundleOverride(base chamberBundle.Override, overlay chamberBundle.Over
 	if overlay.Root != nil {
 		base.Root = overlay.Root
 	}
+	base.Logging = mergeLoggingOverride(base.Logging, overlay.Logging)
 	return base
 }
 
@@ -268,6 +262,7 @@ func mergeImageOverride(base chamberImage.Override, overlay chamberImage.Overrid
 	if overlay.Root != nil {
 		base.Root = overlay.Root
 	}
+	base.Logging = mergeLoggingOverride(base.Logging, overlay.Logging)
 	return base
 }
 
@@ -296,6 +291,17 @@ func mergeRuntimeOverride(base chamberRuntime.Override, overlay chamberRuntime.O
 	}
 	if overlay.SHA256 != nil {
 		base.SHA256 = overlay.SHA256
+	}
+	base.Logging = mergeLoggingOverride(base.Logging, overlay.Logging)
+	return base
+}
+
+func mergeLoggingOverride(base chamberLogging.Override, overlay chamberLogging.Override) chamberLogging.Override {
+	if overlay.Level != nil {
+		base.Level = overlay.Level
+	}
+	if overlay.Format != nil {
+		base.Format = overlay.Format
 	}
 	return base
 }

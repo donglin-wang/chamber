@@ -26,7 +26,7 @@ func TestPullerLocalContract(t *testing.T) {
 	tests := map[string]pullerFactory{
 		"puller": func(t *testing.T) chamberImage.Puller {
 			t.Helper()
-			return chamberImagePuller.New(localfs.NewDirectoryManager())
+			return chamberImagePuller.New(chamberImage.Config{}, localfs.NewDirectoryManager())
 		},
 	}
 
@@ -42,7 +42,7 @@ func TestPullerLocalContract(t *testing.T) {
 }
 
 func TestImagePullerRealWorldBusybox(t *testing.T) {
-	puller := chamberImagePuller.New(localfs.NewDirectoryManager())
+	puller := chamberImagePuller.New(chamberImage.Config{}, localfs.NewDirectoryManager())
 	assertPullSuccessReturnsDigestSizeAndUTCTime(t, func(t *testing.T) chamberImage.Puller {
 		t.Helper()
 		return puller

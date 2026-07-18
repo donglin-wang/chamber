@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,6 +19,7 @@ import (
 	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
 	chamberRuncRuntime "github.com/donglin-wang/chamber/pkg/runtime/runc"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
 type startupOptions struct {
@@ -27,12 +28,23 @@ type startupOptions struct {
 }
 
 func main() {
+	configureLogging(chamberLogging.DefaultConfig())
 	if err := run(context.Background(), os.Args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			os.Exit(0)
 		}
-		log.Fatal(err)
+		slog.Default().Error("chamber daemon failed", "error", err)
+		os.Exit(1)
 	}
+}
+
+func configureLogging(config chamberLogging.Config) {
+	logger, err := chamberLogging.NewLogger(os.Stderr, config)
+	if err != nil {
+		logger = chamberLogging.NewJSONLogger(os.Stderr, slog.LevelInfo)
+	}
+	chamberLogging.SetLogger(logger)
+	slog.SetDefault(logger)
 }
 
 func run(ctx context.Context, args []string) error {
@@ -49,6 +61,7 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	configureLogging(cfg.Logging)
 
 	lifetime, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
@@ -66,7 +79,7 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	mux := newServer()
-	registerImageRoutes(mux, cfg, store, chamberImagePuller.New(directoryManager))
+	registerImageRoutes(mux, cfg, store, chamberImagePuller.New(cfg.Image, directoryManager))
 	registerContainerRoutes(
 		mux,
 		cfg,
@@ -87,7 +100,7 @@ func run(ctx context.Context, args []string) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf("chamber daemon HTTP server listening on http://%s", cfg.HTTPAddr)
+	slog.Default().Info("chamber daemon HTTP server listening", "http_addr", cfg.HTTPAddr)
 	serveErr := make(chan error, 1)
 	go func() {
 		serveErr <- server.ListenAndServe()

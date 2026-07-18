@@ -13,6 +13,7 @@ import (
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -25,11 +26,13 @@ import (
 var _ chamberImage.Puller = (*Puller)(nil)
 
 type Puller struct {
+	config           chamberImage.Config
 	directoryManager localfs.DirectoryManager
 }
 
-func New(directoryManager localfs.DirectoryManager) *Puller {
+func New(config chamberImage.Config, directoryManager localfs.DirectoryManager) *Puller {
 	return &Puller{
+		config:           config,
 		directoryManager: directoryManager,
 	}
 }
@@ -37,6 +40,9 @@ func New(directoryManager localfs.DirectoryManager) *Puller {
 func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (chamberImage.PulledImage, error) {
 	if p.directoryManager == nil {
 		return chamberImage.PulledImage{}, fmt.Errorf("directory manager is required")
+	}
+	if err := chamberLogging.Configure(p.config.Logging, nil); err != nil {
+		return chamberImage.PulledImage{}, err
 	}
 
 	ref, err := name.ParseReference(request.Reference)
@@ -57,6 +63,13 @@ func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (ch
 	if err := p.directoryManager.EnsurePrivateDir(parent); err != nil {
 		return chamberImage.PulledImage{}, fmt.Errorf("prepare image destination parent: %w", err)
 	}
+	chamberLogging.Info(ctx, "pulling image",
+		"image_ref", request.Reference,
+		"destination", destination,
+		"platform_os", platform.OS,
+		"platform_architecture", platform.Architecture,
+		"platform_variant", platform.Variant,
+	)
 
 	options := []remote.Option{
 		remote.WithContext(ctx),
@@ -116,13 +129,20 @@ func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (ch
 		return chamberImage.PulledImage{}, fmt.Errorf("measure OCI image layout: %w", err)
 	}
 
-	return chamberImage.PulledImage{
+	pulled := chamberImage.PulledImage{
 		Reference:  request.Reference,
 		Digest:     digest.String(),
 		LayoutPath: destination,
 		SizeBytes:  sizeBytes,
 		PulledAt:   time.Now().UTC(),
-	}, nil
+	}
+	chamberLogging.Info(ctx, "pulled image",
+		"image_ref", pulled.Reference,
+		"digest", pulled.Digest,
+		"layout_path", pulled.LayoutPath,
+		"size_bytes", pulled.SizeBytes,
+	)
+	return pulled, nil
 }
 
 func resolvePlatform(platform chamberImage.Platform) v1.Platform {

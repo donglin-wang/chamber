@@ -19,6 +19,7 @@ import (
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
 const (
@@ -72,6 +73,9 @@ func New(config chamberRuntime.Config, directoryManager localfs.DirectoryManager
 
 func (r *Runtime) Ensure(ctx context.Context) (chamberRuntime.Binary, error) {
 	config := r.config
+	if err := chamberLogging.Configure(config.Logging, nil); err != nil {
+		return chamberRuntime.Binary{}, err
+	}
 	if r.directoryManager == nil {
 		return chamberRuntime.Binary{}, fmt.Errorf("directory manager is required")
 	}
@@ -95,17 +99,38 @@ func (r *Runtime) Ensure(ctx context.Context) (chamberRuntime.Binary, error) {
 	if ok, err := fileMatchesSHA256(binary.Path, expectedDigest); err != nil {
 		return chamberRuntime.Binary{}, fmt.Errorf("verify existing runtime binary: %w", err)
 	} else if ok {
+		chamberLogging.Info(ctx, "runtime binary ready",
+			"runtime", binary.Name,
+			"version", binary.Version,
+			"path", binary.Path,
+			"source", "cache",
+		)
 		return binary, nil
 	}
 
+	chamberLogging.Info(ctx, "downloading runtime binary",
+		"runtime", binary.Name,
+		"version", binary.Version,
+		"url", config.URL,
+		"path", binary.Path,
+	)
 	if err := r.download(ctx, config.URL, expectedDigest, binDir, binary.Path); err != nil {
 		return chamberRuntime.Binary{}, err
 	}
 
+	chamberLogging.Info(ctx, "runtime binary ready",
+		"runtime", binary.Name,
+		"version", binary.Version,
+		"path", binary.Path,
+		"source", "download",
+	)
 	return binary, nil
 }
 
 func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Process, error) {
+	if err := chamberLogging.Configure(r.config.Logging, nil); err != nil {
+		return nil, err
+	}
 	if request.Bundle.BundlePath == "" {
 		return nil, fmt.Errorf("runtime bundle path is required")
 	}
@@ -131,6 +156,11 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 	if err := directoryManager.EnsurePrivateDir(stateRoot); err != nil {
 		return nil, fmt.Errorf("prepare runtime state root: %w", err)
 	}
+	chamberLogging.Info(ctx, "starting runtime container",
+		"container_id", containerID,
+		"bundle_path", request.Bundle.BundlePath,
+		"state_root", stateRoot,
+	)
 	stdout, stderr, err := r.openLogs(containerID)
 	if err != nil {
 		return nil, err
@@ -148,10 +178,17 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 		return nil, fmt.Errorf("start runc container %q: %w", containerID, err)
 	}
 
+	chamberLogging.Info(ctx, "started runtime container",
+		"container_id", containerID,
+		"pid", cmd.Process.Pid,
+	)
 	return newRuncProcess(cmd, stdout, stderr), nil
 }
 
 func (r *Runtime) ReadLog(containerID string, stream string) ([]byte, error) {
+	if err := chamberLogging.Configure(r.config.Logging, nil); err != nil {
+		return nil, err
+	}
 	path, err := r.logPath(containerID, stream)
 	if err != nil {
 		return nil, err
@@ -160,6 +197,9 @@ func (r *Runtime) ReadLog(containerID string, stream string) ([]byte, error) {
 }
 
 func (r *Runtime) State(ctx context.Context, containerID string) (chamberRuntime.ContainerState, error) {
+	if err := chamberLogging.Configure(r.config.Logging, nil); err != nil {
+		return chamberRuntime.ContainerState{}, err
+	}
 	if err := containerid.Validate(containerID); err != nil {
 		return chamberRuntime.ContainerState{}, err
 	}
@@ -178,6 +218,9 @@ func (r *Runtime) State(ctx context.Context, containerID string) (chamberRuntime
 }
 
 func (r *Runtime) Signal(ctx context.Context, request chamberRuntime.SignalRequest) error {
+	if err := chamberLogging.Configure(r.config.Logging, nil); err != nil {
+		return err
+	}
 	if err := containerid.Validate(request.ContainerID); err != nil {
 		return err
 	}
@@ -188,6 +231,10 @@ func (r *Runtime) Signal(ctx context.Context, request chamberRuntime.SignalReque
 	if err != nil {
 		return err
 	}
+	chamberLogging.Info(ctx, "signaling runtime container",
+		"container_id", request.ContainerID,
+		"signal", request.Signal,
+	)
 	cmd := exec.CommandContext(ctx, binary.Path, "--root", stateRoot, "kill", request.ContainerID, request.Signal)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("signal runc container %q: %w: %s", request.ContainerID, err, strings.TrimSpace(string(output)))
@@ -196,6 +243,9 @@ func (r *Runtime) Signal(ctx context.Context, request chamberRuntime.SignalReque
 }
 
 func (r *Runtime) Delete(ctx context.Context, request chamberRuntime.DeleteRequest) error {
+	if err := chamberLogging.Configure(r.config.Logging, nil); err != nil {
+		return err
+	}
 	if err := containerid.Validate(request.ContainerID); err != nil {
 		return err
 	}
@@ -208,6 +258,10 @@ func (r *Runtime) Delete(ctx context.Context, request chamberRuntime.DeleteReque
 		args = append(args, "--force")
 	}
 	args = append(args, request.ContainerID)
+	chamberLogging.Info(ctx, "deleting runtime container",
+		"container_id", request.ContainerID,
+		"force", request.Force,
+	)
 	cmd := exec.CommandContext(ctx, binary.Path, args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("delete runc container %q: %w: %s", request.ContainerID, err, strings.TrimSpace(string(output)))
