@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"log/slog"
@@ -167,6 +168,86 @@ func TestSDKProductionCodeUsesSharedLogging(t *testing.T) {
 	}
 }
 
+func TestSDKProductionCodeConfiguresLoggingOnlyInConstructors(t *testing.T) {
+	pkgRoot := filepath.Clean("../..")
+
+	err := filepath.WalkDir(pkgRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if path == filepath.Join(pkgRoot, "shared", "logging") ||
+				path == filepath.Join(pkgRoot, "shared", "testutil") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		fileset := token.NewFileSet()
+		file, err := parser.ParseFile(fileset, path, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		loggingNames := loggingImportNames(file)
+		if len(loggingNames) == 0 {
+			return nil
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok || !isLoggingConfigureCall(call, loggingNames) {
+				return true
+			}
+			if !insideConstructor(file, call.Pos()) {
+				t.Fatalf("SDK production file %s calls logging.Configure outside New", path)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk SDK packages: %v", err)
+	}
+}
+
+func TestSDKProductionCodeDoesNotExposePreparationMethods(t *testing.T) {
+	pkgRoot := filepath.Clean("../..")
+
+	err := filepath.WalkDir(pkgRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if path == filepath.Join(pkgRoot, "shared", "testutil") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		fileset := token.NewFileSet()
+		file, err := parser.ParseFile(fileset, path, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || !isPreparationName(function.Name.Name) {
+				continue
+			}
+			t.Fatalf("SDK production file %s declares %s; initialization belongs in New", path, function.Name.Name)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk SDK packages: %v", err)
+	}
+}
+
 func decodeLogEntry(t *testing.T, data []byte) map[string]any {
 	t.Helper()
 
@@ -203,6 +284,53 @@ func parseImports(t *testing.T, path string) []string {
 		imports = append(imports, strings.Trim(importSpec.Path.Value, `"`))
 	}
 	return imports
+}
+
+func loggingImportNames(file *ast.File) map[string]bool {
+	names := map[string]bool{}
+	for _, importSpec := range file.Imports {
+		importPath := strings.Trim(importSpec.Path.Value, `"`)
+		if importPath != "github.com/donglin-wang/chamber/pkg/shared/logging" {
+			continue
+		}
+		if importSpec.Name != nil {
+			names[importSpec.Name.Name] = true
+			continue
+		}
+		names["logging"] = true
+	}
+	return names
+}
+
+func isLoggingConfigureCall(call *ast.CallExpr, loggingNames map[string]bool) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Configure" {
+		return false
+	}
+	identifier, ok := selector.X.(*ast.Ident)
+	return ok && loggingNames[identifier.Name]
+}
+
+func isPreparationName(name string) bool {
+	for _, prefix := range []string{"Ensure", "ensure", "Prepare", "prepare"} {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func insideConstructor(file *ast.File, pos token.Pos) bool {
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Body == nil || function.Name.Name != "New" {
+			continue
+		}
+		if function.Body.Pos() <= pos && pos <= function.Body.End() {
+			return true
+		}
+	}
+	return false
 }
 
 func ptr(value string) *string {

@@ -73,24 +73,31 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer store.Close()
 
-	runtime := chamberRuncRuntime.New(cfg.Runtime, directoryManager)
-	if _, err := runtime.Ensure(lifetime); err != nil {
-		return fmt.Errorf("ensure runtime: %w", err)
+	runtime, err := chamberRuncRuntime.New(lifetime, cfg.Runtime, directoryManager)
+	if err != nil {
+		return fmt.Errorf("create runtime: %w", err)
 	}
 
 	mux := newServer()
-	registerImageRoutes(mux, cfg, store, chamberImagePuller.New(cfg.Image, directoryManager))
+	puller, err := chamberImagePuller.New(cfg.Image, directoryManager)
+	if err != nil {
+		return fmt.Errorf("create image puller: %w", err)
+	}
+	registerImageRoutes(mux, cfg, store, puller)
+	provisioner, err := chamberRootlessProvisioner.New(
+		cfg.Bundle,
+		directoryManager,
+		chamberRootlessProvisioner.WithIDMap(uint32(os.Geteuid()), uint32(os.Getegid())),
+	)
+	if err != nil {
+		return fmt.Errorf("create bundle provisioner: %w", err)
+	}
 	registerContainerRoutes(
 		mux,
 		cfg,
 		store,
 		runtime,
-		chamberRootlessProvisioner.Provisioner{
-			Config:           cfg.Bundle,
-			UID:              uint32(os.Geteuid()),
-			GID:              uint32(os.Getegid()),
-			DirectoryManager: directoryManager,
-		},
+		provisioner,
 		lifetime,
 	)
 

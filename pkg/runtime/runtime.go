@@ -23,8 +23,7 @@ type Process interface {
 }
 
 type Runtime interface {
-	// Ensure prepares the runtime implementation for future Run calls.
-	Ensure(ctx context.Context) (Binary, error)
+	Binary() Binary
 
 	// Run starts the OCI runtime process. Wait observes or returns its cached
 	// exit result.

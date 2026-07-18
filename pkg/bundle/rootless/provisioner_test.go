@@ -8,8 +8,42 @@ import (
 	"testing"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
+
+func TestNewPreparesConfiguredBundleRoot(t *testing.T) {
+	root := filepath.Join(privateTempDir(t), "bundles")
+
+	provisioner, err := New(chamberBundle.Config{Root: root}, localfs.NewDirectoryManager())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if provisioner == nil {
+		t.Fatal("New() provisioner = nil, want provisioner")
+	}
+	assertPrivateDir(t, root)
+}
+
+func TestNewRequiresDirectoryManager(t *testing.T) {
+	if _, err := New(chamberBundle.Config{Root: privateTempDir(t)}, nil); err == nil {
+		t.Fatal("New() error = nil, want directory manager error")
+	}
+}
+
+func TestNewAppliesIDMapOption(t *testing.T) {
+	provisioner, err := New(
+		chamberBundle.Config{Root: filepath.Join(privateTempDir(t), "bundles")},
+		localfs.NewDirectoryManager(),
+		WithIDMap(123, 456),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if provisioner.uid != 123 || provisioner.gid != 456 {
+		t.Fatalf("uid/gid = %d/%d, want 123/456", provisioner.uid, provisioner.gid)
+	}
+}
 
 func TestPatchRootlessSpec(t *testing.T) {
 	resources := &specs.LinuxResources{}
@@ -109,6 +143,31 @@ func TestPatchRootlessSpec(t *testing.T) {
 	}
 	if len(spec.Mounts) != 2 {
 		t.Fatalf("Mounts length = %d, want 2", len(spec.Mounts))
+	}
+}
+
+func privateTempDir(t *testing.T) string {
+	t.Helper()
+
+	path := t.TempDir()
+	if err := os.Chmod(path, 0700); err != nil {
+		t.Fatalf("Chmod(%q) error = %v", path, err)
+	}
+	return path
+}
+
+func assertPrivateDir(t *testing.T, path string) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%q) error = %v", path, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%q is not a directory", path)
+	}
+	if info.Mode().Perm() != 0700 {
+		t.Fatalf("mode = %o, want 0700", info.Mode().Perm())
 	}
 }
 
@@ -279,7 +338,7 @@ func TestNormalizeBindMountsRejectsInvalidRequests(t *testing.T) {
 	}
 }
 
-func TestPrepareBindMountTargetsCreatesRootfsPlaceholders(t *testing.T) {
+func TestCreateBindMountTargetsCreatesRootfsPlaceholders(t *testing.T) {
 	rootfs := filepath.Join(t.TempDir(), "rootfs")
 	if err := os.MkdirAll(rootfs, 0700); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -297,8 +356,8 @@ func TestPrepareBindMountTargetsCreatesRootfsPlaceholders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalizeBindMounts() error = %v", err)
 	}
-	if err := prepareBindMountTargets(rootfs, mounts); err != nil {
-		t.Fatalf("prepareBindMountTargets() error = %v", err)
+	if err := createBindMountTargets(rootfs, mounts); err != nil {
+		t.Fatalf("createBindMountTargets() error = %v", err)
 	}
 
 	workspaceInfo, err := os.Stat(filepath.Join(rootfs, "workspace"))

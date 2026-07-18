@@ -217,8 +217,8 @@ type fakeRuntime struct {
 	wantLog string
 }
 
-func (r fakeRuntime) Ensure(ctx context.Context) (chamberRuntime.Binary, error) {
-	return chamberRuntime.Binary{}, ctx.Err()
+func (r fakeRuntime) Binary() chamberRuntime.Binary {
+	return chamberRuntime.Binary{}
 }
 
 func (r fakeRuntime) Run(ctx context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Process, error) {

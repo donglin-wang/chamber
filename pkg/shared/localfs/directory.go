@@ -8,8 +8,8 @@ import (
 )
 
 type DirectoryManager interface {
-	EnsurePrivateDir(path string) error
-	EnsurePrivateParent(path string) error
+	MkdirPrivate(path string) error
+	MkdirPrivateParent(path string) error
 	MkdirTemp(parent string, pattern string) (string, error)
 	CreateTemp(parent string, pattern string) (*os.File, error)
 }
@@ -20,10 +20,10 @@ func NewDirectoryManager() OSDirectoryManager {
 	return OSDirectoryManager{}
 }
 
-func (OSDirectoryManager) EnsurePrivateDir(path string) error {
+func (OSDirectoryManager) MkdirPrivate(path string) error {
 	info, err := os.Stat(path)
 	if err == nil {
-		return ensurePrivateDirMetadata(path, info)
+		return privateDirMetadata(path, info)
 	}
 	if !os.IsNotExist(err) {
 		return fmt.Errorf("read private directory metadata %q: %w", path, err)
@@ -37,10 +37,10 @@ func (OSDirectoryManager) EnsurePrivateDir(path string) error {
 	if err != nil {
 		return fmt.Errorf("read private directory metadata %q: %w", path, err)
 	}
-	return ensurePrivateDirMetadata(path, info)
+	return privateDirMetadata(path, info)
 }
 
-func ensurePrivateDirMetadata(path string, info os.FileInfo) error {
+func privateDirMetadata(path string, info os.FileInfo) error {
 	if !info.IsDir() {
 		return fmt.Errorf("%q is not a directory", path)
 	}
@@ -58,19 +58,19 @@ func ensurePrivateDirMetadata(path string, info os.FileInfo) error {
 	return nil
 }
 
-func (manager OSDirectoryManager) EnsurePrivateParent(path string) error {
-	return manager.EnsurePrivateDir(filepath.Dir(path))
+func (manager OSDirectoryManager) MkdirPrivateParent(path string) error {
+	return manager.MkdirPrivate(filepath.Dir(path))
 }
 
 func (manager OSDirectoryManager) MkdirTemp(parent string, pattern string) (string, error) {
-	if err := manager.EnsurePrivateDir(parent); err != nil {
+	if err := manager.MkdirPrivate(parent); err != nil {
 		return "", err
 	}
 	return os.MkdirTemp(parent, pattern)
 }
 
 func (manager OSDirectoryManager) CreateTemp(parent string, pattern string) (*os.File, error) {
-	if err := manager.EnsurePrivateDir(parent); err != nil {
+	if err := manager.MkdirPrivate(parent); err != nil {
 		return nil, err
 	}
 	return os.CreateTemp(parent, pattern)

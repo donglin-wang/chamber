@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-func TestEnsurePrivateDirCreatesDirectory(t *testing.T) {
+func TestMkdirPrivateCreatesDirectory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "private")
 	manager := NewDirectoryManager()
 
-	if err := manager.EnsurePrivateDir(path); err != nil {
-		t.Fatalf("EnsurePrivateDir() error = %v", err)
+	if err := manager.MkdirPrivate(path); err != nil {
+		t.Fatalf("MkdirPrivate() error = %v", err)
 	}
 
 	info, err := os.Stat(path)
@@ -29,7 +29,7 @@ func TestEnsurePrivateDirCreatesDirectory(t *testing.T) {
 	assertOwnedByCurrentUser(t, info)
 }
 
-func TestEnsurePrivateDirRejectsGroupOrOtherAccessibleDirectory(t *testing.T) {
+func TestMkdirPrivateRejectsGroupOrOtherAccessibleDirectory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "unsafe")
 	if err := os.Mkdir(path, 0755); err != nil {
 		t.Fatalf("Mkdir() error = %v", err)
@@ -39,24 +39,24 @@ func TestEnsurePrivateDirRejectsGroupOrOtherAccessibleDirectory(t *testing.T) {
 	}
 
 	manager := NewDirectoryManager()
-	err := manager.EnsurePrivateDir(path)
+	err := manager.MkdirPrivate(path)
 	if err == nil {
-		t.Fatal("EnsurePrivateDir() error = nil")
+		t.Fatal("MkdirPrivate() error = nil")
 	}
 	if !strings.Contains(err.Error(), "must not be readable, writable, or executable by group or other users") {
-		t.Fatalf("EnsurePrivateDir() error = %v, want permission explanation", err)
+		t.Fatalf("MkdirPrivate() error = %v, want permission explanation", err)
 	}
 }
 
-func TestEnsurePrivateDirAcceptsExistingCurrentUserOwnedDirectory(t *testing.T) {
+func TestMkdirPrivateAcceptsExistingCurrentUserOwnedDirectory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "private")
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatalf("Mkdir() error = %v", err)
 	}
 
 	manager := NewDirectoryManager()
-	if err := manager.EnsurePrivateDir(path); err != nil {
-		t.Fatalf("EnsurePrivateDir() error = %v", err)
+	if err := manager.MkdirPrivate(path); err != nil {
+		t.Fatalf("MkdirPrivate() error = %v", err)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -65,28 +65,28 @@ func TestEnsurePrivateDirAcceptsExistingCurrentUserOwnedDirectory(t *testing.T) 
 	assertOwnedByCurrentUser(t, info)
 }
 
-func TestEnsurePrivateDirRejectsFile(t *testing.T) {
+func TestMkdirPrivateRejectsFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(path, []byte("not a directory"), 0600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
 	manager := NewDirectoryManager()
-	err := manager.EnsurePrivateDir(path)
+	err := manager.MkdirPrivate(path)
 	if err == nil {
-		t.Fatal("EnsurePrivateDir() error = nil")
+		t.Fatal("MkdirPrivate() error = nil")
 	}
 	if !strings.Contains(err.Error(), "is not a directory") {
-		t.Fatalf("EnsurePrivateDir() error = %v, want file rejection", err)
+		t.Fatalf("MkdirPrivate() error = %v, want file rejection", err)
 	}
 }
 
-func TestEnsurePrivateParentCreatesParent(t *testing.T) {
+func TestMkdirPrivateParentCreatesParent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "parent", "file")
 	manager := NewDirectoryManager()
 
-	if err := manager.EnsurePrivateParent(path); err != nil {
-		t.Fatalf("EnsurePrivateParent() error = %v", err)
+	if err := manager.MkdirPrivateParent(path); err != nil {
+		t.Fatalf("MkdirPrivateParent() error = %v", err)
 	}
 
 	info, err := os.Stat(filepath.Dir(path))

@@ -84,54 +84,55 @@ func run(cfg *config) error {
 	}
 
 	directoryManager := localfs.NewDirectoryManager()
-	if err := directoryManager.EnsurePrivateDir(root); err != nil {
-		return fmt.Errorf("prepare CI root: %w", err)
+	if err := directoryManager.MkdirPrivate(root); err != nil {
+		return fmt.Errorf("create CI root: %w", err)
 	}
 	fmt.Printf("root: %s\n", root)
 
 	paths := ciPaths(root)
 	for _, path := range []string{
-		paths.imageRoot,
-		paths.bundleRoot,
-		paths.runtimeRoot,
-		paths.runtimeBinDir,
 		paths.goBuildCache,
 		paths.goModCache,
 	} {
-		if err := directoryManager.EnsurePrivateDir(path); err != nil {
-			return fmt.Errorf("prepare CI path %q: %w", path, err)
+		if err := directoryManager.MkdirPrivate(path); err != nil {
+			return fmt.Errorf("create CI path %q: %w", path, err)
 		}
 	}
 
-	runtime := chamberRuncRuntime.New(chamberRuntime.Config{
+	runtime, err := chamberRuncRuntime.New(ctx, chamberRuntime.Config{
 		RuntimeRoot:   paths.runtimeRoot,
 		RuntimeBinDir: paths.runtimeBinDir,
 		Name:          chamberRuntime.DefaultName,
 		Logging:       loggingConfig,
 	}, directoryManager)
-	if binary, err := runtime.Ensure(ctx); err != nil {
-		return fmt.Errorf("ensure runtime: %w", err)
-	} else {
-		fmt.Printf("runtime: %s %s at %s\n", binary.Name, binary.Version, binary.Path)
+	if err != nil {
+		return fmt.Errorf("create runtime: %w", err)
 	}
+	binary := runtime.Binary()
+	fmt.Printf("runtime: %s %s at %s\n", binary.Name, binary.Version, binary.Path)
 
-	puller := chamberImagePuller.New(chamberImage.Config{
+	puller, err := chamberImagePuller.New(chamberImage.Config{
 		Root:    paths.imageRoot,
 		Logging: loggingConfig,
 	}, directoryManager)
+	if err != nil {
+		return fmt.Errorf("create image puller: %w", err)
+	}
 	imageLayout, err := ensureImage(ctx, puller, paths.imageRoot, cfg.image)
 	if err != nil {
 		return err
 	}
 
-	provisioner := chamberRootlessProvisioner.Provisioner{
-		Config: chamberBundle.Config{
+	provisioner, err := chamberRootlessProvisioner.New(
+		chamberBundle.Config{
 			Root:    paths.bundleRoot,
 			Logging: loggingConfig,
 		},
-		UID:              uint32(os.Geteuid()),
-		GID:              uint32(os.Getegid()),
-		DirectoryManager: directoryManager,
+		directoryManager,
+		chamberRootlessProvisioner.WithIDMap(uint32(os.Geteuid()), uint32(os.Getegid())),
+	)
+	if err != nil {
+		return fmt.Errorf("create bundle provisioner: %w", err)
 	}
 
 	jobs := []job{

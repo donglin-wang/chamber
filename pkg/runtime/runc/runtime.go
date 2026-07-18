@@ -35,6 +35,7 @@ var _ chamberRuntime.Runtime = (*Runtime)(nil)
 
 type Runtime struct {
 	config           chamberRuntime.Config
+	binary           chamberRuntime.Binary
 	client           *http.Client
 	directoryManager localfs.DirectoryManager
 }
@@ -49,7 +50,16 @@ func WithHTTPClient(client *http.Client) Option {
 	}
 }
 
-func New(config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...Option) *Runtime {
+func New(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...Option) (*Runtime, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("context is required")
+	}
+	if directoryManager == nil {
+		return nil, fmt.Errorf("directory manager is required")
+	}
+	if err := chamberLogging.Configure(config.Logging, nil); err != nil {
+		return nil, err
+	}
 	if config.Name == "" {
 		config.Name = chamberRuntime.DefaultName
 	}
@@ -59,8 +69,18 @@ func New(config chamberRuntime.Config, directoryManager localfs.DirectoryManager
 	if config.URL == "" && config.SHA256 == "" {
 		config.URL, config.SHA256 = defaultRuntimeArtifact(goruntime.GOARCH)
 	}
+	resolved, err := chamberRuntime.Resolve(config, chamberRuntime.Override{})
+	if err != nil {
+		return nil, err
+	}
+
+	binary, err := configuredBinary(resolved)
+	if err != nil {
+		return nil, err
+	}
 	runtime := &Runtime{
-		config:           config,
+		config:           resolved,
+		binary:           binary,
 		client:           http.DefaultClient,
 		directoryManager: directoryManager,
 	}
@@ -68,36 +88,49 @@ func New(config chamberRuntime.Config, directoryManager localfs.DirectoryManager
 		option(runtime)
 	}
 
-	return runtime
+	stateRoot, err := runtime.stateRoot()
+	if err != nil {
+		return nil, err
+	}
+	if err := directoryManager.MkdirPrivate(stateRoot); err != nil {
+		return nil, fmt.Errorf("create runtime state root: %w", err)
+	}
+	binDir := filepath.Dir(binary.Path)
+	if err := directoryManager.MkdirPrivate(binDir); err != nil {
+		return nil, fmt.Errorf("create runtime bin dir: %w", err)
+	}
+	if err := runtime.installBinary(ctx); err != nil {
+		return nil, err
+	}
+
+	return runtime, nil
 }
 
-func (r *Runtime) Ensure(ctx context.Context) (chamberRuntime.Binary, error) {
+func (r *Runtime) Binary() chamberRuntime.Binary {
+	if r == nil {
+		return chamberRuntime.Binary{}
+	}
+	return r.binary
+}
+
+func (r *Runtime) installBinary(ctx context.Context) error {
+	if r == nil || r.directoryManager == nil {
+		return fmt.Errorf("directory manager is required")
+	}
 	config := r.config
-	if err := chamberLogging.Configure(config.Logging, nil); err != nil {
-		return chamberRuntime.Binary{}, err
-	}
-	if r.directoryManager == nil {
-		return chamberRuntime.Binary{}, fmt.Errorf("directory manager is required")
-	}
 	if config.Version == "" || config.URL == "" || config.SHA256 == "" {
-		return chamberRuntime.Binary{}, fmt.Errorf("runc runtime requires version, url, and sha256")
+		return fmt.Errorf("runc runtime requires version, url, and sha256")
 	}
 	expectedDigest, err := parseSHA256(config.SHA256)
 	if err != nil {
-		return chamberRuntime.Binary{}, err
+		return err
 	}
 
-	binary, err := r.configuredBinary()
-	if err != nil {
-		return chamberRuntime.Binary{}, err
-	}
+	binary := r.binary
 	binDir := filepath.Dir(binary.Path)
-	if err := r.directoryManager.EnsurePrivateDir(binDir); err != nil {
-		return chamberRuntime.Binary{}, fmt.Errorf("prepare runtime bin dir: %w", err)
-	}
 
 	if ok, err := fileMatchesSHA256(binary.Path, expectedDigest); err != nil {
-		return chamberRuntime.Binary{}, fmt.Errorf("verify existing runtime binary: %w", err)
+		return fmt.Errorf("verify existing runtime binary: %w", err)
 	} else if ok {
 		chamberLogging.Info(ctx, "runtime binary ready",
 			"runtime", binary.Name,
@@ -105,7 +138,7 @@ func (r *Runtime) Ensure(ctx context.Context) (chamberRuntime.Binary, error) {
 			"path", binary.Path,
 			"source", "cache",
 		)
-		return binary, nil
+		return nil
 	}
 
 	chamberLogging.Info(ctx, "downloading runtime binary",
@@ -115,7 +148,7 @@ func (r *Runtime) Ensure(ctx context.Context) (chamberRuntime.Binary, error) {
 		"path", binary.Path,
 	)
 	if err := r.download(ctx, config.URL, expectedDigest, binDir, binary.Path); err != nil {
-		return chamberRuntime.Binary{}, err
+		return err
 	}
 
 	chamberLogging.Info(ctx, "runtime binary ready",
@@ -124,13 +157,10 @@ func (r *Runtime) Ensure(ctx context.Context) (chamberRuntime.Binary, error) {
 		"path", binary.Path,
 		"source", "download",
 	)
-	return binary, nil
+	return nil
 }
 
 func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Process, error) {
-	if err := chamberLogging.Configure(r.config.Logging, nil); err != nil {
-		return nil, err
-	}
 	if request.Bundle.BundlePath == "" {
 		return nil, fmt.Errorf("runtime bundle path is required")
 	}
@@ -141,20 +171,13 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 	if len(request.Bundle.RootFS.Mounts) > 0 {
 		return nil, fmt.Errorf("runtime bundle rootfs mounts are not yet supported by runc Run")
 	}
-	binary, err := r.configuredBinary()
-	if err != nil {
-		return nil, err
+	binary := r.binary
+	if binary.Path == "" {
+		return nil, fmt.Errorf("runtime binary is required")
 	}
 	stateRoot, err := r.stateRoot()
 	if err != nil {
 		return nil, err
-	}
-	directoryManager, err := r.requireDirectoryManager()
-	if err != nil {
-		return nil, err
-	}
-	if err := directoryManager.EnsurePrivateDir(stateRoot); err != nil {
-		return nil, fmt.Errorf("prepare runtime state root: %w", err)
 	}
 	chamberLogging.Info(ctx, "starting runtime container",
 		"container_id", containerID,
@@ -186,9 +209,6 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 }
 
 func (r *Runtime) ReadLog(containerID string, stream string) ([]byte, error) {
-	if err := chamberLogging.Configure(r.config.Logging, nil); err != nil {
-		return nil, err
-	}
 	path, err := r.logPath(containerID, stream)
 	if err != nil {
 		return nil, err
@@ -197,9 +217,6 @@ func (r *Runtime) ReadLog(containerID string, stream string) ([]byte, error) {
 }
 
 func (r *Runtime) State(ctx context.Context, containerID string) (chamberRuntime.ContainerState, error) {
-	if err := chamberLogging.Configure(r.config.Logging, nil); err != nil {
-		return chamberRuntime.ContainerState{}, err
-	}
 	if err := containerid.Validate(containerID); err != nil {
 		return chamberRuntime.ContainerState{}, err
 	}
@@ -218,9 +235,6 @@ func (r *Runtime) State(ctx context.Context, containerID string) (chamberRuntime
 }
 
 func (r *Runtime) Signal(ctx context.Context, request chamberRuntime.SignalRequest) error {
-	if err := chamberLogging.Configure(r.config.Logging, nil); err != nil {
-		return err
-	}
 	if err := containerid.Validate(request.ContainerID); err != nil {
 		return err
 	}
@@ -243,9 +257,6 @@ func (r *Runtime) Signal(ctx context.Context, request chamberRuntime.SignalReque
 }
 
 func (r *Runtime) Delete(ctx context.Context, request chamberRuntime.DeleteRequest) error {
-	if err := chamberLogging.Configure(r.config.Logging, nil); err != nil {
-		return err
-	}
 	if err := containerid.Validate(request.ContainerID); err != nil {
 		return err
 	}
@@ -278,8 +289,8 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := directoryManager.EnsurePrivateDir(logDir); err != nil {
-		return nil, nil, fmt.Errorf("prepare runc log directory: %w", err)
+	if err := directoryManager.MkdirPrivate(logDir); err != nil {
+		return nil, nil, fmt.Errorf("create runc log directory: %w", err)
 	}
 
 	stdoutPath, err := r.logPath(containerID, chamberRuntime.StdoutLogStream)
@@ -328,9 +339,9 @@ func (r *Runtime) logDir(containerID string) (string, error) {
 }
 
 func (r *Runtime) binaryAndStateRoot() (chamberRuntime.Binary, string, error) {
-	binary, err := r.configuredBinary()
-	if err != nil {
-		return chamberRuntime.Binary{}, "", err
+	binary := r.binary
+	if binary.Path == "" {
+		return chamberRuntime.Binary{}, "", fmt.Errorf("runtime binary is required")
 	}
 	stateRoot, err := r.stateRoot()
 	if err != nil {
@@ -350,8 +361,7 @@ func (r *Runtime) stateRoot() (string, error) {
 	return runtimeRoot, nil
 }
 
-func (r *Runtime) configuredBinary() (chamberRuntime.Binary, error) {
-	config := r.config
+func configuredBinary(config chamberRuntime.Config) (chamberRuntime.Binary, error) {
 	if config.Name == "" {
 		return chamberRuntime.Binary{}, fmt.Errorf("runtime name is required")
 	}

@@ -52,17 +52,17 @@ func Open(ctx context.Context, cfg metadata.Config, directoryManager localfs.Dir
 	if err != nil {
 		return nil, fmt.Errorf("metadata etcd: resolve root: %w", err)
 	}
-	if err := directoryManager.EnsurePrivateDir(dataDir); err != nil {
-		return nil, fmt.Errorf("metadata etcd: prepare data dir: %w", err)
+	if err := directoryManager.MkdirPrivate(dataDir); err != nil {
+		return nil, fmt.Errorf("metadata etcd: create data dir: %w", err)
 	}
 
 	clientSocket := filepath.Join(dataDir, "client.sock")
 	peerSocket := filepath.Join(dataDir, "peer.sock")
-	if err := directoryManager.EnsurePrivateParent(clientSocket); err != nil {
-		return nil, fmt.Errorf("metadata etcd: prepare client socket dir: %w", err)
+	if err := directoryManager.MkdirPrivateParent(clientSocket); err != nil {
+		return nil, fmt.Errorf("metadata etcd: create client socket dir: %w", err)
 	}
-	if err := directoryManager.EnsurePrivateParent(peerSocket); err != nil {
-		return nil, fmt.Errorf("metadata etcd: prepare peer socket dir: %w", err)
+	if err := directoryManager.MkdirPrivateParent(peerSocket); err != nil {
+		return nil, fmt.Errorf("metadata etcd: create peer socket dir: %w", err)
 	}
 
 	clientURL, err := unixURL(clientSocket)

@@ -25,36 +25,69 @@ import (
 
 var _ chamberBundle.Provisioner = (*Provisioner)(nil)
 
-func init() {
-	installApexBridge()
-}
-
 type Provisioner struct {
-	Config           chamberBundle.Config
-	UID              uint32
-	GID              uint32
-	DirectoryManager localfs.DirectoryManager
+	config           chamberBundle.Config
+	uid              uint32
+	gid              uint32
+	directoryManager localfs.DirectoryManager
 }
 
-func (p Provisioner) Provision(
+type Option func(*Provisioner)
+
+func WithIDMap(uid uint32, gid uint32) Option {
+	return func(provisioner *Provisioner) {
+		provisioner.uid = uid
+		provisioner.gid = gid
+	}
+}
+
+func New(config chamberBundle.Config, directoryManager localfs.DirectoryManager, options ...Option) (*Provisioner, error) {
+	if directoryManager == nil {
+		return nil, fmt.Errorf("directory manager is required")
+	}
+	if err := chamberLogging.Configure(config.Logging, nil); err != nil {
+		return nil, err
+	}
+	installApexBridge()
+
+	resolved, err := chamberBundle.Resolve(config, chamberBundle.Override{})
+	if err != nil {
+		return nil, err
+	}
+	if resolved.Root == "" {
+		return nil, fmt.Errorf("bundle root is required")
+	}
+	if err := directoryManager.MkdirPrivate(resolved.Root); err != nil {
+		return nil, fmt.Errorf("create bundle root: %w", err)
+	}
+
+	provisioner := &Provisioner{
+		config:           resolved,
+		uid:              uint32(os.Geteuid()),
+		gid:              uint32(os.Getegid()),
+		directoryManager: directoryManager,
+	}
+	for _, option := range options {
+		option(provisioner)
+	}
+	return provisioner, nil
+}
+
+func (p *Provisioner) Provision(
 	ctx context.Context,
 	request chamberBundle.ProvisionRequest,
 ) (chamberBundle.ProvisionedBundle, error) {
 	if err := ctx.Err(); err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
-	if err := chamberLogging.Configure(p.Config.Logging, nil); err != nil {
-		return chamberBundle.ProvisionedBundle{}, err
-	}
-	installApexBridge()
-	if p.DirectoryManager == nil {
+	if p == nil || p.directoryManager == nil {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("directory manager is required")
+	}
+	if p.config.Root == "" {
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("bundle root is required")
 	}
 	if err := containerid.Validate(request.ContainerID); err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
-	}
-	if p.Config.Root == "" {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("bundle root is required")
 	}
 	if request.ImageLayout == "" {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("image layout is required")
@@ -63,14 +96,7 @@ func (p Provisioner) Provision(
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("image ref is required")
 	}
 
-	bundleRoot, err := filepath.Abs(p.Config.Root)
-	if err != nil {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("resolve bundle root: %w", err)
-	}
-	if err := p.DirectoryManager.EnsurePrivateDir(bundleRoot); err != nil {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("prepare bundle root: %w", err)
-	}
-
+	bundleRoot := p.config.Root
 	finalBundle := filepath.Join(bundleRoot, request.ContainerID)
 	chamberLogging.Info(ctx, "provisioning bundle",
 		"container_id", request.ContainerID,
@@ -78,7 +104,7 @@ func (p Provisioner) Provision(
 		"image_layout", request.ImageLayout,
 		"bundle_path", finalBundle,
 	)
-	tmpBundle, err := p.DirectoryManager.MkdirTemp(bundleRoot, "."+request.ContainerID+".tmp-*")
+	tmpBundle, err := p.directoryManager.MkdirTemp(bundleRoot, "."+request.ContainerID+".tmp-*")
 	if err != nil {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("create temporary bundle: %w", err)
 	}
@@ -96,8 +122,8 @@ func (p Provisioner) Provision(
 	defer engine.Close()
 
 	mapOptions := layer.MapOptions{
-		UIDMappings: []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.UID, Size: 1}},
-		GIDMappings: []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.GID, Size: 1}},
+		UIDMappings: []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.uid, Size: 1}},
+		GIDMappings: []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.gid, Size: 1}},
 		Rootless:    true,
 	}
 	if err := ociumoci.Unpack(engine, request.ImageRef, tmpBundle, layer.UnpackOptions{
@@ -113,10 +139,10 @@ func (p Provisioner) Provision(
 	if err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
-	if err := prepareBindMountTargets(filepath.Join(tmpBundle, "rootfs"), mounts); err != nil {
+	if err := createBindMountTargets(filepath.Join(tmpBundle, "rootfs"), mounts); err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
-	if err := patchBundleConfig(tmpBundle, p.UID, p.GID, request.Process, mounts); err != nil {
+	if err := patchBundleConfig(tmpBundle, p.uid, p.gid, request.Process, mounts); err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
 
@@ -256,7 +282,7 @@ func normalizeBindMounts(mounts []chamberBundle.Mount) ([]specs.Mount, error) {
 	return normalized, nil
 }
 
-func prepareBindMountTargets(rootfs string, mounts []specs.Mount) error {
+func createBindMountTargets(rootfs string, mounts []specs.Mount) error {
 	for _, mount := range mounts {
 		sourceInfo, err := os.Stat(mount.Source)
 		if err != nil {
@@ -269,13 +295,13 @@ func prepareBindMountTargets(rootfs string, mounts []specs.Mount) error {
 		}
 		if sourceInfo.IsDir() {
 			if err := os.MkdirAll(targetPath, 0700); err != nil {
-				return fmt.Errorf("prepare bind mount directory target %q: %w", mount.Destination, err)
+				return fmt.Errorf("create bind mount directory target %q: %w", mount.Destination, err)
 			}
 			continue
 		}
 
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0700); err != nil {
-			return fmt.Errorf("prepare bind mount file target parent %q: %w", mount.Destination, err)
+			return fmt.Errorf("create bind mount file target parent %q: %w", mount.Destination, err)
 		}
 		if info, err := os.Stat(targetPath); err == nil {
 			if info.IsDir() {
@@ -288,7 +314,7 @@ func prepareBindMountTargets(rootfs string, mounts []specs.Mount) error {
 
 		file, err := os.OpenFile(targetPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if err != nil {
-			return fmt.Errorf("prepare bind mount file target %q: %w", mount.Destination, err)
+			return fmt.Errorf("create bind mount file target %q: %w", mount.Destination, err)
 		}
 		if err := file.Close(); err != nil {
 			return fmt.Errorf("close bind mount file target %q: %w", mount.Destination, err)

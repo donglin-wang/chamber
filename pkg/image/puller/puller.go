@@ -30,19 +30,33 @@ type Puller struct {
 	directoryManager localfs.DirectoryManager
 }
 
-func New(config chamberImage.Config, directoryManager localfs.DirectoryManager) *Puller {
-	return &Puller{
-		config:           config,
-		directoryManager: directoryManager,
+func New(config chamberImage.Config, directoryManager localfs.DirectoryManager) (*Puller, error) {
+	if directoryManager == nil {
+		return nil, fmt.Errorf("directory manager is required")
 	}
+	if err := chamberLogging.Configure(config.Logging, nil); err != nil {
+		return nil, err
+	}
+
+	resolved, err := chamberImage.Resolve(config, chamberImage.Override{})
+	if err != nil {
+		return nil, err
+	}
+	if resolved.Root != "" {
+		if err := directoryManager.MkdirPrivate(resolved.Root); err != nil {
+			return nil, fmt.Errorf("create image root: %w", err)
+		}
+	}
+
+	return &Puller{
+		config:           resolved,
+		directoryManager: directoryManager,
+	}, nil
 }
 
 func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (chamberImage.PulledImage, error) {
-	if p.directoryManager == nil {
+	if p == nil || p.directoryManager == nil {
 		return chamberImage.PulledImage{}, fmt.Errorf("directory manager is required")
-	}
-	if err := chamberLogging.Configure(p.config.Logging, nil); err != nil {
-		return chamberImage.PulledImage{}, err
 	}
 
 	ref, err := name.ParseReference(request.Reference)
@@ -60,8 +74,8 @@ func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (ch
 		return chamberImage.PulledImage{}, fmt.Errorf("resolve image destination: %w", err)
 	}
 	parent := filepath.Dir(destination)
-	if err := p.directoryManager.EnsurePrivateDir(parent); err != nil {
-		return chamberImage.PulledImage{}, fmt.Errorf("prepare image destination parent: %w", err)
+	if err := p.directoryManager.MkdirPrivate(parent); err != nil {
+		return chamberImage.PulledImage{}, fmt.Errorf("create image destination parent: %w", err)
 	}
 	chamberLogging.Info(ctx, "pulling image",
 		"image_ref", request.Reference,
