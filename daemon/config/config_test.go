@@ -156,6 +156,7 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "bin"),
+			Name:          chamberRuntime.RuntimeNameRunc,
 			Privilege:     capability.Rootless,
 			Logging:       defaultLogging,
 		},
@@ -231,10 +232,7 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   "default/runtime",
 			RuntimeBinDir: "default/bin",
-			Name:          "default-runtime",
-			Version:       "v0.0.1",
-			URL:           "https://example.test/default-runtime",
-			SHA256:        "default-sha",
+			Name:          chamberRuntime.RuntimeNameRunc,
 			Privilege:     capability.Rootless,
 		},
 		Metadata: metadata.Config{
@@ -265,10 +263,7 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		Runtime: chamberRuntime.Override{
 			RuntimeRoot:   ptr("override/runtime"),
 			RuntimeBinDir: ptr("override/bin"),
-			Name:          ptr("crun"),
-			Version:       ptr("v1.2.3"),
-			URL:           ptr("https://example.test/runtime"),
-			SHA256:        ptr("override-sha"),
+			Name:          ptr(chamberRuntime.RuntimeNameRunc),
 		},
 		Metadata: metadata.Override{
 			Root: ptr("override/metadata"),
@@ -313,10 +308,7 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   mustAbs(t, "override/runtime"),
 			RuntimeBinDir: mustAbs(t, "override/bin"),
-			Name:          "crun",
-			Version:       "v1.2.3",
-			URL:           "https://example.test/runtime",
-			SHA256:        "override-sha",
+			Name:          chamberRuntime.RuntimeNameRunc,
 			Privilege:     capability.Rootful,
 			Logging: chamberLogging.Config{
 				Level:  "debug",
@@ -367,10 +359,7 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "default", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "default", "bin"),
-			Name:          "default-runtime",
-			Version:       "v0.0.1",
-			URL:           "https://example.test/default-runtime",
-			SHA256:        "default-sha",
+			Name:          chamberRuntime.RuntimeNameRunc,
 			Privilege:     capability.Rootless,
 			Logging: chamberLogging.Config{
 				Level:  "warn",
@@ -465,7 +454,7 @@ func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
 		"image": { "root": "file/images" },
 		"runtime": {
 			"runtime_root": "file/runtime",
-			"name": "crun"
+			"name": "runc"
 		},
 		"open_telemetry_metrics_export_interval": 30000000000,
 		"logging": { "level": "debug" }
@@ -501,8 +490,8 @@ func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
 	if cfg.Image.Root != mustAbs(t, "file/images") {
 		t.Fatalf("Image.Root = %q, want config file value", cfg.Image.Root)
 	}
-	if cfg.Runtime.Name != "crun" {
-		t.Fatalf("Runtime.Name = %q, want crun", cfg.Runtime.Name)
+	if cfg.Runtime.Name != chamberRuntime.RuntimeNameRunc {
+		t.Fatalf("Runtime.Name = %q, want runc", cfg.Runtime.Name)
 	}
 	if cfg.Runtime.Privilege != capability.Rootful {
 		t.Fatalf("Runtime.Privilege = %q, want top-level daemon privilege", cfg.Runtime.Privilege)

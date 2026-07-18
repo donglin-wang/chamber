@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
@@ -24,8 +25,8 @@ func TestResolveAppliesLoggingOverride(t *testing.T) {
 	if cfg.RuntimeRoot != filepath.Join(root, "run", "runtime") {
 		t.Fatalf("RuntimeRoot = %q, want default runtime root", cfg.RuntimeRoot)
 	}
-	if cfg.Name != "" {
-		t.Fatalf("Name = %q, want empty generic runtime name", cfg.Name)
+	if cfg.Name != RuntimeNameRunc {
+		t.Fatalf("Name = %q, want runc", cfg.Name)
 	}
 	if cfg.Privilege != capability.Rootless {
 		t.Fatalf("Privilege = %q, want rootless", cfg.Privilege)
@@ -47,6 +48,18 @@ func TestResolveAppliesPrivilegeOverride(t *testing.T) {
 
 	if cfg.Privilege != capability.Rootful {
 		t.Fatalf("Privilege = %q, want rootful", cfg.Privilege)
+	}
+}
+
+func TestResolveRejectsUnsupportedRuntimeName(t *testing.T) {
+	_, err := Resolve(DefaultConfig(t.TempDir()), Override{
+		Name: ptr("crun"),
+	})
+	if err == nil {
+		t.Fatal("Resolve() error = nil, want unsupported runtime name error")
+	}
+	if !strings.Contains(err.Error(), "unsupported runtime name") {
+		t.Fatalf("Resolve() error = %v, want unsupported runtime name", err)
 	}
 }
 

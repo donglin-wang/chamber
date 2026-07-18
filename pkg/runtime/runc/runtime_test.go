@@ -29,10 +29,7 @@ func TestNewPreparesRuntimeDirectories(t *testing.T) {
 		RuntimeRoot:   root,
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex(content),
-	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))))
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestArtifact(content))
 
 	if runtime == nil {
 		t.Fatal("New() runtime = nil, want runtime")
@@ -46,9 +43,6 @@ func TestNewRequiresDirectoryManager(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex([]byte("binary")),
 	}, nil)
 	if err == nil {
 		t.Fatal("New() error = nil, want directory manager error")
@@ -64,11 +58,8 @@ func TestNewRejectsUnsupportedPrivilegeBeforeFilesystemMutation(t *testing.T) {
 		RuntimeRoot:   runtimeRoot,
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex(content),
 		Privilege:     capability.Rootful,
-	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))))
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestArtifact(content))
 
 	if err == nil {
 		t.Fatal("New() error = nil, want unsupported privilege error")
@@ -88,20 +79,18 @@ func TestNewDownloadsValidRuntimeBinary(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex(content),
-	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))))
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestArtifact(content))
 
 	binary := runtime.Binary()
 	if binary.Name != "runc" {
 		t.Fatalf("Binary.Name = %q, want runc", binary.Name)
 	}
-	if binary.Version != "test-version" {
-		t.Fatalf("Binary.Version = %q, want test-version", binary.Version)
-	}
 	if binary.Path != filepath.Join(binDir, "runc") {
 		t.Fatalf("Binary.Path = %q, want %q", binary.Path, filepath.Join(binDir, "runc"))
+	}
+	descriptor := runtime.Descriptor()
+	if descriptor.Version != "test-version" {
+		t.Fatalf("Descriptor().Version = %q, want test-version", descriptor.Version)
 	}
 	assertFileContentAndMode(t, binary.Path, content, 0755)
 }
@@ -112,10 +101,7 @@ func TestNewDefaultsToRuncAdapterName(t *testing.T) {
 	runtime := mustNew(t, chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex(content),
-	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))))
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestArtifact(content))
 
 	binary := runtime.Binary()
 	if binary.Name != "runc" {
@@ -133,10 +119,7 @@ func TestNewRejectsWrongDigest(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex([]byte("expected binary")),
-	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))))
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestArtifact([]byte("expected binary")))
 
 	if err == nil {
 		t.Fatal("New() error = nil, want digest error")
@@ -154,10 +137,7 @@ func TestNewRejectsNonOKResponse(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex([]byte("anything")),
-	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusNotFound, io.NopCloser(strings.NewReader("not found")))))
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusNotFound, io.NopCloser(strings.NewReader("not found")))), withTestArtifact([]byte("anything")))
 
 	if err == nil {
 		t.Fatal("New() error = nil, want HTTP status error")
@@ -174,10 +154,7 @@ func TestNewRejectsInterruptedBody(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex(content),
-	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, &interruptedBody{content: content})))
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, &interruptedBody{content: content})), withTestArtifact(content))
 
 	if err == nil {
 		t.Fatal("New() error = nil, want interrupted body error")
@@ -205,10 +182,7 @@ func TestNewUsesExistingValidBinary(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex(content),
-	}, localfs.NewDirectoryManager(), WithHTTPClient(client))
+	}, localfs.NewDirectoryManager(), WithHTTPClient(client), withTestArtifact(content))
 
 	binary := runtime.Binary()
 	if binary.Path != path {
@@ -234,10 +208,7 @@ func TestNewReplacesExistingInvalidBinary(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex(newContent),
-	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(newContent))))))
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(newContent))))), withTestArtifact(newContent))
 
 	binary := runtime.Binary()
 	if binary.Path != path {
@@ -249,9 +220,11 @@ func TestNewReplacesExistingInvalidBinary(t *testing.T) {
 func TestDescriptorDeclaresRuncSupport(t *testing.T) {
 	runtime := &Runtime{
 		binary: chamberRuntime.Binary{
-			Name:    "runc",
-			Version: "test-version",
-			Path:    "/tmp/runc",
+			Name: "runc",
+			Path: "/tmp/runc",
+		},
+		artifact: runtimeArtifact{
+			version: "test-version",
 		},
 	}
 
@@ -285,9 +258,11 @@ func TestDescriptorDefaultsToRuncAdapterName(t *testing.T) {
 func TestDescriptorNameDoesNotFollowConfiguredBinaryName(t *testing.T) {
 	runtime := &Runtime{
 		binary: chamberRuntime.Binary{
-			Name:    "custom-runc-binary",
-			Version: "test-version",
-			Path:    "/tmp/custom-runc-binary",
+			Name: "custom-runc-binary",
+			Path: "/tmp/custom-runc-binary",
+		},
+		artifact: runtimeArtifact{
+			version: "test-version",
 		},
 	}
 
@@ -314,10 +289,7 @@ func TestNewReturnsAbsoluteBinaryPath(t *testing.T) {
 		RuntimeRoot:   relativeRuntimeRoot,
 		RuntimeBinDir: relativeBinDir,
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex(content),
-	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))))
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestArtifact(content))
 
 	binary := runtime.Binary()
 	if !filepath.IsAbs(binary.Path) {
@@ -330,9 +302,10 @@ func TestNewRequiresCompleteRuntimeArtifactConfiguration(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "http://example.test/runc",
-	}, localfs.NewDirectoryManager())
+	}, localfs.NewDirectoryManager(), withArtifact(runtimeArtifact{
+		version: "test-version",
+		url:     "http://example.test/runc",
+	}))
 
 	if err == nil {
 		t.Fatal("New() error = nil, want configuration error")
@@ -355,12 +328,18 @@ func TestDefaultRuntimeArtifactSupportsLinuxReleaseArchitectures(t *testing.T) {
 	}
 	for arch, want := range tests {
 		t.Run(arch, func(t *testing.T) {
-			url, sha256 := defaultRuntimeArtifact(arch)
-			if url != want.url {
-				t.Fatalf("url = %q, want %q", url, want.url)
+			artifact, err := defaultRuntimeArtifact(arch)
+			if err != nil {
+				t.Fatalf("defaultRuntimeArtifact() error = %v", err)
 			}
-			if sha256 != want.sha256 {
-				t.Fatalf("sha256 = %q, want %q", sha256, want.sha256)
+			if artifact.version != DefaultVersion {
+				t.Fatalf("version = %q, want %q", artifact.version, DefaultVersion)
+			}
+			if artifact.url != want.url {
+				t.Fatalf("url = %q, want %q", artifact.url, want.url)
+			}
+			if artifact.sha256 != want.sha256 {
+				t.Fatalf("sha256 = %q, want %q", artifact.sha256, want.sha256)
 			}
 		})
 	}
@@ -624,6 +603,14 @@ func sha256Hex(content []byte) string {
 	return fmt.Sprintf("%x", sum[:])
 }
 
+func withTestArtifact(content []byte) Option {
+	return withArtifact(runtimeArtifact{
+		version: "test-version",
+		url:     "https://example.invalid/runc",
+		sha256:  sha256Hex(content),
+	})
+}
+
 func privateTempDir(t *testing.T) string {
 	t.Helper()
 
@@ -659,11 +646,8 @@ func runtimeWithBinary(t *testing.T, binaryPath string, stateRoot string) *Runti
 	return mustNew(t, chamberRuntime.Config{
 		RuntimeBinDir: filepath.Dir(binaryPath),
 		RuntimeRoot:   stateRoot,
-		Name:          filepath.Base(binaryPath),
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex(content),
-	}, localfs.NewDirectoryManager())
+		Name:          "runc",
+	}, localfs.NewDirectoryManager(), withTestArtifact(content))
 }
 
 func runtimeWithConfigOnly(t *testing.T) *Runtime {
@@ -674,10 +658,7 @@ func runtimeWithConfigOnly(t *testing.T) *Runtime {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
-		Version:       "test-version",
-		URL:           "https://example.invalid/runc",
-		SHA256:        sha256Hex(content),
-	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))))
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestArtifact(content))
 }
 
 func mustNew(t testing.TB, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...Option) *Runtime {
@@ -730,7 +711,7 @@ func (*interruptedBody) Close() error {
 func writeFakeRunc(t *testing.T, logDir string, body string) string {
 	t.Helper()
 
-	path := filepath.Join(privateTempDir(t), "fake-runc")
+	path := filepath.Join(privateTempDir(t), "runc")
 	script := `#!/bin/sh
 set -eu
 logdir=` + shellQuote(logDir) + `

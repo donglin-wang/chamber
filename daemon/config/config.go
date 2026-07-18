@@ -310,15 +310,6 @@ func mergeRuntimeOverride(base chamberRuntime.Override, overlay chamberRuntime.O
 	if overlay.Name != nil {
 		base.Name = overlay.Name
 	}
-	if overlay.Version != nil {
-		base.Version = overlay.Version
-	}
-	if overlay.URL != nil {
-		base.URL = overlay.URL
-	}
-	if overlay.SHA256 != nil {
-		base.SHA256 = overlay.SHA256
-	}
 	if overlay.Privilege != nil {
 		base.Privilege = overlay.Privilege
 	}

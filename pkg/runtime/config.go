@@ -3,18 +3,22 @@ package runtime
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
+const RuntimeNameRunc = "runc"
+
+var supportedRuntimeNames = map[string]struct{}{
+	RuntimeNameRunc: {},
+}
+
 type Config struct {
 	RuntimeRoot   string
 	RuntimeBinDir string
 	Name          string
-	Version       string
-	URL           string
-	SHA256        string
 	Privilege     capability.Privilege
 	Logging       chamberLogging.Config
 }
@@ -23,9 +27,6 @@ type Override struct {
 	RuntimeRoot   *string                 `json:"runtime_root,omitempty"`
 	RuntimeBinDir *string                 `json:"runtime_bin_dir,omitempty"`
 	Name          *string                 `json:"name,omitempty"`
-	Version       *string                 `json:"version,omitempty"`
-	URL           *string                 `json:"url,omitempty"`
-	SHA256        *string                 `json:"sha256,omitempty"`
 	Privilege     *capability.Privilege   `json:"privilege,omitempty"`
 	Logging       chamberLogging.Override `json:"logging,omitempty"`
 }
@@ -34,9 +35,19 @@ func DefaultConfig(rootPath string) Config {
 	return Config{
 		RuntimeRoot:   filepath.Join(rootPath, "run", "runtime"),
 		RuntimeBinDir: filepath.Join(rootPath, "bin"),
+		Name:          RuntimeNameRunc,
 		Privilege:     capability.Rootless,
 		Logging:       chamberLogging.Config{},
 	}
+}
+
+func SupportedNames() []string {
+	return []string{RuntimeNameRunc}
+}
+
+func IsSupportedName(name string) bool {
+	_, ok := supportedRuntimeNames[name]
+	return ok
 }
 
 func Resolve(defaultConfig Config, override Override) (Config, error) {
@@ -49,17 +60,11 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	if override.Name != nil {
 		defaultConfig.Name = *override.Name
 	}
-	if override.Version != nil {
-		defaultConfig.Version = *override.Version
-	}
-	if override.URL != nil {
-		defaultConfig.URL = *override.URL
-	}
-	if override.SHA256 != nil {
-		defaultConfig.SHA256 = *override.SHA256
-	}
 	if override.Privilege != nil {
 		defaultConfig.Privilege = *override.Privilege
+	}
+	if defaultConfig.Name != "" && !IsSupportedName(defaultConfig.Name) {
+		return Config{}, fmt.Errorf("unsupported runtime name %q (supported: %s)", defaultConfig.Name, strings.Join(SupportedNames(), ", "))
 	}
 	var err error
 	defaultConfig.Logging, err = chamberLogging.Resolve(defaultConfig.Logging, override.Logging)

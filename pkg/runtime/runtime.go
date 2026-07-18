@@ -9,9 +9,8 @@ import (
 )
 
 type Binary struct {
-	Name    string
-	Version string
-	Path    string
+	Name string
+	Path string
 }
 
 type Isolation string

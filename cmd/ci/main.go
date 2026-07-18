@@ -108,7 +108,8 @@ func run(cfg *config) error {
 		return fmt.Errorf("create runtime: %w", err)
 	}
 	binary := runtime.Binary()
-	logging.Info(ctx, "CI runtime ready", "runtime", binary.Name, "version", binary.Version, "path", binary.Path)
+	descriptor := runtime.Descriptor()
+	logging.Info(ctx, "CI runtime ready", "runtime", descriptor.Name, "version", descriptor.Version, "path", binary.Path)
 
 	puller, err := chamberImagePuller.New(chamberImage.Config{
 		Root:    paths.imageRoot,

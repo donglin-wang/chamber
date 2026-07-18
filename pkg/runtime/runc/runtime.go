@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	runtimeName    = "runc"
+	runtimeName    = chamberRuntime.RuntimeNameRunc
 	DefaultVersion = "v1.5.0"
 
 	defaultAMD64URL    = "https://github.com/opencontainers/runc/releases/download/v1.5.0/runc.amd64"
@@ -38,17 +38,30 @@ var _ chamberRuntime.Runtime = (*Runtime)(nil)
 type Runtime struct {
 	config           chamberRuntime.Config
 	binary           chamberRuntime.Binary
+	artifact         runtimeArtifact
 	client           *http.Client
 	directoryManager localfs.DirectoryManager
 }
 
 type Option func(*Runtime)
 
+type runtimeArtifact struct {
+	version string
+	url     string
+	sha256  string
+}
+
 func WithHTTPClient(client *http.Client) Option {
 	return func(runtime *Runtime) {
 		if client != nil {
 			runtime.client = client
 		}
+	}
+}
+
+func withArtifact(artifact runtimeArtifact) Option {
+	return func(runtime *Runtime) {
+		runtime.artifact = artifact
 	}
 }
 
@@ -65,36 +78,38 @@ func New(ctx context.Context, config chamberRuntime.Config, directoryManager loc
 	if config.Name == "" {
 		config.Name = runtimeName
 	}
-	if config.Version == "" {
-		config.Version = DefaultVersion
-	}
 	if config.Privilege == "" {
 		config.Privilege = capability.Rootless
-	}
-	if config.URL == "" && config.SHA256 == "" {
-		config.URL, config.SHA256 = defaultRuntimeArtifact(goruntime.GOARCH)
 	}
 	resolved, err := chamberRuntime.Resolve(config, chamberRuntime.Override{})
 	if err != nil {
 		return nil, err
 	}
+	if resolved.Name != runtimeName {
+		return nil, fmt.Errorf("runc runtime cannot satisfy configured runtime name %q", resolved.Name)
+	}
 	if resolved.Privilege != capability.Rootless {
 		return nil, fmt.Errorf("runc runtime does not support %q privilege", resolved.Privilege)
 	}
 
-	binary, err := configuredBinary(resolved)
+	artifact, err := defaultRuntimeArtifact(goruntime.GOARCH)
 	if err != nil {
 		return nil, err
 	}
 	runtime := &Runtime{
 		config:           resolved,
-		binary:           binary,
+		artifact:         artifact,
 		client:           http.DefaultClient,
 		directoryManager: directoryManager,
 	}
 	for _, option := range options {
 		option(runtime)
 	}
+	binary, err := configuredBinary(resolved)
+	if err != nil {
+		return nil, err
+	}
+	runtime.binary = binary
 
 	stateRoot, err := runtime.stateRoot()
 	if err != nil {
@@ -117,8 +132,8 @@ func New(ctx context.Context, config chamberRuntime.Config, directoryManager loc
 func (r *Runtime) Descriptor() chamberRuntime.Descriptor {
 	version := DefaultVersion
 	if r != nil {
-		if r.binary.Version != "" {
-			version = r.binary.Version
+		if r.artifact.version != "" {
+			version = r.artifact.version
 		}
 	}
 	return chamberRuntime.Descriptor{
@@ -146,11 +161,11 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 	if r == nil || r.directoryManager == nil {
 		return fmt.Errorf("directory manager is required")
 	}
-	config := r.config
-	if config.Version == "" || config.URL == "" || config.SHA256 == "" {
+	artifact := r.artifact
+	if artifact.version == "" || artifact.url == "" || artifact.sha256 == "" {
 		return fmt.Errorf("runc runtime requires version, url, and sha256")
 	}
-	expectedDigest, err := parseSHA256(config.SHA256)
+	expectedDigest, err := parseSHA256(artifact.sha256)
 	if err != nil {
 		return err
 	}
@@ -163,7 +178,7 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 	} else if ok {
 		chamberLogging.Info(ctx, "runtime binary ready",
 			"runtime", binary.Name,
-			"version", binary.Version,
+			"version", artifact.version,
 			"path", binary.Path,
 			"source", "cache",
 		)
@@ -172,17 +187,17 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 
 	chamberLogging.Info(ctx, "downloading runtime binary",
 		"runtime", binary.Name,
-		"version", binary.Version,
-		"url", config.URL,
+		"version", artifact.version,
+		"url", artifact.url,
 		"path", binary.Path,
 	)
-	if err := r.download(ctx, config.URL, expectedDigest, binDir, binary.Path); err != nil {
+	if err := r.download(ctx, artifact.url, expectedDigest, binDir, binary.Path); err != nil {
 		return err
 	}
 
 	chamberLogging.Info(ctx, "runtime binary ready",
 		"runtime", binary.Name,
-		"version", binary.Version,
+		"version", artifact.version,
 		"path", binary.Path,
 		"source", "download",
 	)
@@ -391,8 +406,8 @@ func (r *Runtime) stateRoot() (string, error) {
 }
 
 func configuredBinary(config chamberRuntime.Config) (chamberRuntime.Binary, error) {
-	if config.Name == "" {
-		return chamberRuntime.Binary{}, fmt.Errorf("runtime name is required")
+	if config.Name != runtimeName {
+		return chamberRuntime.Binary{}, fmt.Errorf("runc runtime cannot satisfy configured runtime name %q", config.Name)
 	}
 	if config.RuntimeBinDir == "" {
 		return chamberRuntime.Binary{}, fmt.Errorf("runtime bin dir is required")
@@ -402,20 +417,19 @@ func configuredBinary(config chamberRuntime.Config) (chamberRuntime.Binary, erro
 		return chamberRuntime.Binary{}, fmt.Errorf("resolve runtime bin dir: %w", err)
 	}
 	return chamberRuntime.Binary{
-		Name:    config.Name,
-		Version: config.Version,
-		Path:    filepath.Join(binDir, config.Name),
+		Name: runtimeName,
+		Path: filepath.Join(binDir, runtimeName),
 	}, nil
 }
 
-func defaultRuntimeArtifact(arch string) (url string, sha256 string) {
+func defaultRuntimeArtifact(arch string) (runtimeArtifact, error) {
 	switch arch {
 	case "amd64":
-		return defaultAMD64URL, defaultAMD64SHA256
+		return runtimeArtifact{version: DefaultVersion, url: defaultAMD64URL, sha256: defaultAMD64SHA256}, nil
 	case "arm64":
-		return defaultARM64URL, defaultARM64SHA256
+		return runtimeArtifact{version: DefaultVersion, url: defaultARM64URL, sha256: defaultARM64SHA256}, nil
 	default:
-		return "", ""
+		return runtimeArtifact{}, fmt.Errorf("runc runtime does not have a default artifact for architecture %q", arch)
 	}
 }
 
