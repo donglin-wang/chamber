@@ -89,7 +89,7 @@ func TestRunContainerRequiresCommand(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/v1/containers/run", strings.NewReader(`{"image":"docker.io/library/alpine:latest","command":[]}`))
 
 	mux := newServer()
-	registerContainerRoutes(mux, testConfig(t), memory.NewMemoryStore(), nil, nil, context.Background())
+	registerContainerRoutes(mux, memory.NewMemoryStore(), nil, nil, context.Background())
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusBadRequest {
@@ -118,7 +118,6 @@ func TestRunContainerStoresProvisionedBundlePath(t *testing.T) {
 	mux := newServer()
 	registerContainerRoutes(
 		mux,
-		testConfig(t),
 		store,
 		fakeRuntime{t: t},
 		fakeProvisioner{bundlePath: provisionedBundlePath},
@@ -140,6 +139,9 @@ func TestRunContainerStoresProvisionedBundlePath(t *testing.T) {
 	if container.BundlePath != provisionedBundlePath {
 		t.Fatalf("BundlePath = %q, want provisioner-returned path %q", container.BundlePath, provisionedBundlePath)
 	}
+	if container.Runtime != "fake" {
+		t.Fatalf("Runtime = %q, want fake runtime descriptor name", container.Runtime)
+	}
 }
 
 func TestContainerLogsReadByContainerID(t *testing.T) {
@@ -150,7 +152,7 @@ func TestContainerLogsReadByContainerID(t *testing.T) {
 		ImageRef:    "docker.io/library/alpine:latest",
 		ImageDigest: "sha256:image",
 		BundlePath:  "/tmp/chamber-test/not-a-log-location",
-		Runtime:     chamberRuntime.DefaultName,
+		Runtime:     "runc",
 		State:       metadata.ContainerExited,
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
@@ -168,7 +170,7 @@ func TestContainerLogsReadByContainerID(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/v1/containers/container-1/logs?stream=stderr", nil)
 
 	mux := newServer()
-	registerContainerRoutes(mux, testConfig(t), store, runtime, nil, context.Background())
+	registerContainerRoutes(mux, store, runtime, nil, context.Background())
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
@@ -201,6 +203,10 @@ type fakeProvisioner struct {
 	bundlePath string
 }
 
+func (p fakeProvisioner) Descriptor() chamberBundle.Descriptor {
+	return chamberBundle.Descriptor{Name: "fake"}
+}
+
 func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundle.ProvisionRequest) (chamberBundle.ProvisionedBundle, error) {
 	if err := ctx.Err(); err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
@@ -215,6 +221,10 @@ type fakeRuntime struct {
 	t       *testing.T
 	logs    map[string][]byte
 	wantLog string
+}
+
+func (r fakeRuntime) Descriptor() chamberRuntime.Descriptor {
+	return chamberRuntime.Descriptor{Name: "fake"}
 }
 
 func (r fakeRuntime) Binary() chamberRuntime.Binary {

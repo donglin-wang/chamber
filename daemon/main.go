@@ -15,7 +15,7 @@ import (
 
 	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	chamberEtcdMetadataStore "github.com/donglin-wang/chamber/daemon/metadata/etcd"
-	chamberRootlessProvisioner "github.com/donglin-wang/chamber/pkg/bundle/rootless"
+	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/directory"
 	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
 	chamberRuncRuntime "github.com/donglin-wang/chamber/pkg/runtime/runc"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -84,17 +84,16 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("create image puller: %w", err)
 	}
 	registerImageRoutes(mux, cfg, store, puller)
-	provisioner, err := chamberRootlessProvisioner.New(
+	provisioner, err := chamberDirectoryProvisioner.New(
 		cfg.Bundle,
 		directoryManager,
-		chamberRootlessProvisioner.WithIDMap(uint32(os.Geteuid()), uint32(os.Getegid())),
+		chamberDirectoryProvisioner.WithIDMap(uint32(os.Geteuid()), uint32(os.Getegid())),
 	)
 	if err != nil {
 		return fmt.Errorf("create bundle provisioner: %w", err)
 	}
 	registerContainerRoutes(
 		mux,
-		cfg,
 		store,
 		runtime,
 		provisioner,

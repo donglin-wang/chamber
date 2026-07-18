@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
-
-const DefaultName = "runc"
 
 type Config struct {
 	RuntimeRoot   string
@@ -16,6 +15,7 @@ type Config struct {
 	Version       string
 	URL           string
 	SHA256        string
+	Privilege     capability.Privilege
 	Logging       chamberLogging.Config
 }
 
@@ -26,6 +26,7 @@ type Override struct {
 	Version       *string                 `json:"version,omitempty"`
 	URL           *string                 `json:"url,omitempty"`
 	SHA256        *string                 `json:"sha256,omitempty"`
+	Privilege     *capability.Privilege   `json:"privilege,omitempty"`
 	Logging       chamberLogging.Override `json:"logging,omitempty"`
 }
 
@@ -33,7 +34,7 @@ func DefaultConfig(rootPath string) Config {
 	return Config{
 		RuntimeRoot:   filepath.Join(rootPath, "run", "runtime"),
 		RuntimeBinDir: filepath.Join(rootPath, "bin"),
-		Name:          DefaultName,
+		Privilege:     capability.Rootless,
 		Logging:       chamberLogging.Config{},
 	}
 }
@@ -56,6 +57,9 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	}
 	if override.SHA256 != nil {
 		defaultConfig.SHA256 = *override.SHA256
+	}
+	if override.Privilege != nil {
+		defaultConfig.Privilege = *override.Privilege
 	}
 	var err error
 	defaultConfig.Logging, err = chamberLogging.Resolve(defaultConfig.Logging, override.Logging)

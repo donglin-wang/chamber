@@ -40,6 +40,9 @@ Rootful support may be added as a configurable privilege mode later, but treat i
 Model privilege cleanly:
 
 - Top-level daemon/runtime privilege is probably `rootless` or `rootful`.
+- `chamberd` config should own one top-level privilege setting and project it
+  into SDK adapter configs during composition; do not let bundle and runtime
+  config drift into independently selected daemon privilege modes.
 - Details such as user namespaces, cgroups, networking, capabilities, and seccomp are isolation/runtime profile settings, not necessarily additional top-level privilege modes.
 - Rootful-with-user-namespace is real and useful, but should be represented as rootful privilege plus a user-namespace profile rather than as a vague third mode.
 
@@ -58,12 +61,12 @@ Model privilege cleanly:
 - If a Chamber package import needs an alias, use a readable `chamber...` alias rather than a shortened `ch...` alias.
   Examples: `chamberErrors`, `chamberBundle`, `chamberImage`, `chamberRuntime`, `chamberDaemonConfig`.
 - When importing a Chamber package that is a concrete adapter around a third-party implementation, make the alias say it is the Chamber adapter, not the upstream project.
-  Example: use `chamberRootlessProvisioner` for `github.com/donglin-wang/chamber/pkg/bundle/rootless` rather than `umoci` at composition boundaries.
+  Example: use `chamberDirectoryProvisioner` for `github.com/donglin-wang/chamber/pkg/bundle/directory` rather than `umoci` at composition boundaries.
 - Prefer specific adapter aliases at daemon composition boundaries when they clarify the role:
   `chamberImagePuller`, `chamberRuncRuntime`, and `chamberEtcdMetadataStore`.
 - `localfs.DirectoryManager` values should be named `directoryManager` or a similarly explicit name. Do not shorten them to `directories`; that sounds like a collection of paths rather than the filesystem policy dependency.
 - Concrete Chamber adapter packages should be named for the Chamber role they implement, not for the third-party library they currently use. Mention the backing library in the package comment, type comment, and implementation docs.
-- Keep upstream third-party imports visually distinct from Chamber adapter packages. For example, inside `pkg/bundle/rootless`, alias the upstream `github.com/opencontainers/umoci` import as `ociumoci` so readers can tell it apart from Chamber's rootless OCI adapter package.
+- Keep upstream third-party imports visually distinct from Chamber adapter packages. For example, inside `pkg/bundle/directory`, alias the upstream `github.com/opencontainers/umoci` import as `ociumoci` so readers can tell it apart from Chamber's directory-backed OCI adapter package.
 
 ## Current Implementation Shape
 
@@ -74,8 +77,8 @@ Important current boundaries:
 - `pkg/image`: public puller contract, pull request platform/auth fields, image-root config, and small layout helpers. Callers provide explicit destinations and own SDK-level storage placement, locking, cleanup, and recovery.
 - `pkg/image/puller`: concrete OCI image puller using `go-containerregistry`. It honors platform/auth request fields and must keep the atomic temp-then-rename layout write behavior. Future sibling implementation packages may include `pkg/image/pusher` and `pkg/image/inspector`.
 - `pkg/bundle`: public bundle provisioning contract, bundle-root config, `ProcessSpec`, and `RootFS.Mounts`. `RootFS.Mounts` is intentionally ahead of runtime support as a future overlayfs/snapshot hook.
-- `pkg/bundle/rootless`: concrete rootless OCI bundle provisioner using `umoci`. It owns unpacking, rootless OCI spec patching, private `config.json` writes, temporary staging, and atomic final bundle placement.
-- `pkg/runtime`: public runtime contract and runtime config. Concrete runtime constructors own initialization such as binary verification/download and private runtime directory creation. The `Runtime` interface includes `Binary`, `Run`, `State`, `Signal`, `Delete`, and `ReadLog`. `Run` returns only a `Process`; it must not pretend to return current container lifecycle state. Use `State` for actual runtime state.
+- `pkg/bundle/directory`: concrete directory-backed OCI bundle provisioner using `umoci`. It currently supports rootless provisioning and owns unpacking, rootless OCI spec patching, private `config.json` writes, temporary staging, and atomic final bundle placement.
+- `pkg/runtime`: public runtime contract and runtime config. Concrete runtime constructors own initialization such as binary verification/download and private runtime directory creation. The `Runtime` interface includes `Descriptor`, `Binary`, `Run`, `State`, `Signal`, `Delete`, and `ReadLog`. `Run` returns only a `Process`; it must not pretend to return current container lifecycle state. Use `State` for actual runtime state.
 - `pkg/runtime/runc`: concrete `runc` adapter, including runtime binary ensure/download, state/signal/delete calls, and runtime-owned log handling. It must continue rejecting non-empty `RootFS.Mounts` until mount application exists.
 - `pkg/shared/errors`: canonical public Chamber error-code taxonomy. The daemon and SDK adapters should use these durable codes for contract errors and response mapping.
 - `pkg/shared/containerid`: shared container ID validation used by provisioning and runtime adapters so bundle creation cannot accept IDs the runtime later rejects.

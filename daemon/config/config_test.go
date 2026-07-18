@@ -14,6 +14,7 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
@@ -66,7 +67,7 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 		importPath := strings.Trim(importSpec.Path.Value, `"`)
 		switch importPath {
 		case "github.com/donglin-wang/chamber/pkg/image/puller",
-			"github.com/donglin-wang/chamber/pkg/bundle/rootless",
+			"github.com/donglin-wang/chamber/pkg/bundle/directory",
 			"github.com/donglin-wang/chamber/daemon/metadata/etcd",
 			"github.com/donglin-wang/chamber/pkg/runtime/runc",
 			"github.com/donglin-wang/chamber/pkg/shared/localfs":
@@ -142,9 +143,11 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:8080",
 		SocketPath: filepath.Join(root, "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "run", "tmp"),
+		Privilege:  capability.Rootless,
 		Bundle: chamberBundle.Config{
-			Root:    filepath.Join(root, "bundles"),
-			Logging: defaultLogging,
+			Root:      filepath.Join(root, "bundles"),
+			Privilege: capability.Rootless,
+			Logging:   defaultLogging,
 		},
 		Image: chamberImage.Config{
 			Root:    filepath.Join(root, "images"),
@@ -153,7 +156,7 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "bin"),
-			Name:          "runc",
+			Privilege:     capability.Rootless,
 			Logging:       defaultLogging,
 		},
 		Metadata: metadata.Config{
@@ -217,8 +220,10 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:8080",
 		SocketPath: "default/run/chamber.sock",
 		TmpRoot:    "default/tmp",
+		Privilege:  capability.Rootless,
 		Bundle: chamberBundle.Config{
-			Root: "default/bundles",
+			Root:      "default/bundles",
+			Privilege: capability.Rootless,
 		},
 		Image: chamberImage.Config{
 			Root: "default/images",
@@ -230,6 +235,7 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 			Version:       "v0.0.1",
 			URL:           "https://example.test/default-runtime",
 			SHA256:        "default-sha",
+			Privilege:     capability.Rootless,
 		},
 		Metadata: metadata.Config{
 			Root: "default/metadata",
@@ -249,6 +255,7 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		HTTPAddr:   ptr("127.0.0.1:9090"),
 		SocketPath: ptr("override/run/chamber.sock"),
 		TmpRoot:    ptr("override/tmp"),
+		Privilege:  ptr(capability.Rootful),
 		Bundle: chamberBundle.Override{
 			Root: ptr("override/bundles"),
 		},
@@ -287,8 +294,10 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:9090",
 		SocketPath: mustAbs(t, "override/run/chamber.sock"),
 		TmpRoot:    mustAbs(t, "override/tmp"),
+		Privilege:  capability.Rootful,
 		Bundle: chamberBundle.Config{
-			Root: mustAbs(t, "override/bundles"),
+			Root:      mustAbs(t, "override/bundles"),
+			Privilege: capability.Rootful,
 			Logging: chamberLogging.Config{
 				Level:  "debug",
 				Format: "text",
@@ -308,6 +317,7 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 			Version:       "v1.2.3",
 			URL:           "https://example.test/runtime",
 			SHA256:        "override-sha",
+			Privilege:     capability.Rootful,
 			Logging: chamberLogging.Config{
 				Level:  "debug",
 				Format: "text",
@@ -338,8 +348,10 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:8080",
 		SocketPath: filepath.Join(root, "default", "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "default", "tmp"),
+		Privilege:  capability.Rootless,
 		Bundle: chamberBundle.Config{
-			Root: filepath.Join(root, "default", "bundles"),
+			Root:      filepath.Join(root, "default", "bundles"),
+			Privilege: capability.Rootless,
 			Logging: chamberLogging.Config{
 				Level:  "warn",
 				Format: "text",
@@ -359,6 +371,7 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 			Version:       "v0.0.1",
 			URL:           "https://example.test/default-runtime",
 			SHA256:        "default-sha",
+			Privilege:     capability.Rootless,
 			Logging: chamberLogging.Config{
 				Level:  "warn",
 				Format: "text",
@@ -389,11 +402,65 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 	}
 }
 
+func TestResolveProjectsTopLevelPrivilegeToSDKConfigs(t *testing.T) {
+	cfg, err := Resolve(Config{
+		Bundle: chamberBundle.Config{
+			Privilege: capability.Rootless,
+		},
+		Runtime: chamberRuntime.Config{
+			Privilege: capability.Rootless,
+		},
+	}, Override{
+		Privilege: ptr(capability.Rootful),
+	})
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+
+	if cfg.Privilege != capability.Rootful {
+		t.Fatalf("Privilege = %q, want rootful", cfg.Privilege)
+	}
+	if cfg.Bundle.Privilege != capability.Rootful {
+		t.Fatalf("Bundle.Privilege = %q, want daemon privilege rootful", cfg.Bundle.Privilege)
+	}
+	if cfg.Runtime.Privilege != capability.Rootful {
+		t.Fatalf("Runtime.Privilege = %q, want daemon privilege rootful", cfg.Runtime.Privilege)
+	}
+}
+
+func TestResolveRejectsNestedSDKPrivilegeOverrides(t *testing.T) {
+	tests := map[string]Override{
+		"bundle": {
+			Bundle: chamberBundle.Override{
+				Privilege: ptr(capability.Rootful),
+			},
+		},
+		"runtime": {
+			Runtime: chamberRuntime.Override{
+				Privilege: ptr(capability.Rootful),
+			},
+		},
+	}
+
+	for name, override := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := Resolve(Config{}, override)
+			if err == nil {
+				t.Fatal("Resolve() error = nil, want nested privilege override error")
+			}
+			if !strings.Contains(err.Error(), "top-level privilege") {
+				t.Fatalf("Resolve() error = %v, want top-level privilege error", err)
+			}
+		})
+	}
+}
+
 func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chamberd.json")
 	content := `{
 		"http_addr": "127.0.0.1:9090",
 		"tmp_root": "file/tmp",
+		"privilege": "rootful",
 		"bundle": { "root": "file/bundles" },
 		"image": { "root": "file/images" },
 		"runtime": {
@@ -422,8 +489,14 @@ func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
 	if cfg.TmpRoot != mustAbs(t, "file/tmp") {
 		t.Fatalf("TmpRoot = %q, want config file value", cfg.TmpRoot)
 	}
+	if cfg.Privilege != capability.Rootful {
+		t.Fatalf("Privilege = %q, want config file value", cfg.Privilege)
+	}
 	if cfg.Bundle.Root != mustAbs(t, "file/bundles") {
 		t.Fatalf("Bundle.Root = %q, want config file value", cfg.Bundle.Root)
+	}
+	if cfg.Bundle.Privilege != capability.Rootful {
+		t.Fatalf("Bundle.Privilege = %q, want top-level daemon privilege", cfg.Bundle.Privilege)
 	}
 	if cfg.Image.Root != mustAbs(t, "file/images") {
 		t.Fatalf("Image.Root = %q, want config file value", cfg.Image.Root)
@@ -431,11 +504,47 @@ func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
 	if cfg.Runtime.Name != "crun" {
 		t.Fatalf("Runtime.Name = %q, want crun", cfg.Runtime.Name)
 	}
+	if cfg.Runtime.Privilege != capability.Rootful {
+		t.Fatalf("Runtime.Privilege = %q, want top-level daemon privilege", cfg.Runtime.Privilege)
+	}
 	if cfg.OpenTelemetryMetricsExportInterval != 30*time.Second {
 		t.Fatalf("OpenTelemetryMetricsExportInterval = %s, want 30s", cfg.OpenTelemetryMetricsExportInterval)
 	}
 	if cfg.Logging.Level != "debug" {
 		t.Fatalf("Logging.Level = %q, want debug", cfg.Logging.Level)
+	}
+}
+
+func TestMergeOverrideAppliesPrivilegeOverlays(t *testing.T) {
+	base := Override{
+		Privilege: ptr(capability.Rootless),
+		Bundle: chamberBundle.Override{
+			Privilege: ptr(capability.Rootless),
+		},
+		Runtime: chamberRuntime.Override{
+			Privilege: ptr(capability.Rootless),
+		},
+	}
+	overlay := Override{
+		Privilege: ptr(capability.Rootful),
+		Bundle: chamberBundle.Override{
+			Privilege: ptr(capability.Rootful),
+		},
+		Runtime: chamberRuntime.Override{
+			Privilege: ptr(capability.Rootful),
+		},
+	}
+
+	merged := MergeOverride(base, overlay)
+
+	if merged.Privilege == nil || *merged.Privilege != capability.Rootful {
+		t.Fatalf("Privilege = %v, want rootful", merged.Privilege)
+	}
+	if merged.Bundle.Privilege == nil || *merged.Bundle.Privilege != capability.Rootful {
+		t.Fatalf("Bundle.Privilege = %v, want rootful", merged.Bundle.Privilege)
+	}
+	if merged.Runtime.Privilege == nil || *merged.Runtime.Privilege != capability.Rootful {
+		t.Fatalf("Runtime.Privilege = %v, want rootful", merged.Runtime.Privilege)
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
@@ -48,7 +47,6 @@ type containerResponse struct {
 
 func registerContainerRoutes(
 	mux *http.ServeMux,
-	cfg chamberDaemonConfig.Config,
 	store metadata.Store,
 	runtime chamberRuntime.Runtime,
 	provisioner chamberBundle.Provisioner,
@@ -98,7 +96,6 @@ func registerContainerRoutes(
 
 		result, err := runContainer(
 			r.Context(),
-			cfg,
 			store,
 			runtime,
 			provisioner,
@@ -176,7 +173,6 @@ type runContainerResult struct {
 
 func runContainer(
 	ctx context.Context,
-	cfg chamberDaemonConfig.Config,
 	store metadata.Store,
 	runtime chamberRuntime.Runtime,
 	provisioner chamberBundle.Provisioner,
@@ -231,9 +227,9 @@ func runContainer(
 		return runContainerResult{operation: operation}, failErr
 	}
 
-	runtimeName := cfg.Runtime.Name
+	runtimeName := runtime.Descriptor().Name
 	if runtimeName == "" {
-		runtimeName = chamberRuntime.DefaultName
+		runtimeName = runtime.Binary().Name
 	}
 
 	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{

@@ -1,6 +1,10 @@
 package bundle
 
-import "context"
+import (
+	"context"
+
+	"github.com/donglin-wang/chamber/pkg/shared/capability"
+)
 
 // Mount describes one filesystem mount visible inside the container. For
 // ProvisionRequest.Mounts, Source is a host path and Target is an absolute
@@ -48,7 +52,19 @@ type ProcessUser struct {
 	Username       string
 }
 
+type Capabilities struct {
+	Privileges []capability.Privilege
+}
+
+type Descriptor struct {
+	Name         string
+	Version      string
+	Capabilities Capabilities
+}
+
 type Provisioner interface {
+	Descriptor() Descriptor
+
 	// Provision creates the OCI runtime bundle for one container. It owns image
 	// unpacking, spec generation or patching, temporary staging, and the atomic
 	// move into the final bundle directory.

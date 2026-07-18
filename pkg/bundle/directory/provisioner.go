@@ -1,7 +1,7 @@
-// Package rootless provides Chamber's rootless OCI bundle provisioner.
-// It currently uses umoci to unpack OCI image layouts before applying
-// Chamber's rootless runtime spec defaults.
-package rootless
+// Package directory provides Chamber's directory-backed OCI bundle provisioner.
+// It currently uses umoci to unpack OCI image layouts before applying Chamber's
+// rootless runtime spec defaults.
+package directory
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 
 	securejoin "github.com/cyphar/filepath-securejoin"
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
@@ -54,6 +55,12 @@ func New(config chamberBundle.Config, directoryManager localfs.DirectoryManager,
 	if err != nil {
 		return nil, err
 	}
+	if resolved.Privilege == "" {
+		resolved.Privilege = capability.Rootless
+	}
+	if resolved.Privilege != capability.Rootless {
+		return nil, fmt.Errorf("directory bundle provisioner does not support %q privilege", resolved.Privilege)
+	}
 	if resolved.Root == "" {
 		return nil, fmt.Errorf("bundle root is required")
 	}
@@ -71,6 +78,17 @@ func New(config chamberBundle.Config, directoryManager localfs.DirectoryManager,
 		option(provisioner)
 	}
 	return provisioner, nil
+}
+
+func (p *Provisioner) Descriptor() chamberBundle.Descriptor {
+	return chamberBundle.Descriptor{
+		Name: "directory",
+		Capabilities: chamberBundle.Capabilities{
+			Privileges: []capability.Privilege{
+				capability.Rootless,
+			},
+		},
+	}
 }
 
 func (p *Provisioner) Provision(

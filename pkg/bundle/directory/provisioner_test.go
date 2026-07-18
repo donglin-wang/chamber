@@ -1,4 +1,4 @@
-package rootless
+package directory
 
 import (
 	"encoding/json"
@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -31,6 +32,22 @@ func TestNewRequiresDirectoryManager(t *testing.T) {
 	}
 }
 
+func TestNewRejectsUnsupportedPrivilegeBeforeFilesystemMutation(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "bundles")
+
+	_, err := New(chamberBundle.Config{
+		Root:      root,
+		Privilege: capability.Rootful,
+	}, localfs.NewDirectoryManager())
+
+	if err == nil {
+		t.Fatal("New() error = nil, want unsupported privilege error")
+	}
+	if _, statErr := os.Stat(root); !os.IsNotExist(statErr) {
+		t.Fatalf("bundle root stat error = %v, want not exist", statErr)
+	}
+}
+
 func TestNewAppliesIDMapOption(t *testing.T) {
 	provisioner, err := New(
 		chamberBundle.Config{Root: filepath.Join(privateTempDir(t), "bundles")},
@@ -42,6 +59,19 @@ func TestNewAppliesIDMapOption(t *testing.T) {
 	}
 	if provisioner.uid != 123 || provisioner.gid != 456 {
 		t.Fatalf("uid/gid = %d/%d, want 123/456", provisioner.uid, provisioner.gid)
+	}
+}
+
+func TestDescriptorDeclaresDirectorySupport(t *testing.T) {
+	provisioner := &Provisioner{}
+
+	descriptor := provisioner.Descriptor()
+
+	if descriptor.Name != "directory" {
+		t.Fatalf("Descriptor().Name = %q, want directory", descriptor.Name)
+	}
+	if !slices.Equal(descriptor.Capabilities.Privileges, []capability.Privilege{capability.Rootless}) {
+		t.Fatalf("privileges = %#v, want rootless only", descriptor.Capabilities.Privileges)
 	}
 }
 

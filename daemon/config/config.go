@@ -14,6 +14,7 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
@@ -24,6 +25,9 @@ type Config struct {
 	// Storage
 	SocketPath string
 	TmpRoot    string
+
+	// Privilege
+	Privilege capability.Privilege
 
 	// OCI Bundles
 	Bundle chamberBundle.Config
@@ -52,6 +56,8 @@ type Override struct {
 
 	SocketPath *string `json:"socket_path,omitempty"`
 	TmpRoot    *string `json:"tmp_root,omitempty"`
+
+	Privilege *capability.Privilege `json:"privilege,omitempty"`
 
 	Bundle   chamberBundle.Override  `json:"bundle,omitempty"`
 	Image    chamberImage.Override   `json:"image,omitempty"`
@@ -100,6 +106,7 @@ func Load(override Override, getenv func(string) string) (Config, error) {
 		HTTPAddr:   defaultHTTPAddr,
 		SocketPath: filepath.Join(rootPath, "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(rootPath, "run", "tmp"),
+		Privilege:  capability.Rootless,
 
 		Bundle:   chamberBundle.DefaultConfig(rootPath),
 		Image:    chamberImage.DefaultConfig(rootPath),
@@ -159,6 +166,9 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	if override.TmpRoot != nil {
 		defaultConfig.TmpRoot = *override.TmpRoot
 	}
+	if override.Privilege != nil {
+		defaultConfig.Privilege = *override.Privilege
+	}
 	if override.OpenTelemetryEndpoint != nil {
 		defaultConfig.OpenTelemetryEndpoint = *override.OpenTelemetryEndpoint
 	}
@@ -170,6 +180,12 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	}
 	if override.OpenTelemetryMetricsExportInterval != nil {
 		defaultConfig.OpenTelemetryMetricsExportInterval = *override.OpenTelemetryMetricsExportInterval
+	}
+	if override.Bundle.Privilege != nil {
+		return Config{}, fmt.Errorf("bundle privilege must be configured with top-level privilege")
+	}
+	if override.Runtime.Privilege != nil {
+		return Config{}, fmt.Errorf("runtime privilege must be configured with top-level privilege")
 	}
 	defaultConfig.Logging, err = chamberLogging.Resolve(defaultConfig.Logging, override.Logging)
 	if err != nil {
@@ -192,6 +208,11 @@ func Resolve(defaultConfig Config, override Override) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	if defaultConfig.Privilege == "" {
+		defaultConfig.Privilege = capability.Rootless
+	}
+	defaultConfig.Bundle.Privilege = defaultConfig.Privilege
+	defaultConfig.Runtime.Privilege = defaultConfig.Privilege
 	defaultConfig.Metadata, err = metadata.Resolve(defaultConfig.Metadata, override.Metadata)
 	if err != nil {
 		return Config{}, err
@@ -210,6 +231,9 @@ func MergeOverride(base Override, overlay Override) Override {
 	}
 	if overlay.TmpRoot != nil {
 		base.TmpRoot = overlay.TmpRoot
+	}
+	if overlay.Privilege != nil {
+		base.Privilege = overlay.Privilege
 	}
 	if overlay.OpenTelemetryEndpoint != nil {
 		base.OpenTelemetryEndpoint = overlay.OpenTelemetryEndpoint
@@ -254,6 +278,9 @@ func mergeBundleOverride(base chamberBundle.Override, overlay chamberBundle.Over
 	if overlay.Root != nil {
 		base.Root = overlay.Root
 	}
+	if overlay.Privilege != nil {
+		base.Privilege = overlay.Privilege
+	}
 	base.Logging = mergeLoggingOverride(base.Logging, overlay.Logging)
 	return base
 }
@@ -291,6 +318,9 @@ func mergeRuntimeOverride(base chamberRuntime.Override, overlay chamberRuntime.O
 	}
 	if overlay.SHA256 != nil {
 		base.SHA256 = overlay.SHA256
+	}
+	if overlay.Privilege != nil {
+		base.Privilege = overlay.Privilege
 	}
 	base.Logging = mergeLoggingOverride(base.Logging, overlay.Logging)
 	return base

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -23,6 +24,7 @@ import (
 )
 
 const (
+	runtimeName    = "runc"
 	DefaultVersion = "v1.5.0"
 
 	defaultAMD64URL    = "https://github.com/opencontainers/runc/releases/download/v1.5.0/runc.amd64"
@@ -61,10 +63,13 @@ func New(ctx context.Context, config chamberRuntime.Config, directoryManager loc
 		return nil, err
 	}
 	if config.Name == "" {
-		config.Name = chamberRuntime.DefaultName
+		config.Name = runtimeName
 	}
 	if config.Version == "" {
 		config.Version = DefaultVersion
+	}
+	if config.Privilege == "" {
+		config.Privilege = capability.Rootless
 	}
 	if config.URL == "" && config.SHA256 == "" {
 		config.URL, config.SHA256 = defaultRuntimeArtifact(goruntime.GOARCH)
@@ -72,6 +77,9 @@ func New(ctx context.Context, config chamberRuntime.Config, directoryManager loc
 	resolved, err := chamberRuntime.Resolve(config, chamberRuntime.Override{})
 	if err != nil {
 		return nil, err
+	}
+	if resolved.Privilege != capability.Rootless {
+		return nil, fmt.Errorf("runc runtime does not support %q privilege", resolved.Privilege)
 	}
 
 	binary, err := configuredBinary(resolved)
@@ -104,6 +112,27 @@ func New(ctx context.Context, config chamberRuntime.Config, directoryManager loc
 	}
 
 	return runtime, nil
+}
+
+func (r *Runtime) Descriptor() chamberRuntime.Descriptor {
+	version := DefaultVersion
+	if r != nil {
+		if r.binary.Version != "" {
+			version = r.binary.Version
+		}
+	}
+	return chamberRuntime.Descriptor{
+		Name:    runtimeName,
+		Version: version,
+		Capabilities: chamberRuntime.Capabilities{
+			Privileges: []capability.Privilege{
+				capability.Rootless,
+			},
+			Isolation: []chamberRuntime.Isolation{
+				chamberRuntime.ProcessIsolation,
+			},
+		},
+	}
 }
 
 func (r *Runtime) Binary() chamberRuntime.Binary {

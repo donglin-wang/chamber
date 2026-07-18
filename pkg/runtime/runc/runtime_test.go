@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
@@ -53,6 +55,32 @@ func TestNewRequiresDirectoryManager(t *testing.T) {
 	}
 }
 
+func TestNewRejectsUnsupportedPrivilegeBeforeFilesystemMutation(t *testing.T) {
+	content := []byte("binary")
+	runtimeRoot := filepath.Join(t.TempDir(), "runtime")
+	binDir := filepath.Join(t.TempDir(), "bin")
+
+	_, err := New(context.Background(), chamberRuntime.Config{
+		RuntimeRoot:   runtimeRoot,
+		RuntimeBinDir: binDir,
+		Name:          "runc",
+		Version:       "test-version",
+		URL:           "https://example.invalid/runc",
+		SHA256:        sha256Hex(content),
+		Privilege:     capability.Rootful,
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))))
+
+	if err == nil {
+		t.Fatal("New() error = nil, want unsupported privilege error")
+	}
+	if _, statErr := os.Stat(runtimeRoot); !os.IsNotExist(statErr) {
+		t.Fatalf("runtime root stat error = %v, want not exist", statErr)
+	}
+	if _, statErr := os.Stat(binDir); !os.IsNotExist(statErr) {
+		t.Fatalf("runtime bin dir stat error = %v, want not exist", statErr)
+	}
+}
+
 func TestNewDownloadsValidRuntimeBinary(t *testing.T) {
 	content := []byte("valid runc")
 	binDir := privateTempDir(t)
@@ -76,6 +104,26 @@ func TestNewDownloadsValidRuntimeBinary(t *testing.T) {
 		t.Fatalf("Binary.Path = %q, want %q", binary.Path, filepath.Join(binDir, "runc"))
 	}
 	assertFileContentAndMode(t, binary.Path, content, 0755)
+}
+
+func TestNewDefaultsToRuncAdapterName(t *testing.T) {
+	content := []byte("valid runc")
+	binDir := privateTempDir(t)
+	runtime := mustNew(t, chamberRuntime.Config{
+		RuntimeRoot:   privateTempDir(t),
+		RuntimeBinDir: binDir,
+		Version:       "test-version",
+		URL:           "https://example.invalid/runc",
+		SHA256:        sha256Hex(content),
+	}, localfs.NewDirectoryManager(), WithHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))))
+
+	binary := runtime.Binary()
+	if binary.Name != "runc" {
+		t.Fatalf("Binary.Name = %q, want runc", binary.Name)
+	}
+	if binary.Path != filepath.Join(binDir, "runc") {
+		t.Fatalf("Binary.Path = %q, want %q", binary.Path, filepath.Join(binDir, "runc"))
+	}
 }
 
 func TestNewRejectsWrongDigest(t *testing.T) {
@@ -196,6 +244,61 @@ func TestNewReplacesExistingInvalidBinary(t *testing.T) {
 		t.Fatalf("Binary.Path = %q, want %q", binary.Path, path)
 	}
 	assertFileContentAndMode(t, path, newContent, 0755)
+}
+
+func TestDescriptorDeclaresRuncSupport(t *testing.T) {
+	runtime := &Runtime{
+		binary: chamberRuntime.Binary{
+			Name:    "runc",
+			Version: "test-version",
+			Path:    "/tmp/runc",
+		},
+	}
+
+	descriptor := runtime.Descriptor()
+
+	if descriptor.Name != "runc" {
+		t.Fatalf("Descriptor().Name = %q, want runc", descriptor.Name)
+	}
+	if descriptor.Version != "test-version" {
+		t.Fatalf("Descriptor().Version = %q, want test-version", descriptor.Version)
+	}
+	if !slices.Equal(descriptor.Capabilities.Privileges, []capability.Privilege{capability.Rootless}) {
+		t.Fatalf("privileges = %#v, want rootless only", descriptor.Capabilities.Privileges)
+	}
+	if !slices.Equal(descriptor.Capabilities.Isolation, []chamberRuntime.Isolation{chamberRuntime.ProcessIsolation}) {
+		t.Fatalf("isolation = %#v, want process isolation", descriptor.Capabilities.Isolation)
+	}
+}
+
+func TestDescriptorDefaultsToRuncAdapterName(t *testing.T) {
+	descriptor := (&Runtime{}).Descriptor()
+
+	if descriptor.Name != "runc" {
+		t.Fatalf("Descriptor().Name = %q, want runc", descriptor.Name)
+	}
+	if descriptor.Version != DefaultVersion {
+		t.Fatalf("Descriptor().Version = %q, want %q", descriptor.Version, DefaultVersion)
+	}
+}
+
+func TestDescriptorNameDoesNotFollowConfiguredBinaryName(t *testing.T) {
+	runtime := &Runtime{
+		binary: chamberRuntime.Binary{
+			Name:    "custom-runc-binary",
+			Version: "test-version",
+			Path:    "/tmp/custom-runc-binary",
+		},
+	}
+
+	descriptor := runtime.Descriptor()
+
+	if descriptor.Name != "runc" {
+		t.Fatalf("Descriptor().Name = %q, want runc adapter name", descriptor.Name)
+	}
+	if descriptor.Version != "test-version" {
+		t.Fatalf("Descriptor().Version = %q, want configured binary version", descriptor.Version)
+	}
 }
 
 func TestNewReturnsAbsoluteBinaryPath(t *testing.T) {

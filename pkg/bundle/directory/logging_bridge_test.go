@@ -1,4 +1,4 @@
-package rootless
+package directory
 
 import (
 	"bytes"

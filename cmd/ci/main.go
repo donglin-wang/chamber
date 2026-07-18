@@ -12,7 +12,7 @@ import (
 	"time"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chamberRootlessProvisioner "github.com/donglin-wang/chamber/pkg/bundle/rootless"
+	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/directory"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
@@ -102,7 +102,6 @@ func run(cfg *config) error {
 	runtime, err := chamberRuncRuntime.New(ctx, chamberRuntime.Config{
 		RuntimeRoot:   paths.runtimeRoot,
 		RuntimeBinDir: paths.runtimeBinDir,
-		Name:          chamberRuntime.DefaultName,
 		Logging:       loggingConfig,
 	}, directoryManager)
 	if err != nil {
@@ -123,13 +122,13 @@ func run(cfg *config) error {
 		return err
 	}
 
-	provisioner, err := chamberRootlessProvisioner.New(
+	provisioner, err := chamberDirectoryProvisioner.New(
 		chamberBundle.Config{
 			Root:    paths.bundleRoot,
 			Logging: loggingConfig,
 		},
 		directoryManager,
-		chamberRootlessProvisioner.WithIDMap(uint32(os.Geteuid()), uint32(os.Getegid())),
+		chamberDirectoryProvisioner.WithIDMap(uint32(os.Geteuid()), uint32(os.Getegid())),
 	)
 	if err != nil {
 		return fmt.Errorf("create bundle provisioner: %w", err)

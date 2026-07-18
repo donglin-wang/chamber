@@ -5,12 +5,31 @@ import (
 	"io"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	"github.com/donglin-wang/chamber/pkg/shared/capability"
 )
 
 type Binary struct {
 	Name    string
 	Version string
 	Path    string
+}
+
+type Isolation string
+
+const (
+	ProcessIsolation Isolation = "process"
+	VMIsolation      Isolation = "vm"
+)
+
+type Capabilities struct {
+	Privileges []capability.Privilege
+	Isolation  []Isolation
+}
+
+type Descriptor struct {
+	Name         string
+	Version      string
+	Capabilities Capabilities
 }
 
 type RunRequest struct {
@@ -23,6 +42,8 @@ type Process interface {
 }
 
 type Runtime interface {
+	Descriptor() Descriptor
+
 	Binary() Binary
 
 	// Run starts the OCI runtime process. Wait observes or returns its cached
