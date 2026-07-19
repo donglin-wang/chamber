@@ -17,7 +17,8 @@ import (
 	chamberEtcdMetadataStore "github.com/donglin-wang/chamber/daemon/metadata/etcd"
 	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/directory"
 	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
-	chamberRuncRuntime "github.com/donglin-wang/chamber/pkg/runtime/runc"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	_ "github.com/donglin-wang/chamber/pkg/runtime/runc"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
@@ -73,7 +74,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer store.Close()
 
-	runtime, err := chamberRuncRuntime.New(lifetime, cfg.Runtime, directoryManager)
+	runtime, err := chamberRuntime.New(lifetime, cfg.Runtime, directoryManager)
 	if err != nil {
 		return fmt.Errorf("create runtime: %w", err)
 	}

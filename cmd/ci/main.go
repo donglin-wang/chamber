@@ -16,7 +16,7 @@ import (
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
-	chamberRuncRuntime "github.com/donglin-wang/chamber/pkg/runtime/runc"
+	_ "github.com/donglin-wang/chamber/pkg/runtime/runc"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	"github.com/donglin-wang/chamber/pkg/shared/logging"
 	"github.com/google/uuid"
@@ -99,7 +99,7 @@ func run(cfg *config) error {
 		}
 	}
 
-	runtime, err := chamberRuncRuntime.New(ctx, chamberRuntime.Config{
+	runtime, err := chamberRuntime.New(ctx, chamberRuntime.Config{
 		RuntimeRoot:   paths.runtimeRoot,
 		RuntimeBinDir: paths.runtimeBinDir,
 		Logging:       loggingConfig,
@@ -118,7 +118,7 @@ func run(cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("create image puller: %w", err)
 	}
-	imageLayout, err := ensureImage(ctx, puller, paths.imageRoot, cfg.image)
+	imageLayout, err := ensureImage(ctx, puller, cfg.image)
 	if err != nil {
 		return err
 	}
@@ -217,26 +217,19 @@ func ciPaths(root string) paths {
 	}
 }
 
-func ensureImage(ctx context.Context, puller chamberImage.Puller, imageRoot string, imageRef string) (string, error) {
-	destination, err := chamberImage.Destination(imageRoot, imageRef)
-	if err != nil {
-		return "", fmt.Errorf("resolve image destination: %w", err)
-	}
-	if chamberImage.LayoutExists(destination) {
-		logging.Info(ctx, "CI image reused", "image_ref", imageRef, "image_layout", destination)
-		return destination, nil
-	}
-
+func ensureImage(ctx context.Context, puller chamberImage.Puller, imageRef string) (string, error) {
 	logging.Info(ctx, "CI image pull started", "image_ref", imageRef)
 	pulled, err := puller.Pull(ctx, chamberImage.PullRequest{
-		Reference:   imageRef,
-		Destination: destination,
+		Reference: imageRef,
 		Platform: chamberImage.Platform{
 			OS: "linux",
 		},
 	})
 	if err != nil {
 		return "", fmt.Errorf("pull image %q: %w", imageRef, err)
+	}
+	if pulled.LayoutPath == "" {
+		return "", fmt.Errorf("pull image %q: image puller returned empty layout path", imageRef)
 	}
 	logging.Info(ctx, "CI image pulled", "image_ref", pulled.Reference, "digest", pulled.Digest, "bytes", pulled.SizeBytes)
 	return pulled.LayoutPath, nil

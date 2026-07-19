@@ -22,6 +22,8 @@ type Config struct {
 	Logger *slog.Logger `json:"-"`
 }
 
+type SlogLogger = slog.Logger
+
 type Override struct {
 	Level  *string `json:"level,omitempty"`
 	Format *string `json:"format,omitempty"`
@@ -62,6 +64,12 @@ func Warn(ctx context.Context, msg string, args ...any) {
 // Error logs an error-level Chamber SDK event.
 func Error(ctx context.Context, msg string, args ...any) {
 	Logger().ErrorContext(contextOrBackground(ctx), msg, args...)
+}
+
+// InfoWith logs an info-level Chamber SDK event with the supplied logger. A nil
+// logger falls back to the current package logger.
+func InfoWith(logger *slog.Logger, ctx context.Context, msg string, args ...any) {
+	loggerOrDefault(logger).InfoContext(contextOrBackground(ctx), msg, args...)
 }
 
 // DefaultConfig returns the default Chamber SDK logging behavior.
@@ -114,6 +122,16 @@ func Configure(config Config, w io.Writer) error {
 	}
 	SetLogger(logger)
 	return nil
+}
+
+// ResolveLogger returns the logger an SDK component should use without
+// replacing the process-wide Chamber logger. A zero config inherits the current
+// package logger.
+func ResolveLogger(config Config, w io.Writer) (*slog.Logger, error) {
+	if config == (Config{}) {
+		return Logger(), nil
+	}
+	return NewLogger(w, config)
 }
 
 // SetLogger replaces the Chamber SDK logger. Passing nil restores the default
@@ -175,6 +193,13 @@ func contextOrBackground(ctx context.Context) context.Context {
 		return context.Background()
 	}
 	return ctx
+}
+
+func loggerOrDefault(next *slog.Logger) *slog.Logger {
+	if next == nil {
+		return Logger()
+	}
+	return next
 }
 
 func parseLevel(raw string) (slog.Level, error) {

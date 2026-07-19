@@ -273,7 +273,7 @@ func (fakePuller) Pull(ctx context.Context, request chamberImage.PullRequest) (c
 	return chamberImage.PulledImage{
 		Reference:  request.Reference,
 		Digest:     "sha256:abc123",
-		LayoutPath: request.Destination,
+		LayoutPath: "/tmp/chamber-test/images/fake-layout",
 		PulledAt:   time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC),
 	}, nil
 }

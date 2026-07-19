@@ -9,12 +9,6 @@ import (
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
-const RuntimeNameRunc = "runc"
-
-var supportedRuntimeNames = map[string]struct{}{
-	RuntimeNameRunc: {},
-}
-
 type Config struct {
 	RuntimeRoot   string
 	RuntimeBinDir string
@@ -39,15 +33,6 @@ func DefaultConfig(rootPath string) Config {
 		Privilege:     capability.Rootless,
 		Logging:       chamberLogging.Config{},
 	}
-}
-
-func SupportedNames() []string {
-	return []string{RuntimeNameRunc}
-}
-
-func IsSupportedName(name string) bool {
-	_, ok := supportedRuntimeNames[name]
-	return ok
 }
 
 func Resolve(defaultConfig Config, override Override) (Config, error) {

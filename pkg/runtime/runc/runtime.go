@@ -41,9 +41,10 @@ type Runtime struct {
 	artifact         runtimeArtifact
 	client           *http.Client
 	directoryManager localfs.DirectoryManager
+	logger           *chamberLogging.SlogLogger
 }
 
-type Option func(*Runtime)
+type option func(*Runtime)
 
 type runtimeArtifact struct {
 	version string
@@ -51,7 +52,7 @@ type runtimeArtifact struct {
 	sha256  string
 }
 
-func WithHTTPClient(client *http.Client) Option {
+func withHTTPClient(client *http.Client) option {
 	return func(runtime *Runtime) {
 		if client != nil {
 			runtime.client = client
@@ -59,21 +60,24 @@ func WithHTTPClient(client *http.Client) Option {
 	}
 }
 
-func withArtifact(artifact runtimeArtifact) Option {
+func withArtifact(artifact runtimeArtifact) option {
 	return func(runtime *Runtime) {
 		runtime.artifact = artifact
 	}
 }
 
-func New(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...Option) (*Runtime, error) {
+func init() {
+	chamberRuntime.Register(runtimeName, func(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager) (chamberRuntime.Runtime, error) {
+		return newRuntime(ctx, config, directoryManager)
+	})
+}
+
+func newRuntime(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...option) (*Runtime, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("context is required")
 	}
 	if directoryManager == nil {
 		return nil, fmt.Errorf("directory manager is required")
-	}
-	if err := chamberLogging.Configure(config.Logging, nil); err != nil {
-		return nil, err
 	}
 	if config.Name == "" {
 		config.Name = runtimeName
@@ -85,11 +89,12 @@ func New(ctx context.Context, config chamberRuntime.Config, directoryManager loc
 	if err != nil {
 		return nil, err
 	}
+	logger, err := chamberLogging.ResolveLogger(resolved.Logging, nil)
+	if err != nil {
+		return nil, err
+	}
 	if resolved.Name != runtimeName {
 		return nil, fmt.Errorf("runc runtime cannot satisfy configured runtime name %q", resolved.Name)
-	}
-	if resolved.Privilege != capability.Rootless {
-		return nil, fmt.Errorf("runc runtime does not support %q privilege", resolved.Privilege)
 	}
 
 	artifact, err := defaultRuntimeArtifact(goruntime.GOARCH)
@@ -101,6 +106,7 @@ func New(ctx context.Context, config chamberRuntime.Config, directoryManager loc
 		artifact:         artifact,
 		client:           http.DefaultClient,
 		directoryManager: directoryManager,
+		logger:           logger,
 	}
 	for _, option := range options {
 		option(runtime)
@@ -110,18 +116,6 @@ func New(ctx context.Context, config chamberRuntime.Config, directoryManager loc
 		return nil, err
 	}
 	runtime.binary = binary
-
-	stateRoot, err := runtime.stateRoot()
-	if err != nil {
-		return nil, err
-	}
-	if err := directoryManager.MkdirPrivate(stateRoot); err != nil {
-		return nil, fmt.Errorf("create runtime state root: %w", err)
-	}
-	binDir := filepath.Dir(binary.Path)
-	if err := directoryManager.MkdirPrivate(binDir); err != nil {
-		return nil, fmt.Errorf("create runtime bin dir: %w", err)
-	}
 	if err := runtime.installBinary(ctx); err != nil {
 		return nil, err
 	}
@@ -136,17 +130,14 @@ func (r *Runtime) Descriptor() chamberRuntime.Descriptor {
 			version = r.artifact.version
 		}
 	}
+	capabilities, ok := chamberRuntime.SupportedCapabilities(runtimeName)
+	if !ok {
+		capabilities = chamberRuntime.Capabilities{}
+	}
 	return chamberRuntime.Descriptor{
-		Name:    runtimeName,
-		Version: version,
-		Capabilities: chamberRuntime.Capabilities{
-			Privileges: []capability.Privilege{
-				capability.Rootless,
-			},
-			Isolation: []chamberRuntime.Isolation{
-				chamberRuntime.ProcessIsolation,
-			},
-		},
+		Name:         runtimeName,
+		Version:      version,
+		Capabilities: capabilities,
 	}
 }
 
@@ -176,7 +167,7 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 	if ok, err := fileMatchesSHA256(binary.Path, expectedDigest); err != nil {
 		return fmt.Errorf("verify existing runtime binary: %w", err)
 	} else if ok {
-		chamberLogging.Info(ctx, "runtime binary ready",
+		chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
 			"runtime", binary.Name,
 			"version", artifact.version,
 			"path", binary.Path,
@@ -185,7 +176,7 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 		return nil
 	}
 
-	chamberLogging.Info(ctx, "downloading runtime binary",
+	chamberLogging.InfoWith(r.logger, ctx, "downloading runtime binary",
 		"runtime", binary.Name,
 		"version", artifact.version,
 		"url", artifact.url,
@@ -195,7 +186,7 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 		return err
 	}
 
-	chamberLogging.Info(ctx, "runtime binary ready",
+	chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
 		"runtime", binary.Name,
 		"version", artifact.version,
 		"path", binary.Path,
@@ -223,7 +214,7 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 	if err != nil {
 		return nil, err
 	}
-	chamberLogging.Info(ctx, "starting runtime container",
+	chamberLogging.InfoWith(r.logger, ctx, "starting runtime container",
 		"container_id", containerID,
 		"bundle_path", request.Bundle.BundlePath,
 		"state_root", stateRoot,
@@ -245,7 +236,7 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 		return nil, fmt.Errorf("start runc container %q: %w", containerID, err)
 	}
 
-	chamberLogging.Info(ctx, "started runtime container",
+	chamberLogging.InfoWith(r.logger, ctx, "started runtime container",
 		"container_id", containerID,
 		"pid", cmd.Process.Pid,
 	)
@@ -289,7 +280,7 @@ func (r *Runtime) Signal(ctx context.Context, request chamberRuntime.SignalReque
 	if err != nil {
 		return err
 	}
-	chamberLogging.Info(ctx, "signaling runtime container",
+	chamberLogging.InfoWith(r.logger, ctx, "signaling runtime container",
 		"container_id", request.ContainerID,
 		"signal", request.Signal,
 	)
@@ -313,7 +304,7 @@ func (r *Runtime) Delete(ctx context.Context, request chamberRuntime.DeleteReque
 		args = append(args, "--force")
 	}
 	args = append(args, request.ContainerID)
-	chamberLogging.Info(ctx, "deleting runtime container",
+	chamberLogging.InfoWith(r.logger, ctx, "deleting runtime container",
 		"container_id", request.ContainerID,
 		"force", request.Force,
 	)

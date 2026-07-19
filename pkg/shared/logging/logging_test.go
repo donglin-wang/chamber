@@ -168,7 +168,7 @@ func TestSDKProductionCodeUsesSharedLogging(t *testing.T) {
 	}
 }
 
-func TestSDKProductionCodeConfiguresLoggingOnlyInConstructors(t *testing.T) {
+func TestSDKProductionCodeDoesNotConfigureProcessGlobalLogging(t *testing.T) {
 	pkgRoot := filepath.Clean("../..")
 
 	err := filepath.WalkDir(pkgRoot, func(path string, entry os.DirEntry, err error) error {
@@ -200,9 +200,7 @@ func TestSDKProductionCodeConfiguresLoggingOnlyInConstructors(t *testing.T) {
 			if !ok || !isLoggingConfigureCall(call, loggingNames) {
 				return true
 			}
-			if !insideConstructor(file, call.Pos()) {
-				t.Fatalf("SDK production file %s calls logging.Configure outside New", path)
-			}
+			t.Fatalf("SDK production file %s calls logging.Configure; constructors should use per-instance loggers", path)
 			return true
 		})
 		return nil

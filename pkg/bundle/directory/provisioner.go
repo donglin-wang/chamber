@@ -31,6 +31,7 @@ type Provisioner struct {
 	uid              uint32
 	gid              uint32
 	directoryManager localfs.DirectoryManager
+	logger           *chamberLogging.SlogLogger
 }
 
 type Option func(*Provisioner)
@@ -46,12 +47,13 @@ func New(config chamberBundle.Config, directoryManager localfs.DirectoryManager,
 	if directoryManager == nil {
 		return nil, fmt.Errorf("directory manager is required")
 	}
-	if err := chamberLogging.Configure(config.Logging, nil); err != nil {
-		return nil, err
-	}
 	installApexBridge()
 
 	resolved, err := chamberBundle.Resolve(config, chamberBundle.Override{})
+	if err != nil {
+		return nil, err
+	}
+	logger, err := chamberLogging.ResolveLogger(resolved.Logging, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +75,7 @@ func New(config chamberBundle.Config, directoryManager localfs.DirectoryManager,
 		uid:              uint32(os.Geteuid()),
 		gid:              uint32(os.Getegid()),
 		directoryManager: directoryManager,
+		logger:           logger,
 	}
 	for _, option := range options {
 		option(provisioner)
@@ -116,7 +119,7 @@ func (p *Provisioner) Provision(
 
 	bundleRoot := p.config.Root
 	finalBundle := filepath.Join(bundleRoot, request.ContainerID)
-	chamberLogging.Info(ctx, "provisioning bundle",
+	chamberLogging.InfoWith(p.logger, ctx, "provisioning bundle",
 		"container_id", request.ContainerID,
 		"image_ref", request.ImageRef,
 		"image_layout", request.ImageLayout,
@@ -174,7 +177,7 @@ func (p *Provisioner) Provision(
 		BundlePath:  finalBundle,
 		RootFS:      chamberBundle.RootFS{},
 	}
-	chamberLogging.Info(ctx, "provisioned bundle",
+	chamberLogging.InfoWith(p.logger, ctx, "provisioned bundle",
 		"container_id", provisioned.ContainerID,
 		"bundle_path", provisioned.BundlePath,
 	)

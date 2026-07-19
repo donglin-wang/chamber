@@ -39,7 +39,7 @@ func registerImageRoutes(mux *http.ServeMux, cfg chamberDaemonConfig.Config, sto
 			return
 		}
 
-		result, err := pullImage(r.Context(), cfg, store, puller, strings.TrimSpace(request.Reference))
+		result, err := pullImage(r.Context(), store, puller, strings.TrimSpace(request.Reference))
 		if err != nil {
 			writeDaemonError(w, err)
 			return
@@ -59,7 +59,7 @@ type pullImageResult struct {
 	image     metadata.Image
 }
 
-func pullImage(ctx context.Context, cfg chamberDaemonConfig.Config, store metadata.Store, puller chamberImage.Puller, reference string) (pullImageResult, error) {
+func pullImage(ctx context.Context, store metadata.Store, puller chamberImage.Puller, reference string) (pullImageResult, error) {
 	if store == nil {
 		return pullImageResult{}, fmt.Errorf("metadata store is required")
 	}
@@ -85,13 +85,6 @@ func pullImage(ctx context.Context, cfg chamberDaemonConfig.Config, store metada
 		return pullImageResult{}, fmt.Errorf("create pull operation: %w", err)
 	}
 
-	destination, err := chamberImage.Destination(cfg.Image.Root, reference)
-	if err != nil {
-		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrInvalidRequest)
-		failErr := operationError(operationID, chamberErrors.ErrInvalidRequest, errors.Join(err, transitionErr))
-		return pullImageResult{operation: operation}, failErr
-	}
-
 	existing, err := store.GetImage(ctx, reference)
 	if err == nil && chamberImage.LayoutExists(existing.LayoutPath) {
 		completed, err := store.SucceedOperation(ctx, operationID)
@@ -110,8 +103,7 @@ func pullImage(ctx context.Context, cfg chamberDaemonConfig.Config, store metada
 	}
 
 	pulled, err := puller.Pull(ctx, chamberImage.PullRequest{
-		Reference:   reference,
-		Destination: destination,
+		Reference: reference,
 	})
 	if err != nil {
 		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrPullFailed)
@@ -125,7 +117,9 @@ func pullImage(ctx context.Context, cfg chamberDaemonConfig.Config, store metada
 	}
 	layoutPath := pulled.LayoutPath
 	if layoutPath == "" {
-		layoutPath = destination
+		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrPullFailed)
+		failErr := operationError(operationID, chamberErrors.ErrPullFailed, errors.Join(errors.New("image puller returned empty layout path"), transitionErr))
+		return pullImageResult{operation: operation}, failErr
 	}
 	image := metadata.Image{
 		Reference:  reference,
