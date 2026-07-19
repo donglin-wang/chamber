@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"time"
 
@@ -15,6 +19,8 @@ import (
 	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/directory"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
+	chamberMachine "github.com/donglin-wang/chamber/pkg/machine"
+	chamberLimaMachine "github.com/donglin-wang/chamber/pkg/machine/lima"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRuncRuntime "github.com/donglin-wang/chamber/pkg/runtime/runc"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -22,13 +28,23 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	machineModeAuto     = "auto"
+	machineModeNone     = "none"
+	machineProviderLima = "lima"
+)
+
 type config struct {
-	root     string
-	workdir  string
-	image    string
-	timeout  time.Duration
-	keep     bool
-	exitCode int
+	root            string
+	workdir         string
+	image           string
+	timeout         time.Duration
+	keep            bool
+	machine         string
+	machineProvider string
+	machineRoot     string
+	machineKeep     bool
+	exitCode        int
 }
 
 type job struct {
@@ -65,6 +81,10 @@ func parseFlags() config {
 	flag.StringVar(&cfg.image, "image", "docker.io/library/golang:1.26.4-bookworm", "OCI image used to run CI jobs")
 	flag.DurationVar(&cfg.timeout, "timeout", 30*time.Minute, "timeout for the whole CI run")
 	flag.BoolVar(&cfg.keep, "keep", false, "keep provisioned bundles after jobs finish")
+	flag.StringVar(&cfg.machine, "machine", machineModeAuto, "machine mode: auto, none, or a Lima machine name")
+	flag.StringVar(&cfg.machineProvider, "machine-provider", machineProviderLima, "machine provider used when -machine is not none")
+	flag.StringVar(&cfg.machineRoot, "machine-root", "", "root directory for Chamber machine state; defaults outside the workspace")
+	flag.BoolVar(&cfg.machineKeep, "machine-keep", true, "keep the machine running after host-side CI finishes")
 	flag.Parse()
 	return cfg
 }
@@ -78,6 +98,25 @@ func run(cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("resolve workspace: %w", err)
 	}
+	if useMachine(cfg.machine) {
+		return runInMachine(ctx, cfg, workspace, loggingConfig)
+	}
+
+	return runLocal(ctx, cfg, workspace, loggingConfig)
+}
+
+func useMachine(mode string) bool {
+	switch strings.TrimSpace(mode) {
+	case "", machineModeAuto:
+		return goruntime.GOOS != "linux"
+	case machineModeNone:
+		return false
+	default:
+		return true
+	}
+}
+
+func runLocal(ctx context.Context, cfg *config, workspace string, loggingConfig logging.Config) error {
 	root, err := resolveRoot(cfg.root, workspace)
 	if err != nil {
 		return fmt.Errorf("resolve root: %w", err)
@@ -163,6 +202,81 @@ func run(cfg *config) error {
 	return nil
 }
 
+func runInMachine(ctx context.Context, cfg *config, workspace string, loggingConfig logging.Config) error {
+	if cfg.machineProvider != machineProviderLima {
+		return fmt.Errorf("unsupported machine provider %q", cfg.machineProvider)
+	}
+
+	machineRoot, err := resolveMachineRoot(cfg.machineRoot, workspace)
+	if err != nil {
+		return fmt.Errorf("resolve machine root: %w", err)
+	}
+	directoryManager := localfs.NewDirectoryManager()
+	if err := directoryManager.MkdirPrivate(machineRoot); err != nil {
+		return fmt.Errorf("create machine root: %w", err)
+	}
+
+	guestRoot := filepath.Join(machineRoot, "guest")
+	if err := directoryManager.MkdirPrivate(guestRoot); err != nil {
+		return fmt.Errorf("create machine guest root: %w", err)
+	}
+	runnerPath, err := buildGuestRunner(ctx, workspace, guestRoot)
+	if err != nil {
+		return err
+	}
+
+	ciRoot, err := explicitCIRoot(cfg.root, workspace)
+	if err != nil {
+		return err
+	}
+	spec, err := ciMachineSpec(workspace, guestRoot, ciRoot)
+	if err != nil {
+		return err
+	}
+	machineName := cfg.machine
+	if strings.TrimSpace(machineName) == "" || machineName == machineModeAuto {
+		machineName = defaultMachineName(workspace)
+	}
+
+	vm, err := chamberLimaMachine.New(ctx, chamberMachine.Config{
+		Root:    machineRoot,
+		Name:    machineName,
+		Spec:    spec,
+		Start:   true,
+		Logging: loggingConfig,
+	}, directoryManager)
+	if err != nil {
+		return fmt.Errorf("create machine: %w", err)
+	}
+	descriptor := vm.Descriptor()
+	logging.Info(ctx, "CI machine ready",
+		"machine", descriptor.Name,
+		"provider", descriptor.Provider,
+		"status", descriptor.Status,
+		"arch", descriptor.Arch,
+	)
+
+	args := guestCIArgs(runnerPath, cfg, workspace, ciRoot)
+	result, err := vm.Run(ctx, chamberMachine.RunRequest{
+		Args:    args,
+		Workdir: workspace,
+		Stdin:   os.Stdin,
+		Stdout:  os.Stdout,
+		Stderr:  os.Stderr,
+	})
+	if err != nil {
+		return fmt.Errorf("run CI in machine: %w", err)
+	}
+	cfg.exitCode = result.ExitCode
+
+	if !cfg.machineKeep {
+		if err := vm.Stop(context.Background()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func resolveRoot(root string, workspace string) (string, error) {
 	var resolved string
 	var err error
@@ -185,6 +299,32 @@ func resolveRoot(root string, workspace string) (string, error) {
 	}
 	if pathContains(workspace, resolved) {
 		return "", fmt.Errorf("CI root %q must be outside workspace %q", resolved, workspace)
+	}
+	return resolved, nil
+}
+
+func resolveMachineRoot(root string, workspace string) (string, error) {
+	var resolved string
+	var err error
+	if strings.TrimSpace(root) == "" {
+		cacheRoot, err := os.UserCacheDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve user cache directory: %w", err)
+		}
+		resolved = filepath.Join(cacheRoot, "chamber", "machines")
+	} else {
+		resolved, err = filepath.Abs(root)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	workspace, err = filepath.Abs(workspace)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace: %w", err)
+	}
+	if pathContains(workspace, resolved) {
+		return "", fmt.Errorf("machine root %q must be outside workspace %q", resolved, workspace)
 	}
 	return resolved, nil
 }
@@ -216,6 +356,124 @@ func ciPaths(root string) paths {
 		goModCache:    filepath.Join(root, "cache", "go-mod"),
 	}
 }
+
+func buildGuestRunner(ctx context.Context, workspace string, guestRoot string) (string, error) {
+	binDir := filepath.Join(guestRoot, "bin")
+	directoryManager := localfs.NewDirectoryManager()
+	if err := directoryManager.MkdirPrivate(binDir); err != nil {
+		return "", fmt.Errorf("create guest runner bin dir: %w", err)
+	}
+
+	goarch := goruntime.GOARCH
+	runnerPath := filepath.Join(binDir, "chamber-ci-linux-"+goarch)
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", runnerPath, "./cmd/ci")
+	cmd.Dir = workspace
+	cmd.Env = append(os.Environ(),
+		"GOOS=linux",
+		"GOARCH="+goarch,
+		"CGO_ENABLED=0",
+	)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	logging.Info(ctx, "building Linux CI runner", "path", runnerPath, "goarch", goarch)
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("build Linux CI runner: %w", err)
+	}
+	return runnerPath, nil
+}
+
+func explicitCIRoot(root string, workspace string) (string, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", nil
+	}
+	resolved, err := resolveRoot(root, workspace)
+	if err != nil {
+		return "", fmt.Errorf("resolve explicit CI root: %w", err)
+	}
+	return resolved, nil
+}
+
+func ciMachineSpec(workspace string, guestRoot string, ciRoot string) (chamberMachine.Spec, error) {
+	mounts := []chamberMachine.Mount{}
+	var err error
+	mounts, err = appendMachineMount(mounts, workspace)
+	if err != nil {
+		return chamberMachine.Spec{}, err
+	}
+	mounts, err = appendMachineMount(mounts, guestRoot)
+	if err != nil {
+		return chamberMachine.Spec{}, err
+	}
+	if ciRoot != "" {
+		mounts, err = appendMachineMount(mounts, ciRoot)
+		if err != nil {
+			return chamberMachine.Spec{}, err
+		}
+	}
+
+	return chamberMachine.Spec{
+		OS:          "linux",
+		Arch:        goruntime.GOARCH,
+		CPUs:        4,
+		MemoryBytes: 4 * 1024 * 1024 * 1024,
+		DiskBytes:   100 * 1024 * 1024 * 1024,
+		Mounts:      mounts,
+		SetupScript: ciMachineSetupScript,
+	}, nil
+}
+
+func appendMachineMount(mounts []chamberMachine.Mount, source string) ([]chamberMachine.Mount, error) {
+	source, err := filepath.Abs(source)
+	if err != nil {
+		return nil, fmt.Errorf("resolve machine mount: %w", err)
+	}
+	for _, mount := range mounts {
+		if pathContains(mount.Source, source) {
+			return mounts, nil
+		}
+		if pathContains(source, mount.Source) {
+			return nil, fmt.Errorf("machine mount %q overlaps existing mount %q", source, mount.Source)
+		}
+	}
+	return append(mounts, chamberMachine.Mount{
+		Source:   source,
+		Target:   source,
+		Writable: true,
+	}), nil
+}
+
+func guestCIArgs(runnerPath string, cfg *config, workspace string, ciRoot string) []string {
+	args := []string{
+		runnerPath,
+		"-machine=" + machineModeNone,
+		"-workdir", workspace,
+		"-image", cfg.image,
+		"-timeout", cfg.timeout.String(),
+	}
+	if cfg.keep {
+		args = append(args, "-keep=true")
+	}
+	if ciRoot != "" {
+		args = append(args, "-root", ciRoot)
+	}
+	return args
+}
+
+func defaultMachineName(workspace string) string {
+	sum := sha256.Sum256([]byte(workspace))
+	return "cci-" + hex.EncodeToString(sum[:])[:8]
+}
+
+const ciMachineSetupScript = `#!/bin/bash
+set -eux
+
+sysctl -w kernel.unprivileged_userns_clone=1 || true
+sysctl -w user.max_user_namespaces=28633 || true
+
+if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+  sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+fi
+`
 
 func ensureImage(ctx context.Context, puller chamberImage.Puller, imageRoot string, imageRef string) (string, error) {
 	destination, err := chamberImage.Destination(imageRoot, imageRef)

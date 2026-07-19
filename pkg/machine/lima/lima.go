@@ -185,7 +185,7 @@ func (m *Machine) Run(ctx context.Context, request chamberMachine.RunRequest) (c
 	if request.Workdir != "" {
 		args = append(args, "--workdir", request.Workdir)
 	}
-	args = append(args, m.config.Name, "--")
+	args = append(args, m.config.Name)
 	if len(request.Env) > 0 {
 		args = append(args, "env")
 		args = append(args, request.Env...)
@@ -271,7 +271,7 @@ func (m *Machine) inspect(ctx context.Context) (chamberMachine.Descriptor, error
 		return chamberMachine.Descriptor{}, err
 	}
 	if result.ExitCode != 0 {
-		if strings.Contains(string(result.Stderr), "not found") || strings.Contains(string(result.Stdout), "not found") {
+		if isMissingInstanceOutput(result.Stdout, result.Stderr) {
 			return descriptorFromConfig(m.config, chamberMachine.StatusMissing, ""), nil
 		}
 		return chamberMachine.Descriptor{}, fmt.Errorf("inspect Lima machine %q failed with exit code %d: %s", m.config.Name, result.ExitCode, strings.TrimSpace(string(result.Stderr)))
@@ -281,6 +281,13 @@ func (m *Machine) inspect(ctx context.Context) (chamberMachine.Descriptor, error
 		return chamberMachine.Descriptor{}, err
 	}
 	return descriptor, nil
+}
+
+func isMissingInstanceOutput(stdout []byte, stderr []byte) bool {
+	output := strings.ToLower(string(stdout) + "\n" + string(stderr))
+	return strings.Contains(output, "not found") ||
+		strings.Contains(output, "no instance matching") ||
+		strings.Contains(output, "unmatched instances")
 }
 
 func (m *Machine) runLifecycle(ctx context.Context, args ...string) error {

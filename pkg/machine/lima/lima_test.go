@@ -44,6 +44,35 @@ func TestNewCreatesAndStartsMissingMachine(t *testing.T) {
 	assertCalls(t, runner.calls, wantArgs, filepath.Join(root, defaultLimaHome))
 }
 
+func TestNewTreatsUnmatchedInstanceAsMissing(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "machines")
+	runner := &fakeRunner{
+		results: []commandResult{
+			{
+				ExitCode: 1,
+				Stderr:   []byte("No instance matching chamber-ci found.\nunmatched instances\n"),
+			},
+			{},
+		},
+	}
+
+	_, err := New(context.Background(), chamberMachine.Config{
+		Root: root,
+		Name: "chamber-ci",
+		Spec: chamberMachine.Spec{OS: "linux"},
+	}, localfs.NewDirectoryManager(), withCommandRunner(runner))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	specPath := filepath.Join(root, defaultSpecDirectory, "chamber-ci.yaml")
+	wantArgs := [][]string{
+		{"list", "--format", "json", "chamber-ci"},
+		{"create", "--name", "chamber-ci", specPath, "--tty=false"},
+	}
+	assertCalls(t, runner.calls, wantArgs, filepath.Join(root, defaultLimaHome))
+}
+
 func TestNewStartsStoppedMachineWithoutCreate(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "machines")
 	runner := &fakeRunner{
@@ -103,7 +132,7 @@ func TestRunExecutesCommandInsideMachine(t *testing.T) {
 		t.Fatalf("ExitCode = %d, want 7", result.ExitCode)
 	}
 
-	want := []string{"shell", "--workdir", "/workspace", "chamber-ci", "--", "env", "GOCACHE=/gocache", "go", "test", "./pkg/..."}
+	want := []string{"shell", "--workdir", "/workspace", "chamber-ci", "env", "GOCACHE=/gocache", "go", "test", "./pkg/..."}
 	if !reflect.DeepEqual(runner.calls[1].Args, want) {
 		t.Fatalf("Run args = %#v, want %#v", runner.calls[1].Args, want)
 	}
