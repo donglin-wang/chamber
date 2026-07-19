@@ -67,11 +67,11 @@ func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (ch
 	if err != nil {
 		return chamberImage.PulledImage{}, fmt.Errorf("parse image reference: %w", err)
 	}
-	canonicalReference := canonicalReferenceName(ref)
+	canonicalReference := ref.Name()
 
 	platform := resolvePlatform(request.Platform)
 
-	destination, err := chamberImage.Destination(p.config.Root, canonicalReference)
+	destination, err := chamberImage.DestinationForCanonicalReference(p.config.Root, canonicalReference)
 	if err != nil {
 		return chamberImage.PulledImage{}, fmt.Errorf("resolve image destination: %w", err)
 	}
@@ -145,7 +145,7 @@ func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (ch
 	); err != nil {
 		return chamberImage.PulledImage{}, fmt.Errorf("write OCI image layout: %w", err)
 	}
-	if err := verifyOCILayout(tmp); err != nil {
+	if err := chamberImage.ValidateLayout(tmp); err != nil {
 		return chamberImage.PulledImage{}, fmt.Errorf("verify OCI image layout: %w", err)
 	}
 
@@ -199,10 +199,6 @@ func resolvePlatform(platform chamberImage.Platform) v1.Platform {
 	return resolved
 }
 
-func canonicalReferenceName(ref name.Reference) string {
-	return ref.Name()
-}
-
 func authenticator(auth *chamberImage.Auth) authn.Authenticator {
 	config := authn.AuthConfig{
 		Username: auth.Username,
@@ -212,10 +208,6 @@ func authenticator(auth *chamberImage.Auth) authn.Authenticator {
 		config.RegistryToken = auth.Token
 	}
 	return authn.FromConfig(config)
-}
-
-func verifyOCILayout(path string) error {
-	return chamberImage.ValidateLayout(path)
 }
 
 func existingPulledImage(reference string, path string) (chamberImage.PulledImage, error) {

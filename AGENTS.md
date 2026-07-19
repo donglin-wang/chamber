@@ -97,6 +97,26 @@ Boundary rules for future changes:
 - Do not let the daemon guess SDK-owned paths. Persist paths returned by SDK operations, such as `ProvisionedBundle.BundlePath`, and call runtime-owned APIs such as `ReadLog`.
 - Keep rootless defaults first-class. Rootful support should be introduced as an explicit privilege-boundary expansion, not as a quiet option on existing APIs.
 
+## Review And Cleanup Passes
+
+Use review passes to make the code easier to understand without changing its contract. A review pass is not permission to redesign the system, add broad new abstractions, move files around, or widen scope.
+
+When asked for a code review, lead with correctness and boundary findings:
+
+- Code smells that can hide bugs, especially duplicated policy, unclear ownership, implicit global state, over-broad helpers, and state that can drift between packages.
+- Abstraction and package-boundary oversteps, especially daemon reliability concepts leaking into `pkg/`, concrete adapters leaking into generic config, or helper packages becoming grab bags.
+- Missing tests around contract boundaries, storage invariants, platform gates, error mapping, idempotency, and race-prone operations.
+- Long-term API shape issues such as names, fields, or interfaces that suggest a stronger guarantee than the implementation actually provides.
+
+When asked to clean up or simplify code:
+
+- Look for "helper for helper" chains: private helpers that are used once, merely forward to another helper, or make the call path harder to read without hiding real complexity. Inline them when doing so makes the owning function clearer.
+- Look for structs, config types, interfaces, or fields with dual responsibilities. A field should not both select an implementation and describe implementation-private behavior; an interface should not include lifecycle/setup methods if constructors already return ready values.
+- If a file is roughly 500 lines or longer, scan it for obvious simplifications. Prefer small local simplifications inside the file. Do not create a new abstraction or a new file merely because the file is long.
+- Preserve behavior unless the user explicitly asked for a behavior change. Keep diffs small, testable, and easy to review.
+- Leave code alone when simplification is not obvious. A boring, explicit implementation is better than a clever cleanup that moves complexity somewhere else.
+- Do not commit during review or cleanup unless the user explicitly asks for a commit.
+
 ## Daemon Contract
 
 `chamberd` should make one local authority dependable. It should expose a stable local API over a user-scoped Unix socket by default, with TCP/HTTP only as an explicit demo or development option.

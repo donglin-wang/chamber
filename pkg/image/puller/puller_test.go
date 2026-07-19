@@ -8,7 +8,6 @@ import (
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
-	"github.com/google/go-containerregistry/pkg/name"
 )
 
 func TestNewPreparesConfiguredImageRoot(t *testing.T) {
@@ -47,17 +46,6 @@ func TestResolvePlatformDefaultsToLinuxHostArchitecture(t *testing.T) {
 	}
 	if platform.Variant != "" {
 		t.Fatalf("Variant = %q, want empty", platform.Variant)
-	}
-}
-
-func TestCanonicalReferenceUsesParsedReferenceName(t *testing.T) {
-	ref, err := name.ParseReference("busybox")
-	if err != nil {
-		t.Fatalf("ParseReference() error = %v", err)
-	}
-
-	if got := canonicalReferenceName(ref); got != "index.docker.io/library/busybox:latest" {
-		t.Fatalf("canonicalReferenceName() = %q, want Docker Hub library default", got)
 	}
 }
 

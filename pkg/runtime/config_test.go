@@ -143,6 +143,99 @@ func TestNewRejectsNonLinuxHostBeforeFilesystemMutation(t *testing.T) {
 	}
 }
 
+func TestNewDispatchesRegisteredRuntimeConstructor(t *testing.T) {
+	runtimeRoot := filepath.Join(t.TempDir(), "runtime")
+	binDir := filepath.Join(t.TempDir(), "bin")
+	called := false
+	restoreImplementation := registerConstructorForTest(t, RuntimeNameRunc, func(ctx context.Context, config Config, directoryManager localfs.DirectoryManager) (Runtime, error) {
+		called = true
+		if config.Name != RuntimeNameRunc {
+			t.Fatalf("constructor config name = %q, want %q", config.Name, RuntimeNameRunc)
+		}
+		if config.Privilege != capability.Rootless {
+			t.Fatalf("constructor privilege = %q, want rootless", config.Privilege)
+		}
+		assertPrivateDir(t, config.RuntimeRoot)
+		assertPrivateDir(t, config.RuntimeBinDir)
+		return fakeRuntime{}, nil
+	})
+	defer restoreImplementation()
+
+	runtime, err := newForGOOS(context.Background(), Config{
+		RuntimeRoot:   runtimeRoot,
+		RuntimeBinDir: binDir,
+		Name:          RuntimeNameRunc,
+		Privilege:     capability.Rootless,
+	}, localfs.NewDirectoryManager(), "linux")
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if runtime == nil {
+		t.Fatal("New() runtime = nil, want runtime")
+	}
+	if !called {
+		t.Fatal("registered constructor was not called")
+	}
+}
+
 func ptr(value string) *string {
 	return &value
+}
+
+func registerConstructorForTest(t *testing.T, name string, constructor func(context.Context, Config, localfs.DirectoryManager) (Runtime, error)) func() {
+	t.Helper()
+
+	old := implementations[name]
+	implementation := old
+	implementation.New = nil
+	implementations[name] = implementation
+	Register(name, constructor)
+	return func() {
+		implementations[name] = old
+	}
+}
+
+func assertPrivateDir(t *testing.T, path string) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%q) error = %v", path, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%q is not a directory", path)
+	}
+	if info.Mode().Perm() != 0700 {
+		t.Fatalf("mode = %o, want 0700", info.Mode().Perm())
+	}
+}
+
+type fakeRuntime struct{}
+
+func (fakeRuntime) Descriptor() Descriptor {
+	return Descriptor{Name: RuntimeNameRunc}
+}
+
+func (fakeRuntime) Binary() Binary {
+	return Binary{}
+}
+
+func (fakeRuntime) Run(context.Context, RunRequest) (Process, error) {
+	return nil, nil
+}
+
+func (fakeRuntime) State(context.Context, string) (ContainerState, error) {
+	return ContainerState{}, nil
+}
+
+func (fakeRuntime) Signal(context.Context, SignalRequest) error {
+	return nil
+}
+
+func (fakeRuntime) Delete(context.Context, DeleteRequest) error {
+	return nil
+}
+
+func (fakeRuntime) ReadLog(string, string) ([]byte, error) {
+	return nil, nil
 }

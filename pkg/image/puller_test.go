@@ -219,9 +219,9 @@ func privateTempDir(t *testing.T) string {
 func imageDestination(t *testing.T, root string, reference string) string {
 	t.Helper()
 
-	destination, err := chamberImage.Destination(root, reference)
+	destination, err := chamberImage.DestinationForCanonicalReference(root, reference)
 	if err != nil {
-		t.Fatalf("Destination() error = %v", err)
+		t.Fatalf("DestinationForCanonicalReference() error = %v", err)
 	}
 	return destination
 }

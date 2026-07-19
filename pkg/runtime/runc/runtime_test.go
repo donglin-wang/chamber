@@ -641,7 +641,7 @@ func runtimeWithConfigOnly(t *testing.T) *Runtime {
 func mustNew(t testing.TB, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...option) *Runtime {
 	t.Helper()
 
-	prepareRuntimeDirectories(t, config, directoryManager)
+	config = prepareRuntimeConfig(t, config, directoryManager)
 	runtime, err := newRuntime(context.Background(), config, directoryManager, options...)
 	if err != nil {
 		t.Fatalf("newRuntime() error = %v", err)
@@ -649,7 +649,7 @@ func mustNew(t testing.TB, config chamberRuntime.Config, directoryManager localf
 	return runtime
 }
 
-func prepareRuntimeDirectories(t testing.TB, config chamberRuntime.Config, directoryManager localfs.DirectoryManager) {
+func prepareRuntimeConfig(t testing.TB, config chamberRuntime.Config, directoryManager localfs.DirectoryManager) chamberRuntime.Config {
 	t.Helper()
 
 	if config.Name == "" {
@@ -670,6 +670,7 @@ func prepareRuntimeDirectories(t testing.TB, config chamberRuntime.Config, direc
 			t.Fatalf("MkdirPrivate(%q) error = %v", path, err)
 		}
 	}
+	return resolved
 }
 
 type httpClientFunc func(*http.Request) (*http.Response, error)

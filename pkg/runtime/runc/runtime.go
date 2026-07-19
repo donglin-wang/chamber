@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -73,28 +72,9 @@ func init() {
 }
 
 func newRuntime(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...option) (*Runtime, error) {
-	if ctx == nil {
-		return nil, fmt.Errorf("context is required")
-	}
-	if directoryManager == nil {
-		return nil, fmt.Errorf("directory manager is required")
-	}
-	if config.Name == "" {
-		config.Name = runtimeName
-	}
-	if config.Privilege == "" {
-		config.Privilege = capability.Rootless
-	}
-	resolved, err := chamberRuntime.Resolve(config, chamberRuntime.Override{})
+	logger, err := chamberLogging.ResolveLogger(config.Logging, nil)
 	if err != nil {
 		return nil, err
-	}
-	logger, err := chamberLogging.ResolveLogger(resolved.Logging, nil)
-	if err != nil {
-		return nil, err
-	}
-	if resolved.Name != runtimeName {
-		return nil, fmt.Errorf("runc runtime cannot satisfy configured runtime name %q", resolved.Name)
 	}
 
 	artifact, err := defaultRuntimeArtifact(goruntime.GOARCH)
@@ -102,7 +82,7 @@ func newRuntime(ctx context.Context, config chamberRuntime.Config, directoryMana
 		return nil, err
 	}
 	runtime := &Runtime{
-		config:           resolved,
+		config:           config,
 		artifact:         artifact,
 		client:           http.DefaultClient,
 		directoryManager: directoryManager,
@@ -111,7 +91,7 @@ func newRuntime(ctx context.Context, config chamberRuntime.Config, directoryMana
 	for _, option := range options {
 		option(runtime)
 	}
-	binary, err := configuredBinary(resolved)
+	binary, err := configuredBinary(config)
 	if err != nil {
 		return nil, err
 	}
@@ -320,11 +300,10 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	directoryManager, err := r.requireDirectoryManager()
-	if err != nil {
-		return nil, nil, err
+	if r.directoryManager == nil {
+		return nil, nil, fmt.Errorf("directory manager is required")
 	}
-	if err := directoryManager.MkdirPrivate(logDir); err != nil {
+	if err := r.directoryManager.MkdirPrivate(logDir); err != nil {
 		return nil, nil, fmt.Errorf("create runc log directory: %w", err)
 	}
 
@@ -397,9 +376,6 @@ func (r *Runtime) stateRoot() (string, error) {
 }
 
 func configuredBinary(config chamberRuntime.Config) (chamberRuntime.Binary, error) {
-	if config.Name != runtimeName {
-		return chamberRuntime.Binary{}, fmt.Errorf("runc runtime cannot satisfy configured runtime name %q", config.Name)
-	}
 	if config.RuntimeBinDir == "" {
 		return chamberRuntime.Binary{}, fmt.Errorf("runtime bin dir is required")
 	}
@@ -422,13 +398,6 @@ func defaultRuntimeArtifact(arch string) (runtimeArtifact, error) {
 	default:
 		return runtimeArtifact{}, fmt.Errorf("runc runtime does not have a default artifact for architecture %q", arch)
 	}
-}
-
-func (r *Runtime) requireDirectoryManager() (localfs.DirectoryManager, error) {
-	if r.directoryManager == nil {
-		return nil, fmt.Errorf("directory manager is required")
-	}
-	return r.directoryManager, nil
 }
 
 type runcProcess struct {
@@ -493,10 +462,6 @@ func readRuncState(ctx context.Context, binaryPath string, stateRoot string, con
 	if err != nil {
 		return runcState{}, err
 	}
-	return decodeRuncState(output)
-}
-
-func decodeRuncState(output []byte) (runcState, error) {
 	var state runcState
 	if err := json.Unmarshal(output, &state); err != nil {
 		return runcState{}, err

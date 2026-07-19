@@ -69,7 +69,10 @@ func Error(ctx context.Context, msg string, args ...any) {
 // InfoWith logs an info-level Chamber SDK event with the supplied logger. A nil
 // logger falls back to the current package logger.
 func InfoWith(logger *slog.Logger, ctx context.Context, msg string, args ...any) {
-	loggerOrDefault(logger).InfoContext(contextOrBackground(ctx), msg, args...)
+	if logger == nil {
+		logger = Logger()
+	}
+	logger.InfoContext(contextOrBackground(ctx), msg, args...)
 }
 
 // DefaultConfig returns the default Chamber SDK logging behavior.
@@ -193,13 +196,6 @@ func contextOrBackground(ctx context.Context) context.Context {
 		return context.Background()
 	}
 	return ctx
-}
-
-func loggerOrDefault(next *slog.Logger) *slog.Logger {
-	if next == nil {
-		return Logger()
-	}
-	return next
 }
 
 func parseLevel(raw string) (slog.Level, error) {
