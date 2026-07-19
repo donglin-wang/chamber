@@ -1,6 +1,8 @@
 package puller
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,6 +10,7 @@ import (
 	"testing"
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
@@ -35,6 +38,26 @@ func TestNewRequiresConfiguredImageRoot(t *testing.T) {
 func TestNewRequiresDirectoryManager(t *testing.T) {
 	if _, err := New(chamberImage.Config{}, nil); err == nil {
 		t.Fatal("New() error = nil, want directory manager error")
+	} else if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("New() error = %v, want invalid request code", err)
+	}
+}
+
+func TestPullRejectsUnsupportedPolicy(t *testing.T) {
+	puller, err := New(chamberImage.Config{Root: filepath.Join(privateTempDir(t), "images")}, localfs.NewDirectoryManager())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, err = puller.Pull(context.Background(), chamberImage.PullRequest{
+		Reference: "example.com/library/busybox:latest",
+		Policy:    chamberImage.PullPolicy("eventually"),
+	})
+	if err == nil {
+		t.Fatal("Pull() error = nil, want unsupported policy error")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("Pull() error = %v, want invalid request code", err)
 	}
 }
 
@@ -114,7 +137,7 @@ func TestExistingPulledImageRequiresMatchingReferenceAnnotation(t *testing.T) {
 		t.Fatalf("AppendImage() error = %v", err)
 	}
 
-	_, err = existingPulledImage("example.com/library/busybox:latest", path)
+	_, err = existingPulledImage("example.com/library/busybox:latest", resolvePlatform(chamberImage.Platform{}), path)
 	if err == nil {
 		t.Fatal("existingPulledImage() error = nil, want missing reference error")
 	}

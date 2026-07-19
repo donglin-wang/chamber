@@ -22,6 +22,9 @@ The SDK layer is deliberately lower-level than the daemon:
 - It should be useful from Go directly and later from other languages through thin wrappers, likely around a small Go-built helper binary rather than duplicated logic.
 - It should not quietly promise daemon-grade safety. Shared roots, locking, cleanup, and crash recovery are caller responsibilities unless explicitly delegated to `chamberd`.
 - Public SDK packages live under `pkg/`, with stable user-facing types for the reusable image, bundle, runtime, and shared filesystem primitives.
+- Public SDK configs are final configs. Do not add SDK `Override` structs or
+  `Resolve` functions; callers are expected to resolve files, environment,
+  defaults, and command-line inputs before constructing SDK objects.
 
 The daemon layer adds the reliability contract:
 
@@ -75,14 +78,15 @@ The current repo is still early and may not yet have the final public SDK layout
 
 Important current boundaries:
 
-- `pkg/image`: public puller contract, pull request platform/auth fields, image-root config, and small layout helpers. Configured image roots are the source of truth for pulled-image storage; concrete pullers derive destinations from canonical image references. SDK callers own root placement, locking, cleanup, and recovery.
+- `pkg/image`: public puller contract, pull request platform/auth/policy fields, image-root config, and small layout helpers. Configured image roots are the source of truth for pulled-image storage; concrete pullers derive destinations directly with `DestinationForCanonicalImage(root, ref, platform)`. `PullIfMissing` reuses local layouts, while `PullAlways` refreshes mutable references. SDK callers own root placement, locking, cleanup, and recovery.
 - `pkg/image/puller`: concrete OCI image puller using `go-containerregistry`. It honors platform/auth request fields and must keep the atomic temp-then-rename layout write behavior. Future sibling implementation packages may include `pkg/image/pusher` and `pkg/image/inspector`.
-- `pkg/bundle`: public bundle provisioning contract, bundle-root config, `ProcessSpec`, and `RootFS.Mounts`. `RootFS.Mounts` is intentionally ahead of runtime support as a future overlayfs/snapshot hook.
+- `pkg/bundle`: public bundle provisioning contract, bundle-root config, `ProcessSpec`, and provisioner-applied `Mounts`. `ProcessSpec.Terminal` is a pointer so callers can distinguish "leave the image default alone" from "force true/false". Do not expose future runtime-applied rootfs mount hooks before a runtime implementation supports them.
 - `pkg/bundle/directory`: concrete directory-backed OCI bundle provisioner using `umoci`. It currently supports rootless provisioning and owns unpacking, rootless OCI spec patching, private `config.json` writes, temporary staging, and atomic final bundle placement.
-- `pkg/runtime`: public runtime contract and runtime config. The shared `runtime.New` constructor owns shared validation, including Linux host gating, implementation name/capability checks, and private runtime directory creation, then dispatches to the registered concrete implementation constructor. Concrete runtime constructors own implementation-specific initialization such as binary verification/download and runtime-owned log handling. The `Runtime` interface includes `Descriptor`, `Binary`, `Run`, `State`, `Signal`, `Delete`, and `ReadLog`. `Run` returns only a `Process`; it must not pretend to return current container lifecycle state. Use `State` for actual runtime state.
-- `pkg/runtime/runc`: concrete `runc` adapter, including runtime binary ensure/download, state/signal/delete calls, and runtime-owned log handling. It must continue rejecting non-empty `RootFS.Mounts` until mount application exists.
+- `pkg/runtime`: public runtime contract and runtime config. The shared `runtime.New` constructor owns shared validation, including Linux host gating, implementation name/capability checks, and private runtime directory creation, then dispatches to the registered concrete implementation constructor. Concrete runtime constructors own implementation-specific initialization such as binary verification/download and runtime-owned log handling. The `Runtime` interface includes `Descriptor`, `Binary`, `Run`, `State`, `Signal`, `Delete`, and `ReadLog`. `Run` returns only a `Process`; it must not pretend to return current container lifecycle state. Use `State` for actual runtime state. Runtime statuses, signals, and log streams should use the fixed runtime string types and constants instead of raw unbounded strings at public boundaries.
+- `pkg/runtime/runc`: concrete `runc` adapter, including runtime binary ensure/download, state/signal/delete calls, and runtime-owned log handling.
 - `pkg/shared/errors`: canonical public Chamber error-code taxonomy. The daemon and SDK adapters should use these durable codes for contract errors and response mapping.
 - `pkg/shared/containerid`: shared container ID validation used by provisioning and runtime adapters so bundle creation cannot accept IDs the runtime later rejects.
+- `pkg/shared/imageref`: shared image reference validation and canonicalization used by image and bundle adapters so callers can provision with the same non-canonical reference they used to pull.
 - `pkg/shared/localfs`: explicit filesystem dependency for private directories and temp files. It owns filesystem policy primitives, not broad utility behavior.
 - `pkg/shared/testutil`: shared tests helpers. Its location is not ideal, but keep it there for now.
 - `daemon/metadata`: daemon-owned durable vocabulary for images, containers, operations, and states. Keep daemon-only sentinel storage errors such as `ErrNotFound` and `ErrAlreadyExists` here, but use `pkg/shared/errors.Code` for durable operation/container error codes.

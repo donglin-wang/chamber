@@ -17,6 +17,8 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
+	"github.com/donglin-wang/chamber/pkg/shared/imageref"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -45,33 +47,29 @@ func WithIDMap(uid uint32, gid uint32) Option {
 
 func New(config chamberBundle.Config, directoryManager localfs.DirectoryManager, options ...Option) (*Provisioner, error) {
 	if directoryManager == nil {
-		return nil, fmt.Errorf("directory manager is required")
+		return nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
 	installApexBridge()
 
-	resolved, err := chamberBundle.Resolve(config, chamberBundle.Override{})
+	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
 	if err != nil {
 		return nil, err
 	}
-	logger, err := chamberLogging.ResolveLogger(resolved.Logging, nil)
-	if err != nil {
-		return nil, err
+	if config.Privilege == "" {
+		return nil, fmt.Errorf("%w: bundle privilege is required", chamberErrors.ErrInvalidRequest)
 	}
-	if resolved.Privilege == "" {
-		resolved.Privilege = capability.Rootless
+	if config.Privilege != capability.Rootless {
+		return nil, fmt.Errorf("%w: directory bundle provisioner does not support %q privilege", chamberErrors.ErrInvalidRequest, config.Privilege)
 	}
-	if resolved.Privilege != capability.Rootless {
-		return nil, fmt.Errorf("directory bundle provisioner does not support %q privilege", resolved.Privilege)
+	if config.Root == "" {
+		return nil, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
 	}
-	if resolved.Root == "" {
-		return nil, fmt.Errorf("bundle root is required")
-	}
-	if err := directoryManager.MkdirPrivate(resolved.Root); err != nil {
+	if err := directoryManager.MkdirPrivate(config.Root); err != nil {
 		return nil, fmt.Errorf("create bundle root: %w", err)
 	}
 
 	provisioner := &Provisioner{
-		config:           resolved,
+		config:           config,
 		uid:              uint32(os.Geteuid()),
 		gid:              uint32(os.Getegid()),
 		directoryManager: directoryManager,
@@ -102,26 +100,30 @@ func (p *Provisioner) Provision(
 		return chamberBundle.ProvisionedBundle{}, err
 	}
 	if p == nil || p.directoryManager == nil {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("directory manager is required")
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
 	if p.config.Root == "" {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("bundle root is required")
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := containerid.Validate(request.ContainerID); err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
 	if request.ImageLayout == "" {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("image layout is required")
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: image layout is required", chamberErrors.ErrInvalidRequest)
 	}
 	if request.ImageRef == "" {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("image ref is required")
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: image ref is required", chamberErrors.ErrInvalidRequest)
+	}
+	imageRef, err := imageref.Canonical(request.ImageRef)
+	if err != nil {
+		return chamberBundle.ProvisionedBundle{}, err
 	}
 
 	bundleRoot := p.config.Root
 	finalBundle := filepath.Join(bundleRoot, request.ContainerID)
 	chamberLogging.InfoWith(p.logger, ctx, "provisioning bundle",
 		"container_id", request.ContainerID,
-		"image_ref", request.ImageRef,
+		"image_ref", imageRef,
 		"image_layout", request.ImageLayout,
 		"bundle_path", finalBundle,
 	)
@@ -147,7 +149,7 @@ func (p *Provisioner) Provision(
 		GIDMappings: []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.gid, Size: 1}},
 		Rootless:    true,
 	}
-	if err := ociumoci.Unpack(engine, request.ImageRef, tmpBundle, layer.UnpackOptions{
+	if err := ociumoci.Unpack(engine, imageRef, tmpBundle, layer.UnpackOptions{
 		OnDiskFormat: layer.DirRootfs{MapOptions: mapOptions},
 	}); err != nil {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("unpack OCI image into runtime bundle: %w", err)
@@ -175,7 +177,6 @@ func (p *Provisioner) Provision(
 	provisioned := chamberBundle.ProvisionedBundle{
 		ContainerID: request.ContainerID,
 		BundlePath:  finalBundle,
-		RootFS:      chamberBundle.RootFS{},
 	}
 	chamberLogging.InfoWith(p.logger, ctx, "provisioned bundle",
 		"container_id", provisioned.ContainerID,
@@ -228,10 +229,10 @@ func patchRootlessSpec(
 	mounts []specs.Mount,
 ) error {
 	if spec == nil {
-		return fmt.Errorf("runtime spec is required")
+		return fmt.Errorf("%w: runtime spec is required", chamberErrors.ErrInvalidRequest)
 	}
 	if spec.Process == nil {
-		return fmt.Errorf("runtime spec process is required")
+		return fmt.Errorf("%w: runtime spec process is required", chamberErrors.ErrInvalidRequest)
 	}
 	if spec.Linux == nil {
 		spec.Linux = &specs.Linux{}
@@ -244,7 +245,9 @@ func patchRootlessSpec(
 	spec.Linux.Resources = nil
 	spec.Mounts = removeCgroupMounts(spec.Mounts)
 	spec.Mounts = append(spec.Mounts, cloneMounts(mounts)...)
-	spec.Process.Terminal = process.Terminal
+	if process.Terminal != nil {
+		spec.Process.Terminal = *process.Terminal
+	}
 
 	if len(process.Args) > 0 {
 		spec.Process.Args = slices.Clone(process.Args)
@@ -268,12 +271,12 @@ func normalizeBindMounts(mounts []chamberBundle.Mount) ([]specs.Mount, error) {
 			mountType = "bind"
 		}
 		if mountType != "bind" {
-			return nil, fmt.Errorf("unsupported rootless mount type %q", mount.Type)
+			return nil, fmt.Errorf("%w: unsupported rootless mount type %q", chamberErrors.ErrInvalidRequest, mount.Type)
 		}
 
 		source := strings.TrimSpace(mount.Source)
 		if source == "" {
-			return nil, fmt.Errorf("bind mount source is required")
+			return nil, fmt.Errorf("%w: bind mount source is required", chamberErrors.ErrInvalidRequest)
 		}
 		absoluteSource, err := filepath.Abs(source)
 		if err != nil {
@@ -285,7 +288,7 @@ func normalizeBindMounts(mounts []chamberBundle.Mount) ([]specs.Mount, error) {
 
 		target := path.Clean(strings.TrimSpace(mount.Target))
 		if !path.IsAbs(target) || target == "/" {
-			return nil, fmt.Errorf("bind mount target must be an absolute container path below root: %q", mount.Target)
+			return nil, fmt.Errorf("%w: bind mount target must be an absolute container path below root: %q", chamberErrors.ErrInvalidRequest, mount.Target)
 		}
 
 		options := slices.Clone(mount.Options)
@@ -347,7 +350,7 @@ func createBindMountTargets(rootfs string, mounts []specs.Mount) error {
 func rootfsPath(rootfs string, target string) (string, error) {
 	cleanTarget := path.Clean(target)
 	if !path.IsAbs(cleanTarget) || cleanTarget == "/" {
-		return "", fmt.Errorf("bind mount target must be an absolute container path below root: %q", target)
+		return "", fmt.Errorf("%w: bind mount target must be an absolute container path below root: %q", chamberErrors.ErrInvalidRequest, target)
 	}
 	joined, err := securejoin.SecureJoin(rootfs, strings.TrimPrefix(cleanTarget, "/"))
 	if err != nil {
@@ -374,9 +377,6 @@ func applyProcessUser(process *specs.Process, user chamberBundle.ProcessUser) {
 	}
 	if user.AdditionalGIDs != nil {
 		process.User.AdditionalGids = slices.Clone(user.AdditionalGIDs)
-	}
-	if user.Username != "" {
-		process.User.Username = user.Username
 	}
 }
 

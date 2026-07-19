@@ -1,33 +1,47 @@
 package image
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
-	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
-func TestResolveAppliesLoggingOverride(t *testing.T) {
+func TestDefaultConfig(t *testing.T) {
 	root := t.TempDir()
 
-	cfg, err := Resolve(DefaultConfig(root), Override{
-		Logging: chamberLogging.Override{
-			Level:  ptr("debug"),
-			Format: ptr("text"),
-		},
-	})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
+	cfg := DefaultConfig(root)
 
 	if cfg.Root != filepath.Join(root, "images") {
 		t.Fatalf("Root = %q, want default image root", cfg.Root)
 	}
-	if cfg.Logging != (chamberLogging.Config{Level: "debug", Format: "text"}) {
-		t.Fatalf("Logging = %#v, want debug text", cfg.Logging)
+}
+
+func TestDestinationForCanonicalImageIncludesPlatform(t *testing.T) {
+	root := t.TempDir()
+	amd64Path, err := DestinationForCanonicalImage(root, "example.com/library/app:latest", Platform{
+		OS:           "linux",
+		Architecture: "amd64",
+	})
+	if err != nil {
+		t.Fatalf("DestinationForCanonicalImage(amd64) error = %v", err)
+	}
+	arm64Path, err := DestinationForCanonicalImage(root, "example.com/library/app:latest", Platform{
+		OS:           "linux",
+		Architecture: "arm64",
+	})
+	if err != nil {
+		t.Fatalf("DestinationForCanonicalImage(arm64) error = %v", err)
+	}
+	if amd64Path == arm64Path {
+		t.Fatalf("platform-specific destinations matched: %q", amd64Path)
 	}
 }
 
-func ptr(value string) *string {
-	return &value
+func TestDestinationForCanonicalImageWrapsInvalidRequest(t *testing.T) {
+	_, err := DestinationForCanonicalImage("", "example.com/library/app:latest", Platform{})
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("DestinationForCanonicalImage() error = %v, want invalid request code", err)
+	}
 }

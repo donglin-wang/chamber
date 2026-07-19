@@ -10,18 +10,34 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"time"
 
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-var ErrRootRequired = errors.New("image root is required")
+var ErrRootRequired = fmt.Errorf("%w: image root is required", chamberErrors.ErrInvalidRequest)
+
+type PullPolicy string
+
+const (
+	// PullIfMissing reuses an existing layout for the same canonical reference
+	// and platform. It is the default when PullRequest.Policy is empty.
+	PullIfMissing PullPolicy = "if_missing"
+
+	// PullAlways fetches the reference again and replaces any existing layout at
+	// the derived destination. SDK callers are responsible for coordinating
+	// concurrent pulls to the same image root.
+	PullAlways PullPolicy = "always"
+)
 
 type PullRequest struct {
 	Reference string
 	Platform  Platform
 	Auth      *Auth
+	Policy    PullPolicy // empty means PullIfMissing
 }
 
 type Platform struct {
@@ -48,17 +64,31 @@ type Puller interface {
 	Pull(ctx context.Context, request PullRequest) (PulledImage, error)
 }
 
-// DestinationForCanonicalReference returns the deterministic layout path for a
-// reference that has already been canonicalized by the image implementation.
-func DestinationForCanonicalReference(root string, reference string) (string, error) {
+// DestinationForCanonicalImage returns the deterministic layout path for a
+// canonical image reference and platform.
+func DestinationForCanonicalImage(root string, reference string, platform Platform) (string, error) {
 	if strings.TrimSpace(root) == "" {
 		return "", ErrRootRequired
 	}
 	if strings.TrimSpace(reference) == "" {
-		return "", errors.New("canonical image reference is required")
+		return "", fmt.Errorf("%w: canonical image reference is required", chamberErrors.ErrInvalidRequest)
 	}
-	sum := sha256.Sum256([]byte(reference))
+	identity := reference + "\n" + normalizePlatform(platform)
+	sum := sha256.Sum256([]byte(identity))
 	return filepath.Join(root, hex.EncodeToString(sum[:])), nil
+}
+
+func normalizePlatform(platform Platform) string {
+	os := strings.TrimSpace(platform.OS)
+	if os == "" {
+		os = "linux"
+	}
+	architecture := strings.TrimSpace(platform.Architecture)
+	if architecture == "" {
+		architecture = goruntime.GOARCH
+	}
+	variant := strings.TrimSpace(platform.Variant)
+	return os + "/" + architecture + "/" + variant
 }
 
 func LayoutExists(path string) bool {

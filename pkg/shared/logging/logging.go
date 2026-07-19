@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
 const (
@@ -23,11 +25,6 @@ type Config struct {
 }
 
 type SlogLogger = slog.Logger
-
-type Override struct {
-	Level  *string `json:"level,omitempty"`
-	Format *string `json:"format,omitempty"`
-}
 
 var (
 	loggerMu sync.RWMutex
@@ -83,30 +80,22 @@ func DefaultConfig() Config {
 	}
 }
 
-// Resolve applies overrides and validates the resulting logging config.
-func Resolve(defaultConfig Config, override Override) (Config, error) {
-	if override.Level != nil {
-		defaultConfig.Level = *override.Level
+func normalized(config Config) (Config, error) {
+	if config.Level == "" {
+		config.Level = DefaultLevel
 	}
-	if override.Format != nil {
-		defaultConfig.Format = *override.Format
+	if config.Format == "" {
+		config.Format = DefaultFormat
 	}
-
-	if defaultConfig.Level == "" {
-		defaultConfig.Level = DefaultLevel
-	}
-	if defaultConfig.Format == "" {
-		defaultConfig.Format = DefaultFormat
-	}
-	if _, err := parseLevel(defaultConfig.Level); err != nil {
+	if _, err := parseLevel(config.Level); err != nil {
 		return Config{}, err
 	}
-	switch normalizeFormat(defaultConfig.Format) {
+	switch normalizeFormat(config.Format) {
 	case "json", "text":
 	default:
-		return Config{}, fmt.Errorf("unsupported log format %q", defaultConfig.Format)
+		return Config{}, fmt.Errorf("%w: unsupported log format %q", chamberErrors.ErrInvalidRequest, config.Format)
 	}
-	return defaultConfig, nil
+	return config, nil
 }
 
 // Configure applies a non-zero logging config to the process-wide Chamber SDK
@@ -127,10 +116,10 @@ func Configure(config Config, w io.Writer) error {
 	return nil
 }
 
-// ResolveLogger returns the logger an SDK component should use without
+// LoggerFromConfig returns the logger an SDK component should use without
 // replacing the process-wide Chamber logger. A zero config inherits the current
 // package logger.
-func ResolveLogger(config Config, w io.Writer) (*slog.Logger, error) {
+func LoggerFromConfig(config Config, w io.Writer) (*slog.Logger, error) {
 	if config == (Config{}) {
 		return Logger(), nil
 	}
@@ -164,10 +153,7 @@ func NewLogger(w io.Writer, config Config) (*slog.Logger, error) {
 	if config.Logger != nil {
 		return config.Logger, nil
 	}
-	resolved, err := Resolve(DefaultConfig(), Override{
-		Level:  stringPtr(config.Level),
-		Format: stringPtr(config.Format),
-	})
+	config, err := normalized(config)
 	if err != nil {
 		return nil, err
 	}
@@ -175,15 +161,15 @@ func NewLogger(w io.Writer, config Config) (*slog.Logger, error) {
 		w = os.Stderr
 	}
 
-	level, _ := parseLevel(resolved.Level)
+	level, _ := parseLevel(config.Level)
 	options := &slog.HandlerOptions{Level: level}
-	switch normalizeFormat(resolved.Format) {
+	switch normalizeFormat(config.Format) {
 	case "json":
 		return slog.New(slog.NewJSONHandler(w, options)), nil
 	case "text":
 		return slog.New(slog.NewTextHandler(w, options)), nil
 	default:
-		return nil, fmt.Errorf("unsupported log format %q", resolved.Format)
+		return nil, fmt.Errorf("%w: unsupported log format %q", chamberErrors.ErrInvalidRequest, config.Format)
 	}
 }
 
@@ -209,17 +195,10 @@ func parseLevel(raw string) (slog.Level, error) {
 	case "error":
 		return slog.LevelError, nil
 	default:
-		return slog.LevelInfo, fmt.Errorf("unsupported log level %q", raw)
+		return slog.LevelInfo, fmt.Errorf("%w: unsupported log level %q", chamberErrors.ErrInvalidRequest, raw)
 	}
 }
 
 func normalizeFormat(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
-}
-
-func stringPtr(value string) *string {
-	if value == "" {
-		return nil
-	}
-	return &value
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -12,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
 func TestNewJSONLoggerEmitsJSON(t *testing.T) {
@@ -117,12 +120,16 @@ func TestConfigureAcceptsCustomLogger(t *testing.T) {
 	}
 }
 
-func TestResolveRejectsUnsupportedLoggingConfig(t *testing.T) {
-	if _, err := Resolve(DefaultConfig(), Override{Level: ptr("trace")}); err == nil {
-		t.Fatal("Resolve() error = nil, want invalid level error")
+func TestNewLoggerRejectsUnsupportedLoggingConfig(t *testing.T) {
+	if _, err := NewLogger(nil, Config{Level: "trace"}); err == nil {
+		t.Fatal("NewLogger() error = nil, want invalid level error")
+	} else if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("NewLogger(level) error = %v, want invalid request code", err)
 	}
-	if _, err := Resolve(DefaultConfig(), Override{Format: ptr("pretty")}); err == nil {
-		t.Fatal("Resolve() error = nil, want invalid format error")
+	if _, err := NewLogger(nil, Config{Format: "pretty"}); err == nil {
+		t.Fatal("NewLogger() error = nil, want invalid format error")
+	} else if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("NewLogger(format) error = %v, want invalid request code", err)
 	}
 }
 

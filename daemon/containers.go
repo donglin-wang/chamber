@@ -123,10 +123,11 @@ func registerContainerRoutes(
 			return
 		}
 
-		stream := strings.TrimSpace(r.URL.Query().Get("stream"))
-		if stream == "" {
-			stream = chamberRuntime.StdoutLogStream
+		rawStream := strings.TrimSpace(r.URL.Query().Get("stream"))
+		if rawStream == "" {
+			rawStream = string(chamberRuntime.StdoutLogStream)
 		}
+		stream := chamberRuntime.LogStream(rawStream)
 		if stream != chamberRuntime.StdoutLogStream && stream != chamberRuntime.StderrLogStream {
 			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "unsupported log stream")
 			return
@@ -160,7 +161,7 @@ func registerContainerRoutes(
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Chamber-Container-ID", container.ID)
-		w.Header().Set("X-Chamber-Log-Stream", stream)
+		w.Header().Set("X-Chamber-Log-Stream", string(stream))
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(content)
 	})

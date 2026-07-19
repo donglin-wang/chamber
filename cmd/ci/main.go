@@ -17,6 +17,7 @@ import (
 	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	_ "github.com/donglin-wang/chamber/pkg/runtime/runc"
+	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	"github.com/donglin-wang/chamber/pkg/shared/logging"
 	"github.com/google/uuid"
@@ -102,6 +103,8 @@ func run(cfg *config) error {
 	runtime, err := chamberRuntime.New(ctx, chamberRuntime.Config{
 		RuntimeRoot:   paths.runtimeRoot,
 		RuntimeBinDir: paths.runtimeBinDir,
+		Name:          chamberRuntime.RuntimeNameRunc,
+		Privilege:     capability.Rootless,
 		Logging:       loggingConfig,
 	}, directoryManager)
 	if err != nil {
@@ -125,8 +128,9 @@ func run(cfg *config) error {
 
 	provisioner, err := chamberDirectoryProvisioner.New(
 		chamberBundle.Config{
-			Root:    paths.bundleRoot,
-			Logging: loggingConfig,
+			Root:      paths.bundleRoot,
+			Privilege: capability.Rootless,
+			Logging:   loggingConfig,
 		},
 		directoryManager,
 		chamberDirectoryProvisioner.WithIDMap(uint32(os.Geteuid()), uint32(os.Getegid())),

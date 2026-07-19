@@ -18,40 +18,40 @@ import (
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
-func TestOverrideFieldsMatchConfigFields(t *testing.T) {
+func TestInputFieldsMatchConfigFields(t *testing.T) {
 	configType := reflect.TypeOf(Config{})
-	overrideType := reflect.TypeOf(Override{})
+	inputType := reflect.TypeOf(Input{})
 
 	configFields := fieldsByName(configType)
-	overrideFields := fieldsByName(overrideType)
+	inputFields := fieldsByName(inputType)
 
 	for name, configField := range configFields {
-		overrideField, ok := overrideFields[name]
+		inputField, ok := inputFields[name]
 		if !ok {
-			t.Fatalf("Override is missing field %s", name)
+			t.Fatalf("Input is missing field %s", name)
 		}
 
 		wantType := reflect.PointerTo(configField.Type)
 		switch name {
 		case "Bundle":
-			wantType = reflect.TypeOf(chamberBundle.Override{})
+			wantType = reflect.TypeOf(bundleInput{})
 		case "Image":
-			wantType = reflect.TypeOf(chamberImage.Override{})
+			wantType = reflect.TypeOf(imageInput{})
 		case "Runtime":
-			wantType = reflect.TypeOf(chamberRuntime.Override{})
+			wantType = reflect.TypeOf(runtimeInput{})
 		case "Metadata":
-			wantType = reflect.TypeOf(metadata.Override{})
+			wantType = reflect.TypeOf(metadataInput{})
 		case "Logging":
-			wantType = reflect.TypeOf(chamberLogging.Override{})
+			wantType = reflect.TypeOf(loggingInput{})
 		}
-		if overrideField.Type != wantType {
-			t.Fatalf("Override.%s has type %s, want %s", name, overrideField.Type, wantType)
+		if inputField.Type != wantType {
+			t.Fatalf("Input.%s has type %s, want %s", name, inputField.Type, wantType)
 		}
 	}
 
-	for name := range overrideFields {
+	for name := range inputFields {
 		if _, ok := configFields[name]; !ok {
-			t.Fatalf("Override has extra field %s", name)
+			t.Fatalf("Input has extra field %s", name)
 		}
 	}
 }
@@ -129,7 +129,7 @@ func TestPublicPackagesDoNotImportDaemonPackages(t *testing.T) {
 func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 	xdgDataHome := filepath.Join(t.TempDir(), "xdg-data")
 
-	cfg, err := Load(Override{}, mapGetenv(map[string]string{
+	cfg, err := Load(Input{}, mapGetenv(map[string]string{
 		"XDG_DATA_HOME": xdgDataHome,
 		"HOME":          filepath.Join(t.TempDir(), "home"),
 	}))
@@ -177,7 +177,7 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 func TestLoadFallsBackToHomeWhenXDGDataHomeIsUnset(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 
-	cfg, err := Load(Override{}, mapGetenv(map[string]string{
+	cfg, err := Load(Input{}, mapGetenv(map[string]string{
 		"HOME": home,
 	}))
 	if err != nil {
@@ -213,10 +213,10 @@ func TestLoadPanicsWhenRootPathCannotBeDerived(t *testing.T) {
 		}
 	}()
 
-	_, _ = Load(Override{}, mapGetenv(nil))
+	_, _ = Load(Input{}, mapGetenv(nil))
 }
 
-func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
+func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 	defaultConfig := Config{
 		HTTPAddr:   "127.0.0.1:8080",
 		SocketPath: "default/run/chamber.sock",
@@ -249,24 +249,24 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 			Format: "text",
 		},
 	}
-	override := Override{
+	input := Input{
 		HTTPAddr:   ptr("127.0.0.1:9090"),
-		SocketPath: ptr("override/run/chamber.sock"),
-		TmpRoot:    ptr("override/tmp"),
+		SocketPath: ptr("input/run/chamber.sock"),
+		TmpRoot:    ptr("input/tmp"),
 		Privilege:  ptr(capability.Rootful),
-		Bundle: chamberBundle.Override{
-			Root: ptr("override/bundles"),
+		Bundle: bundleInput{
+			Root: ptr("input/bundles"),
 		},
-		Image: chamberImage.Override{
-			Root: ptr("override/images"),
+		Image: imageInput{
+			Root: ptr("input/images"),
 		},
-		Runtime: chamberRuntime.Override{
-			RuntimeRoot:   ptr("override/runtime"),
-			RuntimeBinDir: ptr("override/bin"),
+		Runtime: runtimeInput{
+			RuntimeRoot:   ptr("input/runtime"),
+			RuntimeBinDir: ptr("input/bin"),
 			Name:          ptr(chamberRuntime.RuntimeNameRunc),
 		},
-		Metadata: metadata.Override{
-			Root: ptr("override/metadata"),
+		Metadata: metadataInput{
+			Root: ptr("input/metadata"),
 		},
 
 		OpenTelemetryEndpoint:              ptr("otel.example.test:4317"),
@@ -274,24 +274,24 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		OpenTelemetryTraceSampleRatio:      ptr(0.75),
 		OpenTelemetryMetricsExportInterval: ptr(30 * time.Second),
 
-		Logging: chamberLogging.Override{
+		Logging: loggingInput{
 			Level:  ptr("debug"),
 			Format: ptr("text"),
 		},
 	}
 
-	cfg, err := Resolve(defaultConfig, override)
+	cfg, err := ApplyInput(defaultConfig, input)
 	if err != nil {
-		t.Fatalf("Resolve returned error: %v", err)
+		t.Fatalf("ApplyInput returned error: %v", err)
 	}
 
 	want := Config{
 		HTTPAddr:   "127.0.0.1:9090",
-		SocketPath: mustAbs(t, "override/run/chamber.sock"),
-		TmpRoot:    mustAbs(t, "override/tmp"),
+		SocketPath: mustAbs(t, "input/run/chamber.sock"),
+		TmpRoot:    mustAbs(t, "input/tmp"),
 		Privilege:  capability.Rootful,
 		Bundle: chamberBundle.Config{
-			Root:      mustAbs(t, "override/bundles"),
+			Root:      mustAbs(t, "input/bundles"),
 			Privilege: capability.Rootful,
 			Logging: chamberLogging.Config{
 				Level:  "debug",
@@ -299,15 +299,15 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 			},
 		},
 		Image: chamberImage.Config{
-			Root: mustAbs(t, "override/images"),
+			Root: mustAbs(t, "input/images"),
 			Logging: chamberLogging.Config{
 				Level:  "debug",
 				Format: "text",
 			},
 		},
 		Runtime: chamberRuntime.Config{
-			RuntimeRoot:   mustAbs(t, "override/runtime"),
-			RuntimeBinDir: mustAbs(t, "override/bin"),
+			RuntimeRoot:   mustAbs(t, "input/runtime"),
+			RuntimeBinDir: mustAbs(t, "input/bin"),
 			Name:          chamberRuntime.RuntimeNameRunc,
 			Privilege:     capability.Rootful,
 			Logging: chamberLogging.Config{
@@ -316,7 +316,7 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 			},
 		},
 		Metadata: metadata.Config{
-			Root: mustAbs(t, "override/metadata"),
+			Root: mustAbs(t, "input/metadata"),
 		},
 
 		OpenTelemetryEndpoint:              "otel.example.test:4317",
@@ -330,11 +330,11 @@ func TestResolveAppliesOverridesAndAbsolutizesPaths(t *testing.T) {
 		},
 	}
 	if !reflect.DeepEqual(cfg, want) {
-		t.Fatalf("Resolve() config mismatch:\n got: %#v\nwant: %#v", cfg, want)
+		t.Fatalf("ApplyInput() config mismatch:\n got: %#v\nwant: %#v", cfg, want)
 	}
 }
 
-func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
+func TestApplyInputLeavesDefaultsWhenInputFieldsAreNil(t *testing.T) {
 	root := t.TempDir()
 	defaultConfig := Config{
 		HTTPAddr:   "127.0.0.1:8080",
@@ -381,29 +381,29 @@ func TestResolveLeavesDefaultsWhenOverrideFieldsAreNil(t *testing.T) {
 		},
 	}
 
-	cfg, err := Resolve(defaultConfig, Override{})
+	cfg, err := ApplyInput(defaultConfig, Input{})
 	if err != nil {
-		t.Fatalf("Resolve returned error: %v", err)
+		t.Fatalf("ApplyInput returned error: %v", err)
 	}
 
 	if !reflect.DeepEqual(cfg, defaultConfig) {
-		t.Fatalf("Resolve() config mismatch:\n got: %#v\nwant: %#v", cfg, defaultConfig)
+		t.Fatalf("ApplyInput() config mismatch:\n got: %#v\nwant: %#v", cfg, defaultConfig)
 	}
 }
 
-func TestResolveProjectsTopLevelPrivilegeToSDKConfigs(t *testing.T) {
-	cfg, err := Resolve(Config{
+func TestApplyInputProjectsTopLevelPrivilegeToSDKConfigs(t *testing.T) {
+	cfg, err := ApplyInput(Config{
 		Bundle: chamberBundle.Config{
 			Privilege: capability.Rootless,
 		},
 		Runtime: chamberRuntime.Config{
 			Privilege: capability.Rootless,
 		},
-	}, Override{
+	}, Input{
 		Privilege: ptr(capability.Rootful),
 	})
 	if err != nil {
-		t.Fatalf("Resolve returned error: %v", err)
+		t.Fatalf("ApplyInput returned error: %v", err)
 	}
 
 	if cfg.Privilege != capability.Rootful {
@@ -417,34 +417,34 @@ func TestResolveProjectsTopLevelPrivilegeToSDKConfigs(t *testing.T) {
 	}
 }
 
-func TestResolveRejectsNestedSDKPrivilegeOverrides(t *testing.T) {
-	tests := map[string]Override{
+func TestApplyInputRejectsNestedSDKPrivilegeInputs(t *testing.T) {
+	tests := map[string]Input{
 		"bundle": {
-			Bundle: chamberBundle.Override{
+			Bundle: bundleInput{
 				Privilege: ptr(capability.Rootful),
 			},
 		},
 		"runtime": {
-			Runtime: chamberRuntime.Override{
+			Runtime: runtimeInput{
 				Privilege: ptr(capability.Rootful),
 			},
 		},
 	}
 
-	for name, override := range tests {
+	for name, input := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := Resolve(Config{}, override)
+			_, err := ApplyInput(Config{}, input)
 			if err == nil {
-				t.Fatal("Resolve() error = nil, want nested privilege override error")
+				t.Fatal("ApplyInput() error = nil, want nested privilege input error")
 			}
 			if !strings.Contains(err.Error(), "top-level privilege") {
-				t.Fatalf("Resolve() error = %v, want top-level privilege error", err)
+				t.Fatalf("ApplyInput() error = %v, want top-level privilege error", err)
 			}
 		})
 	}
 }
 
-func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
+func TestLoadFileAppliesConfigFileThenCommandLineInput(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chamberd.json")
 	content := `{
 		"http_addr": "127.0.0.1:9090",
@@ -463,7 +463,7 @@ func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
 		t.Fatalf("write config file: %v", err)
 	}
 
-	cfg, err := LoadFile(path, Override{
+	cfg, err := LoadFile(path, Input{
 		HTTPAddr: ptr("127.0.0.1:7070"),
 	}, mapGetenv(map[string]string{
 		"HOME": t.TempDir(),
@@ -473,7 +473,7 @@ func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
 	}
 
 	if cfg.HTTPAddr != "127.0.0.1:7070" {
-		t.Fatalf("HTTPAddr = %q, want command-line override", cfg.HTTPAddr)
+		t.Fatalf("HTTPAddr = %q, want command-line input", cfg.HTTPAddr)
 	}
 	if cfg.TmpRoot != mustAbs(t, "file/tmp") {
 		t.Fatalf("TmpRoot = %q, want config file value", cfg.TmpRoot)
@@ -504,27 +504,27 @@ func TestLoadFileAppliesConfigFileThenCommandLineOverride(t *testing.T) {
 	}
 }
 
-func TestMergeOverrideAppliesPrivilegeOverlays(t *testing.T) {
-	base := Override{
+func TestMergeInputAppliesPrivilegeOverlays(t *testing.T) {
+	base := Input{
 		Privilege: ptr(capability.Rootless),
-		Bundle: chamberBundle.Override{
+		Bundle: bundleInput{
 			Privilege: ptr(capability.Rootless),
 		},
-		Runtime: chamberRuntime.Override{
+		Runtime: runtimeInput{
 			Privilege: ptr(capability.Rootless),
 		},
 	}
-	overlay := Override{
+	overlay := Input{
 		Privilege: ptr(capability.Rootful),
-		Bundle: chamberBundle.Override{
+		Bundle: bundleInput{
 			Privilege: ptr(capability.Rootful),
 		},
-		Runtime: chamberRuntime.Override{
+		Runtime: runtimeInput{
 			Privilege: ptr(capability.Rootful),
 		},
 	}
 
-	merged := MergeOverride(base, overlay)
+	merged := MergeInput(base, overlay)
 
 	if merged.Privilege == nil || *merged.Privilege != capability.Rootful {
 		t.Fatalf("Privilege = %v, want rootful", merged.Privilege)

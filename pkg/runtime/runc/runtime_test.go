@@ -17,6 +17,7 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
@@ -457,7 +458,7 @@ esac
 	if err != nil {
 		t.Fatalf("State() error = %v", err)
 	}
-	if state.ContainerID != "stateful" || state.Status != "running" {
+	if state.ContainerID != "stateful" || state.Status != chamberRuntime.ContainerStatusRunning {
 		t.Fatalf("State() = %#v, want stateful/running", state)
 	}
 	assertLines(t, filepath.Join(logDir, "state-args"), []string{"--root", stateRoot, "state", "stateful"})
@@ -480,12 +481,27 @@ esac
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
 	err := runtime.Signal(context.Background(), chamberRuntime.SignalRequest{
 		ContainerID: "signaled",
-		Signal:      "TERM",
+		Signal:      chamberRuntime.SignalTERM,
 	})
 	if err != nil {
 		t.Fatalf("Signal() error = %v", err)
 	}
 	assertLines(t, filepath.Join(logDir, "kill-args"), []string{"--root", stateRoot, "kill", "signaled", "TERM"})
+}
+
+func TestSignalRejectsUnsupportedSignal(t *testing.T) {
+	runtime := runtimeWithConfigOnly(t)
+
+	err := runtime.Signal(context.Background(), chamberRuntime.SignalRequest{
+		ContainerID: "signaled",
+		Signal:      chamberRuntime.Signal("HUP"),
+	})
+	if err == nil {
+		t.Fatal("Signal() error = nil, want unsupported signal error")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("Signal() error = %v, want invalid request code", err)
+	}
 }
 
 func TestDeleteRemovesRuncContainer(t *testing.T) {
@@ -538,29 +554,6 @@ func TestRunRejectsUnsafeContainerID(t *testing.T) {
 				t.Fatalf("Run() error = %v, want invalid container ID", err)
 			}
 		})
-	}
-}
-
-func TestRunRejectsRootFSMountsForNow(t *testing.T) {
-	runtime := runtimeWithConfigOnly(t)
-	_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
-		Bundle: chamberBundle.ProvisionedBundle{
-			ContainerID: "with-mounts",
-			BundlePath:  privateTempDir(t),
-			RootFS: chamberBundle.RootFS{
-				Mounts: []chamberBundle.Mount{{
-					Type:   "bind",
-					Source: "/tmp/source",
-					Target: "target",
-				}},
-			},
-		},
-	})
-	if err == nil {
-		t.Fatal("Run() error = nil, want unsupported mounts error")
-	}
-	if !strings.Contains(err.Error(), "mounts are not yet supported") {
-		t.Fatalf("Run() error = %v, want unsupported mounts message", err)
 	}
 }
 
@@ -658,11 +651,7 @@ func prepareRuntimeConfig(t testing.TB, config chamberRuntime.Config, directoryM
 	if config.Privilege == "" {
 		config.Privilege = capability.Rootless
 	}
-	resolved, err := chamberRuntime.Resolve(config, chamberRuntime.Override{})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	for _, path := range []string{resolved.RuntimeRoot, resolved.RuntimeBinDir} {
+	for _, path := range []string{config.RuntimeRoot, config.RuntimeBinDir} {
 		if path == "" {
 			continue
 		}
@@ -670,7 +659,7 @@ func prepareRuntimeConfig(t testing.TB, config chamberRuntime.Config, directoryM
 			t.Fatalf("MkdirPrivate(%q) error = %v", path, err)
 		}
 	}
-	return resolved
+	return config
 }
 
 type httpClientFunc func(*http.Request) (*http.Response, error)

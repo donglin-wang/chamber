@@ -72,7 +72,7 @@ func init() {
 }
 
 func newRuntime(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...option) (*Runtime, error) {
-	logger, err := chamberLogging.ResolveLogger(config.Logging, nil)
+	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -130,11 +130,11 @@ func (r *Runtime) Binary() chamberRuntime.Binary {
 
 func (r *Runtime) installBinary(ctx context.Context) error {
 	if r == nil || r.directoryManager == nil {
-		return fmt.Errorf("directory manager is required")
+		return fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
 	artifact := r.artifact
 	if artifact.version == "" || artifact.url == "" || artifact.sha256 == "" {
-		return fmt.Errorf("runc runtime requires version, url, and sha256")
+		return fmt.Errorf("%w: runc runtime requires version, url, and sha256", chamberErrors.ErrInvalidRequest)
 	}
 	expectedDigest, err := parseSHA256(artifact.sha256)
 	if err != nil {
@@ -177,18 +177,15 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 
 func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Process, error) {
 	if request.Bundle.BundlePath == "" {
-		return nil, fmt.Errorf("runtime bundle path is required")
+		return nil, fmt.Errorf("%w: runtime bundle path is required", chamberErrors.ErrInvalidRequest)
 	}
 	containerID := request.Bundle.ContainerID
 	if err := containerid.Validate(containerID); err != nil {
 		return nil, err
 	}
-	if len(request.Bundle.RootFS.Mounts) > 0 {
-		return nil, fmt.Errorf("runtime bundle rootfs mounts are not yet supported by runc Run")
-	}
 	binary := r.binary
 	if binary.Path == "" {
-		return nil, fmt.Errorf("runtime binary is required")
+		return nil, fmt.Errorf("%w: runtime binary is required", chamberErrors.ErrInvalidRequest)
 	}
 	stateRoot, err := r.stateRoot()
 	if err != nil {
@@ -223,7 +220,7 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 	return newRuncProcess(cmd, stdout, stderr), nil
 }
 
-func (r *Runtime) ReadLog(containerID string, stream string) ([]byte, error) {
+func (r *Runtime) ReadLog(containerID string, stream chamberRuntime.LogStream) ([]byte, error) {
 	path, err := r.logPath(containerID, stream)
 	if err != nil {
 		return nil, err
@@ -245,7 +242,7 @@ func (r *Runtime) State(ctx context.Context, containerID string) (chamberRuntime
 	}
 	return chamberRuntime.ContainerState{
 		ContainerID: containerID,
-		Status:      state.Status,
+		Status:      chamberRuntime.ContainerStatus(state.Status),
 	}, nil
 }
 
@@ -253,8 +250,11 @@ func (r *Runtime) Signal(ctx context.Context, request chamberRuntime.SignalReque
 	if err := containerid.Validate(request.ContainerID); err != nil {
 		return err
 	}
-	if strings.TrimSpace(request.Signal) == "" {
+	if strings.TrimSpace(string(request.Signal)) == "" {
 		return fmt.Errorf("%w: runtime signal is required", chamberErrors.ErrInvalidRequest)
+	}
+	if !chamberRuntime.IsSupportedSignal(request.Signal) {
+		return fmt.Errorf("%w: unsupported runtime signal %q", chamberErrors.ErrInvalidRequest, request.Signal)
 	}
 	binary, stateRoot, err := r.binaryAndStateRoot()
 	if err != nil {
@@ -264,7 +264,7 @@ func (r *Runtime) Signal(ctx context.Context, request chamberRuntime.SignalReque
 		"container_id", request.ContainerID,
 		"signal", request.Signal,
 	)
-	cmd := exec.CommandContext(ctx, binary.Path, "--root", stateRoot, "kill", request.ContainerID, request.Signal)
+	cmd := exec.CommandContext(ctx, binary.Path, "--root", stateRoot, "kill", request.ContainerID, string(request.Signal))
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("signal runc container %q: %w: %s", request.ContainerID, err, strings.TrimSpace(string(output)))
 	}
@@ -301,7 +301,7 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 		return nil, nil, err
 	}
 	if r.directoryManager == nil {
-		return nil, nil, fmt.Errorf("directory manager is required")
+		return nil, nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := r.directoryManager.MkdirPrivate(logDir); err != nil {
 		return nil, nil, fmt.Errorf("create runc log directory: %w", err)
@@ -328,16 +328,16 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 	return stdout, stderr, nil
 }
 
-func (r *Runtime) logPath(containerID string, stream string) (string, error) {
+func (r *Runtime) logPath(containerID string, stream chamberRuntime.LogStream) (string, error) {
 	logDir, err := r.logDir(containerID)
 	if err != nil {
 		return "", err
 	}
 	switch stream {
 	case chamberRuntime.StdoutLogStream, chamberRuntime.StderrLogStream:
-		return filepath.Join(logDir, stream+".log"), nil
+		return filepath.Join(logDir, string(stream)+".log"), nil
 	default:
-		return "", fmt.Errorf("unsupported log stream %q", stream)
+		return "", fmt.Errorf("%w: unsupported log stream %q", chamberErrors.ErrInvalidRequest, stream)
 	}
 }
 
@@ -355,7 +355,7 @@ func (r *Runtime) logDir(containerID string) (string, error) {
 func (r *Runtime) binaryAndStateRoot() (chamberRuntime.Binary, string, error) {
 	binary := r.binary
 	if binary.Path == "" {
-		return chamberRuntime.Binary{}, "", fmt.Errorf("runtime binary is required")
+		return chamberRuntime.Binary{}, "", fmt.Errorf("%w: runtime binary is required", chamberErrors.ErrInvalidRequest)
 	}
 	stateRoot, err := r.stateRoot()
 	if err != nil {
@@ -366,7 +366,7 @@ func (r *Runtime) binaryAndStateRoot() (chamberRuntime.Binary, string, error) {
 
 func (r *Runtime) stateRoot() (string, error) {
 	if r.config.RuntimeRoot == "" {
-		return "", fmt.Errorf("runtime root is required")
+		return "", fmt.Errorf("%w: runtime root is required", chamberErrors.ErrInvalidRequest)
 	}
 	runtimeRoot, err := absPath(r.config.RuntimeRoot)
 	if err != nil {
@@ -377,7 +377,7 @@ func (r *Runtime) stateRoot() (string, error) {
 
 func configuredBinary(config chamberRuntime.Config) (chamberRuntime.Binary, error) {
 	if config.RuntimeBinDir == "" {
-		return chamberRuntime.Binary{}, fmt.Errorf("runtime bin dir is required")
+		return chamberRuntime.Binary{}, fmt.Errorf("%w: runtime bin dir is required", chamberErrors.ErrInvalidRequest)
 	}
 	binDir, err := absPath(config.RuntimeBinDir)
 	if err != nil {
@@ -396,7 +396,7 @@ func defaultRuntimeArtifact(arch string) (runtimeArtifact, error) {
 	case "arm64":
 		return runtimeArtifact{version: DefaultVersion, url: defaultARM64URL, sha256: defaultARM64SHA256}, nil
 	default:
-		return runtimeArtifact{}, fmt.Errorf("runc runtime does not have a default artifact for architecture %q", arch)
+		return runtimeArtifact{}, fmt.Errorf("%w: runc runtime does not have a default artifact for architecture %q", chamberErrors.ErrInvalidRequest, arch)
 	}
 }
 
@@ -547,10 +547,10 @@ func parseSHA256(raw string) ([]byte, error) {
 	raw = strings.TrimPrefix(strings.TrimSpace(raw), "sha256:")
 	digest, err := hex.DecodeString(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parse runtime sha256: %w", err)
+		return nil, fmt.Errorf("%w: parse runtime sha256: %w", chamberErrors.ErrInvalidRequest, err)
 	}
 	if len(digest) != sha256.Size {
-		return nil, fmt.Errorf("parse runtime sha256: got %d bytes, want %d", len(digest), sha256.Size)
+		return nil, fmt.Errorf("%w: parse runtime sha256: got %d bytes, want %d", chamberErrors.ErrInvalidRequest, len(digest), sha256.Size)
 	}
 	return digest, nil
 }

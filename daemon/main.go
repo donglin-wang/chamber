@@ -25,7 +25,7 @@ import (
 
 type startupOptions struct {
 	configPath string
-	override   chamberDaemonConfig.Override
+	input      chamberDaemonConfig.Input
 }
 
 func main() {
@@ -58,7 +58,7 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	cfg, err := chamberDaemonConfig.LoadFile(options.configPath, options.override, os.Getenv)
+	cfg, err := chamberDaemonConfig.LoadFile(options.configPath, options.input, os.Getenv)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -150,7 +150,7 @@ func parseArgs(args []string) (startupOptions, error) {
 
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "http-addr" {
-			options.override.HTTPAddr = &httpAddr
+			options.input.HTTPAddr = &httpAddr
 		}
 	})
 

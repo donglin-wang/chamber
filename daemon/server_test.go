@@ -250,8 +250,8 @@ func (r fakeRuntime) Delete(ctx context.Context, request chamberRuntime.DeleteRe
 	return ctx.Err()
 }
 
-func (r fakeRuntime) ReadLog(containerID string, stream string) ([]byte, error) {
-	key := containerID + ":" + stream
+func (r fakeRuntime) ReadLog(containerID string, stream chamberRuntime.LogStream) ([]byte, error) {
+	key := containerID + ":" + string(stream)
 	if r.wantLog != "" && key != r.wantLog {
 		r.t.Fatalf("ReadLog key = %q, want %q", key, r.wantLog)
 	}

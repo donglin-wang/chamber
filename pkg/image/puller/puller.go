@@ -13,6 +13,8 @@ import (
 	"time"
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
+	"github.com/donglin-wang/chamber/pkg/shared/imageref"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -34,25 +36,21 @@ type Puller struct {
 
 func New(config chamberImage.Config, directoryManager localfs.DirectoryManager) (*Puller, error) {
 	if directoryManager == nil {
-		return nil, fmt.Errorf("directory manager is required")
+		return nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
-	resolved, err := chamberImage.Resolve(config, chamberImage.Override{})
+	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
 	if err != nil {
 		return nil, err
 	}
-	logger, err := chamberLogging.ResolveLogger(resolved.Logging, nil)
-	if err != nil {
-		return nil, err
-	}
-	if resolved.Root == "" {
+	if config.Root == "" {
 		return nil, chamberImage.ErrRootRequired
 	}
-	if err := directoryManager.MkdirPrivate(resolved.Root); err != nil {
+	if err := directoryManager.MkdirPrivate(config.Root); err != nil {
 		return nil, fmt.Errorf("create image root: %w", err)
 	}
 
 	return &Puller{
-		config:           resolved,
+		config:           config,
 		directoryManager: directoryManager,
 		logger:           logger,
 	}, nil
@@ -60,18 +58,29 @@ func New(config chamberImage.Config, directoryManager localfs.DirectoryManager) 
 
 func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (chamberImage.PulledImage, error) {
 	if p == nil || p.directoryManager == nil {
-		return chamberImage.PulledImage{}, fmt.Errorf("directory manager is required")
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
 
-	ref, err := name.ParseReference(request.Reference)
+	canonicalReference, err := imageref.Canonical(request.Reference)
 	if err != nil {
-		return chamberImage.PulledImage{}, fmt.Errorf("parse image reference: %w", err)
+		return chamberImage.PulledImage{}, err
 	}
-	canonicalReference := ref.Name()
+	ref, err := name.ParseReference(canonicalReference)
+	if err != nil {
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: parse canonical image reference: %w", chamberErrors.ErrInvalidRequest, err)
+	}
 
 	platform := resolvePlatform(request.Platform)
+	policy := request.Policy
+	switch policy {
+	case "", chamberImage.PullIfMissing:
+		policy = chamberImage.PullIfMissing
+	case chamberImage.PullAlways:
+	default:
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: unsupported pull policy %q", chamberErrors.ErrInvalidRequest, request.Policy)
+	}
 
-	destination, err := chamberImage.DestinationForCanonicalReference(p.config.Root, canonicalReference)
+	destination, err := chamberImage.DestinationForCanonicalImage(p.config.Root, canonicalReference, request.Platform)
 	if err != nil {
 		return chamberImage.PulledImage{}, fmt.Errorf("resolve image destination: %w", err)
 	}
@@ -79,8 +88,8 @@ func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (ch
 	if err := p.directoryManager.MkdirPrivate(parent); err != nil {
 		return chamberImage.PulledImage{}, fmt.Errorf("create image destination parent: %w", err)
 	}
-	if chamberImage.LayoutExists(destination) {
-		pulled, err := existingPulledImage(canonicalReference, destination)
+	if policy == chamberImage.PullIfMissing && chamberImage.LayoutExists(destination) {
+		pulled, err := existingPulledImage(canonicalReference, platform, destination)
 		if err != nil {
 			return chamberImage.PulledImage{}, err
 		}
@@ -149,9 +158,22 @@ func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (ch
 		return chamberImage.PulledImage{}, fmt.Errorf("verify OCI image layout: %w", err)
 	}
 
+	backup := ""
+	if policy == chamberImage.PullAlways {
+		existing, err := moveExistingLayout(parent, filepath.Base(destination), destination)
+		if err != nil {
+			return chamberImage.PulledImage{}, err
+		}
+		backup = existing
+	}
 	if err := os.Rename(tmp, destination); err != nil {
-		if chamberImage.LayoutExists(destination) {
-			pulled, existingErr := existingPulledImage(canonicalReference, destination)
+		if backup != "" {
+			if restoreErr := os.Rename(backup, destination); restoreErr != nil {
+				return chamberImage.PulledImage{}, fmt.Errorf("commit OCI image layout: %w; restore previous layout: %v", err, restoreErr)
+			}
+		}
+		if policy == chamberImage.PullIfMissing && chamberImage.LayoutExists(destination) {
+			pulled, existingErr := existingPulledImage(canonicalReference, platform, destination)
 			if existingErr != nil {
 				return chamberImage.PulledImage{}, existingErr
 			}
@@ -160,6 +182,9 @@ func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (ch
 		return chamberImage.PulledImage{}, fmt.Errorf("commit OCI image layout: %w", err)
 	}
 	renamed = true
+	if backup != "" {
+		_ = os.RemoveAll(backup)
+	}
 
 	sizeBytes, err := dirSize(destination)
 	if err != nil {
@@ -210,7 +235,27 @@ func authenticator(auth *chamberImage.Auth) authn.Authenticator {
 	return authn.FromConfig(config)
 }
 
-func existingPulledImage(reference string, path string) (chamberImage.PulledImage, error) {
+func moveExistingLayout(parent string, base string, destination string) (string, error) {
+	if _, err := os.Stat(destination); err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("inspect existing OCI image layout: %w", err)
+	}
+	backup, err := os.MkdirTemp(parent, "."+base+".old-*")
+	if err != nil {
+		return "", fmt.Errorf("create previous OCI image layout backup: %w", err)
+	}
+	if err := os.Remove(backup); err != nil {
+		return "", fmt.Errorf("prepare previous OCI image layout backup: %w", err)
+	}
+	if err := os.Rename(destination, backup); err != nil {
+		return "", fmt.Errorf("move previous OCI image layout aside: %w", err)
+	}
+	return backup, nil
+}
+
+func existingPulledImage(reference string, platform v1.Platform, path string) (chamberImage.PulledImage, error) {
 	layoutPath, err := layout.FromPath(path)
 	if err != nil {
 		return chamberImage.PulledImage{}, err
@@ -229,14 +274,14 @@ func existingPulledImage(reference string, path string) (chamberImage.PulledImag
 	var descriptor v1.Descriptor
 	found := false
 	for _, candidate := range manifest.Manifests {
-		if candidate.Annotations[imagespec.AnnotationRefName] == reference {
+		if candidate.Annotations[imagespec.AnnotationRefName] == reference && platformMatches(candidate.Platform, platform) {
 			descriptor = candidate
 			found = true
 			break
 		}
 	}
 	if !found {
-		return chamberImage.PulledImage{}, fmt.Errorf("OCI image layout has no manifest for reference %q", reference)
+		return chamberImage.PulledImage{}, fmt.Errorf("OCI image layout has no manifest for reference %q and platform %s/%s", reference, platform.OS, platform.Architecture)
 	}
 	sizeBytes, err := dirSize(path)
 	if err != nil {
@@ -249,6 +294,15 @@ func existingPulledImage(reference string, path string) (chamberImage.PulledImag
 		SizeBytes:  sizeBytes,
 		PulledAt:   time.Now().UTC(),
 	}, nil
+}
+
+func platformMatches(candidate *v1.Platform, requested v1.Platform) bool {
+	if candidate == nil {
+		return false
+	}
+	return candidate.OS == requested.OS &&
+		candidate.Architecture == requested.Architecture &&
+		candidate.Variant == requested.Variant
 }
 
 func dirSize(path string) (int64, error) {

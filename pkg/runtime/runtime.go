@@ -10,6 +10,7 @@ import (
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
@@ -58,6 +59,39 @@ type Descriptor struct {
 	Capabilities Capabilities
 }
 
+type ContainerStatus string
+
+const (
+	ContainerStatusCreating ContainerStatus = "creating"
+	ContainerStatusCreated  ContainerStatus = "created"
+	ContainerStatusRunning  ContainerStatus = "running"
+	ContainerStatusStopped  ContainerStatus = "stopped"
+)
+
+type Signal string
+
+const (
+	SignalTERM Signal = "TERM"
+	SignalKILL Signal = "KILL"
+	SignalINT  Signal = "INT"
+)
+
+func IsSupportedSignal(signal Signal) bool {
+	switch signal {
+	case SignalTERM, SignalKILL, SignalINT:
+		return true
+	default:
+		return false
+	}
+}
+
+type LogStream string
+
+const (
+	StdoutLogStream LogStream = "stdout"
+	StderrLogStream LogStream = "stderr"
+)
+
 type RunRequest struct {
 	Bundle chamberBundle.ProvisionedBundle
 	Stdin  io.Reader
@@ -82,28 +116,23 @@ type Runtime interface {
 
 	Delete(ctx context.Context, request DeleteRequest) error
 
-	ReadLog(containerID string, stream string) ([]byte, error)
+	ReadLog(containerID string, stream LogStream) ([]byte, error)
 }
 
 type ContainerState struct {
 	ContainerID string
-	Status      string
+	Status      ContainerStatus
 }
 
 type SignalRequest struct {
 	ContainerID string
-	Signal      string
+	Signal      Signal
 }
 
 type DeleteRequest struct {
 	ContainerID string
 	Force       bool
 }
-
-const (
-	StdoutLogStream = "stdout"
-	StderrLogStream = "stderr"
-)
 
 // Register attaches a constructor for a known runtime implementation.
 // Runtime implementation packages call Register from init.
@@ -128,49 +157,44 @@ func New(ctx context.Context, config Config, directoryManager localfs.DirectoryM
 
 func newForGOOS(ctx context.Context, config Config, directoryManager localfs.DirectoryManager, goos string) (Runtime, error) {
 	if ctx == nil {
-		return nil, fmt.Errorf("context is required")
+		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
 	if directoryManager == nil {
-		return nil, fmt.Errorf("directory manager is required")
+		return nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
 	if config.Name == "" {
-		config.Name = RuntimeNameRunc
+		return nil, fmt.Errorf("%w: runtime name is required", chamberErrors.ErrInvalidRequest)
 	}
 	if config.Privilege == "" {
-		config.Privilege = capability.Rootless
+		return nil, fmt.Errorf("%w: runtime privilege is required", chamberErrors.ErrInvalidRequest)
 	}
-	resolved, err := Resolve(config, Override{})
-	if err != nil {
-		return nil, err
-	}
-
-	implementation, ok := implementations[resolved.Name]
+	implementation, ok := implementations[config.Name]
 	if !ok {
-		return nil, fmt.Errorf("unsupported runtime name %q (supported: %s)", resolved.Name, strings.Join(SupportedNames(), ", "))
+		return nil, fmt.Errorf("%w: unsupported runtime name %q (supported: %s)", chamberErrors.ErrInvalidRequest, config.Name, strings.Join(SupportedNames(), ", "))
 	}
-	if !supportsPrivilege(implementation.Capabilities, resolved.Privilege) {
-		return nil, fmt.Errorf("%s runtime does not support %q privilege", resolved.Name, resolved.Privilege)
+	if !supportsPrivilege(implementation.Capabilities, config.Privilege) {
+		return nil, fmt.Errorf("%w: %s runtime does not support %q privilege", chamberErrors.ErrInvalidRequest, config.Name, config.Privilege)
 	}
 	if goos != "linux" {
 		return nil, fmt.Errorf("Chamber runtime requires a Linux host or Linux VM; current GOOS is %q", goos)
 	}
 	if implementation.New == nil {
-		return nil, fmt.Errorf("runtime implementation %q is not linked into this binary", resolved.Name)
+		return nil, fmt.Errorf("runtime implementation %q is not linked into this binary", config.Name)
 	}
-	if resolved.RuntimeRoot == "" {
-		return nil, fmt.Errorf("runtime root is required")
+	if config.RuntimeRoot == "" {
+		return nil, fmt.Errorf("%w: runtime root is required", chamberErrors.ErrInvalidRequest)
 	}
-	if resolved.RuntimeBinDir == "" {
-		return nil, fmt.Errorf("runtime bin dir is required")
+	if config.RuntimeBinDir == "" {
+		return nil, fmt.Errorf("%w: runtime bin dir is required", chamberErrors.ErrInvalidRequest)
 	}
-	if err := directoryManager.MkdirPrivate(resolved.RuntimeRoot); err != nil {
+	if err := directoryManager.MkdirPrivate(config.RuntimeRoot); err != nil {
 		return nil, fmt.Errorf("create runtime root: %w", err)
 	}
-	if err := directoryManager.MkdirPrivate(resolved.RuntimeBinDir); err != nil {
+	if err := directoryManager.MkdirPrivate(config.RuntimeBinDir); err != nil {
 		return nil, fmt.Errorf("create runtime bin dir: %w", err)
 	}
 
-	return implementation.New(ctx, resolved, directoryManager)
+	return implementation.New(ctx, config, directoryManager)
 }
 
 func SupportedNames() []string {

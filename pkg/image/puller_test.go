@@ -42,6 +42,7 @@ func TestPullerLocalContract(t *testing.T) {
 			assertPullInvalidExistingLayoutIsReturned(t, newPuller)
 			assertPullSuccessReturnsDigestSizeAndUTCTime(t, newPuller, localImageReference(t))
 			assertPullSuccessWithExplicitPlatformAndAuth(t, newPuller, localImageReference(t))
+			assertPullAlwaysRefreshesMutableTag(t, newPuller)
 		})
 	}
 }
@@ -190,6 +191,48 @@ func assertPullSuccessWithExplicitPlatformAndAuth(t *testing.T, newPuller puller
 	assertLayoutHasImageRef(t, destination, image.reference)
 }
 
+func assertPullAlwaysRefreshesMutableTag(t *testing.T, newPuller pullerFactory) {
+	t.Helper()
+
+	registry := testutil.NewFakeRegistry(t)
+	reference, digest := registry.PushRandomImage(t, "library/mutable", "latest")
+	puller, _ := newPuller(t)
+	first, err := puller.Pull(context.Background(), chamberImage.PullRequest{
+		Reference: reference,
+	})
+	if err != nil {
+		t.Fatalf("Pull(initial) error = %v", err)
+	}
+	if first.Digest != digest.String() {
+		t.Fatalf("initial Digest = %q, want %q", first.Digest, digest)
+	}
+
+	_, refreshedDigest := registry.PushRandomImage(t, "library/mutable", "latest")
+	if refreshedDigest.String() == first.Digest {
+		t.Fatalf("test registry generated same digest twice: %s", refreshedDigest)
+	}
+	cached, err := puller.Pull(context.Background(), chamberImage.PullRequest{
+		Reference: reference,
+	})
+	if err != nil {
+		t.Fatalf("Pull(cached) error = %v", err)
+	}
+	if cached.Digest != first.Digest {
+		t.Fatalf("cached Digest = %q, want original %q", cached.Digest, first.Digest)
+	}
+
+	refreshed, err := puller.Pull(context.Background(), chamberImage.PullRequest{
+		Reference: reference,
+		Policy:    chamberImage.PullAlways,
+	})
+	if err != nil {
+		t.Fatalf("Pull(always) error = %v", err)
+	}
+	if refreshed.Digest != refreshedDigest.String() {
+		t.Fatalf("refreshed Digest = %q, want %q", refreshed.Digest, refreshedDigest)
+	}
+}
+
 type imageFixture struct {
 	reference string
 	digest    string
@@ -219,9 +262,9 @@ func privateTempDir(t *testing.T) string {
 func imageDestination(t *testing.T, root string, reference string) string {
 	t.Helper()
 
-	destination, err := chamberImage.DestinationForCanonicalReference(root, reference)
+	destination, err := chamberImage.DestinationForCanonicalImage(root, reference, chamberImage.Platform{})
 	if err != nil {
-		t.Fatalf("DestinationForCanonicalReference() error = %v", err)
+		t.Fatalf("DestinationForCanonicalImage() error = %v", err)
 	}
 	return destination
 }

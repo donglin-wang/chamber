@@ -16,17 +16,9 @@ type Mount struct {
 	Options []string
 }
 
-type RootFS struct {
-	// Mounts is empty when BundlePath/rootfs is already a populated directory.
-	// Future overlayfs or snapshot-based provisioners can return mounts here
-	// and leave the runtime responsible for applying and later unmounting them.
-	Mounts []Mount
-}
-
 type ProvisionedBundle struct {
 	ContainerID string
 	BundlePath  string
-	RootFS      RootFS
 }
 
 type ProvisionRequest struct {
@@ -42,14 +34,13 @@ type ProcessSpec struct {
 	Env      []string
 	Cwd      string
 	User     ProcessUser
-	Terminal bool
+	Terminal *bool
 }
 
 type ProcessUser struct {
 	UID            *uint32
 	GID            *uint32
 	AdditionalGIDs []uint32
-	Username       string
 }
 
 type Capabilities struct {
