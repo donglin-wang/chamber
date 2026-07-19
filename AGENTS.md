@@ -52,6 +52,7 @@ Model privilege cleanly:
 - Keep persistent and temporary storage inside Chamber-controlled or caller-provided roots; avoid broad reliance on ambient host defaults.
 - Make path ownership explicit. Multiple OS users on the same host must not accidentally share sockets, storage, locks, runtime directories, temp directories, logs, names, network bookkeeping, or cleanup authority.
 - Start with narrow, testable packages and invariants before widening into compatibility APIs.
+- Keep code fixes and new implementation as minimal as possible without playing code golf. Prefer the smallest clear change that preserves the contract, tests the behavior at risk, and does not hide complexity behind clever compression.
 - Prefer explicit top-down dependency injection for filesystem, runtime, and backend choices.
 - Keep package-owned config at generic boundaries. Avoid letting global config import concrete adapters such as specific metadata or runtime implementations.
 - Keep shared helpers small and policy-shaped. `pkg/shared/localfs` should encode private-directory and temp-file policy, not become a broad utility grab bag.
@@ -74,11 +75,11 @@ The current repo is still early and may not yet have the final public SDK layout
 
 Important current boundaries:
 
-- `pkg/image`: public puller contract, pull request platform/auth fields, image-root config, and small layout helpers. Callers provide explicit destinations and own SDK-level storage placement, locking, cleanup, and recovery.
+- `pkg/image`: public puller contract, pull request platform/auth fields, image-root config, and small layout helpers. Configured image roots are the source of truth for pulled-image storage; concrete pullers derive destinations from canonical image references. SDK callers own root placement, locking, cleanup, and recovery.
 - `pkg/image/puller`: concrete OCI image puller using `go-containerregistry`. It honors platform/auth request fields and must keep the atomic temp-then-rename layout write behavior. Future sibling implementation packages may include `pkg/image/pusher` and `pkg/image/inspector`.
 - `pkg/bundle`: public bundle provisioning contract, bundle-root config, `ProcessSpec`, and `RootFS.Mounts`. `RootFS.Mounts` is intentionally ahead of runtime support as a future overlayfs/snapshot hook.
 - `pkg/bundle/directory`: concrete directory-backed OCI bundle provisioner using `umoci`. It currently supports rootless provisioning and owns unpacking, rootless OCI spec patching, private `config.json` writes, temporary staging, and atomic final bundle placement.
-- `pkg/runtime`: public runtime contract and runtime config. Concrete runtime constructors own initialization such as binary verification/download and private runtime directory creation. The `Runtime` interface includes `Descriptor`, `Binary`, `Run`, `State`, `Signal`, `Delete`, and `ReadLog`. `Run` returns only a `Process`; it must not pretend to return current container lifecycle state. Use `State` for actual runtime state.
+- `pkg/runtime`: public runtime contract and runtime config. The shared `runtime.New` constructor owns shared validation, including Linux host gating, implementation name/capability checks, and private runtime directory creation, then dispatches to the registered concrete implementation constructor. Concrete runtime constructors own implementation-specific initialization such as binary verification/download and runtime-owned log handling. The `Runtime` interface includes `Descriptor`, `Binary`, `Run`, `State`, `Signal`, `Delete`, and `ReadLog`. `Run` returns only a `Process`; it must not pretend to return current container lifecycle state. Use `State` for actual runtime state.
 - `pkg/runtime/runc`: concrete `runc` adapter, including runtime binary ensure/download, state/signal/delete calls, and runtime-owned log handling. It must continue rejecting non-empty `RootFS.Mounts` until mount application exists.
 - `pkg/shared/errors`: canonical public Chamber error-code taxonomy. The daemon and SDK adapters should use these durable codes for contract errors and response mapping.
 - `pkg/shared/containerid`: shared container ID validation used by provisioning and runtime adapters so bundle creation cannot accept IDs the runtime later rejects.

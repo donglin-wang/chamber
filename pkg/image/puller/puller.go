@@ -226,12 +226,17 @@ func existingPulledImage(reference string, path string) (chamberImage.PulledImag
 	if len(manifest.Manifests) == 0 {
 		return chamberImage.PulledImage{}, errors.New("OCI image layout index has no manifests")
 	}
-	descriptor := manifest.Manifests[0]
+	var descriptor v1.Descriptor
+	found := false
 	for _, candidate := range manifest.Manifests {
 		if candidate.Annotations[imagespec.AnnotationRefName] == reference {
 			descriptor = candidate
+			found = true
 			break
 		}
+	}
+	if !found {
+		return chamberImage.PulledImage{}, fmt.Errorf("OCI image layout has no manifest for reference %q", reference)
 	}
 	sizeBytes, err := dirSize(path)
 	if err != nil {

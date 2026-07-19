@@ -4,10 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/layout"
 )
 
 func TestNewPreparesConfiguredImageRoot(t *testing.T) {
@@ -98,5 +101,24 @@ func TestAuthenticatorAppliesBasicAndTokenAuth(t *testing.T) {
 
 	if auth.Username != "user" || auth.Password != "pass" || auth.RegistryToken != "registry-token" {
 		t.Fatalf("auth config = %#v, want username/password/token", auth)
+	}
+}
+
+func TestExistingPulledImageRequiresMatchingReferenceAnnotation(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "layout")
+	layoutPath, err := layout.Write(path, empty.Index)
+	if err != nil {
+		t.Fatalf("layout.Write() error = %v", err)
+	}
+	if err := layoutPath.AppendImage(empty.Image); err != nil {
+		t.Fatalf("AppendImage() error = %v", err)
+	}
+
+	_, err = existingPulledImage("example.com/library/busybox:latest", path)
+	if err == nil {
+		t.Fatal("existingPulledImage() error = nil, want missing reference error")
+	}
+	if !strings.Contains(err.Error(), "no manifest for reference") {
+		t.Fatalf("existingPulledImage() error = %v, want missing reference error", err)
 	}
 }

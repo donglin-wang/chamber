@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	goruntime "runtime"
+	"sort"
 	"strings"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
@@ -30,10 +31,6 @@ type Capabilities struct {
 }
 
 const RuntimeNameRunc = "runc"
-
-var runtimeNames = [...]string{
-	RuntimeNameRunc,
-}
 
 type constructor func(context.Context, Config, localfs.DirectoryManager) (Runtime, error)
 
@@ -108,6 +105,8 @@ const (
 	StderrLogStream = "stderr"
 )
 
+// Register attaches a constructor for a known runtime implementation.
+// Runtime implementation packages call Register from init.
 func Register(name string, newRuntime func(context.Context, Config, localfs.DirectoryManager) (Runtime, error)) {
 	if newRuntime == nil {
 		panic("runtime: Register constructor is nil")
@@ -175,8 +174,11 @@ func newForGOOS(ctx context.Context, config Config, directoryManager localfs.Dir
 }
 
 func SupportedNames() []string {
-	names := make([]string, len(runtimeNames))
-	copy(names, runtimeNames[:])
+	names := make([]string, 0, len(implementations))
+	for name := range implementations {
+		names = append(names, name)
+	}
+	sort.Strings(names)
 	return names
 }
 
