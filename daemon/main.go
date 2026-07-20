@@ -18,7 +18,6 @@ import (
 	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/directory"
 	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
-	_ "github.com/donglin-wang/chamber/pkg/runtime/runc"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )

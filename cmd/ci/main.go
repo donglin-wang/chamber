@@ -16,7 +16,7 @@ import (
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
-	_ "github.com/donglin-wang/chamber/pkg/runtime/runc"
+	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	"github.com/donglin-wang/chamber/pkg/shared/logging"
@@ -103,7 +103,7 @@ func run(cfg *config) error {
 	runtime, err := chamberRuntime.New(ctx, chamberRuntime.Config{
 		RuntimeRoot:   paths.runtimeRoot,
 		RuntimeBinDir: paths.runtimeBinDir,
-		Name:          chamberRuntime.RuntimeNameRunc,
+		Name:          chamberRuntimeShared.RuntimeNameRunc,
 		Privilege:     capability.Rootless,
 		Logging:       loggingConfig,
 	}, directoryManager)
@@ -294,12 +294,12 @@ func runJob(ctx context.Context, runtime chamberRuntime.Runtime, provisioner cha
 	}
 	result.exitCode, result.err = process.Wait()
 
-	if stdout, err := runtime.ReadLog(containerID, chamberRuntime.StdoutLogStream); err == nil {
+	if stdout, err := runtime.ReadLog(containerID, chamberRuntimeShared.StdoutLogStream); err == nil {
 		result.stdout = stdout
 	} else if result.err == nil {
 		result.err = fmt.Errorf("read stdout: %w", err)
 	}
-	if stderr, err := runtime.ReadLog(containerID, chamberRuntime.StderrLogStream); err == nil {
+	if stderr, err := runtime.ReadLog(containerID, chamberRuntimeShared.StderrLogStream); err == nil {
 		result.stderr = stderr
 	} else if result.err == nil {
 		result.err = fmt.Errorf("read stderr: %w", err)

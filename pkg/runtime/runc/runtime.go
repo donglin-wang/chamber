@@ -15,7 +15,8 @@ import (
 	goruntime "runtime"
 	"strings"
 
-	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
+	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -23,8 +24,8 @@ import (
 )
 
 const (
-	runtimeName    = chamberRuntime.RuntimeNameRunc
-	DefaultVersion = "v1.5.0"
+	runtimeName    = chamberRuntimeShared.RuntimeNameRunc
+	defaultVersion = "v1.5.0"
 
 	defaultAMD64URL    = "https://github.com/opencontainers/runc/releases/download/v1.5.0/runc.amd64"
 	defaultAMD64SHA256 = "0363e69bebd3a027d1239364ab9b4f4873f6bc4e7a7878e94b4ea59f08551297"
@@ -32,11 +33,20 @@ const (
 	defaultARM64SHA256 = "1f6d8c553add066a6aaf838d3172d4c5ed3c6b065b6f7eed2f4a4aa4af261e59"
 )
 
-var _ chamberRuntime.Runtime = (*Runtime)(nil)
+var _ chamberRuntimeShared.Runtime = (*Runtime)(nil)
+
+var capabilities = chamberRuntimeShared.Capabilities{
+	Privileges: []capability.Privilege{
+		capability.Rootless,
+	},
+	Isolation: []chamberRuntimeShared.Isolation{
+		chamberRuntimeShared.ProcessIsolation,
+	},
+}
 
 type Runtime struct {
-	config           chamberRuntime.Config
-	binary           chamberRuntime.Binary
+	config           chamberRuntimeShared.Config
+	binary           chamberRuntimeShared.Binary
 	artifact         runtimeArtifact
 	client           *http.Client
 	directoryManager localfs.DirectoryManager
@@ -65,13 +75,11 @@ func withArtifact(artifact runtimeArtifact) option {
 	}
 }
 
-func init() {
-	chamberRuntime.Register(runtimeName, func(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager) (chamberRuntime.Runtime, error) {
-		return newRuntime(ctx, config, directoryManager)
-	})
+func New(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager) (*Runtime, error) {
+	return newWithOptions(ctx, config, directoryManager)
 }
 
-func newRuntime(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...option) (*Runtime, error) {
+func newWithOptions(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager, options ...option) (*Runtime, error) {
 	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
 	if err != nil {
 		return nil, err
@@ -103,27 +111,30 @@ func newRuntime(ctx context.Context, config chamberRuntime.Config, directoryMana
 	return runtime, nil
 }
 
-func (r *Runtime) Descriptor() chamberRuntime.Descriptor {
-	version := DefaultVersion
+func (r *Runtime) Descriptor() chamberRuntimeShared.Descriptor {
+	version := defaultVersion
 	if r != nil {
 		if r.artifact.version != "" {
 			version = r.artifact.version
 		}
 	}
-	capabilities, ok := chamberRuntime.SupportedCapabilities(runtimeName)
-	if !ok {
-		capabilities = chamberRuntime.Capabilities{}
-	}
-	return chamberRuntime.Descriptor{
+	return chamberRuntimeShared.Descriptor{
 		Name:         runtimeName,
 		Version:      version,
-		Capabilities: capabilities,
+		Capabilities: cloneCapabilities(capabilities),
 	}
 }
 
-func (r *Runtime) Binary() chamberRuntime.Binary {
+func cloneCapabilities(capabilities chamberRuntimeShared.Capabilities) chamberRuntimeShared.Capabilities {
+	return chamberRuntimeShared.Capabilities{
+		Privileges: append([]capability.Privilege(nil), capabilities.Privileges...),
+		Isolation:  append([]chamberRuntimeShared.Isolation(nil), capabilities.Isolation...),
+	}
+}
+
+func (r *Runtime) Binary() chamberRuntimeShared.Binary {
 	if r == nil {
-		return chamberRuntime.Binary{}
+		return chamberRuntimeShared.Binary{}
 	}
 	return r.binary
 }
@@ -175,7 +186,7 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Process, error) {
+func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunRequest) (chamberRuntimeShared.Process, error) {
 	if request.Bundle.BundlePath == "" {
 		return nil, fmt.Errorf("%w: runtime bundle path is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -220,7 +231,7 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 	return newRuncProcess(cmd, stdout, stderr), nil
 }
 
-func (r *Runtime) ReadLog(containerID string, stream chamberRuntime.LogStream) ([]byte, error) {
+func (r *Runtime) ReadLog(containerID string, stream chamberRuntimeShared.LogStream) ([]byte, error) {
 	path, err := r.logPath(containerID, stream)
 	if err != nil {
 		return nil, err
@@ -228,32 +239,32 @@ func (r *Runtime) ReadLog(containerID string, stream chamberRuntime.LogStream) (
 	return os.ReadFile(path)
 }
 
-func (r *Runtime) State(ctx context.Context, containerID string) (chamberRuntime.ContainerState, error) {
+func (r *Runtime) State(ctx context.Context, containerID string) (chamberRuntimeShared.ContainerState, error) {
 	if err := containerid.Validate(containerID); err != nil {
-		return chamberRuntime.ContainerState{}, err
+		return chamberRuntimeShared.ContainerState{}, err
 	}
 	binary, stateRoot, err := r.binaryAndStateRoot()
 	if err != nil {
-		return chamberRuntime.ContainerState{}, err
+		return chamberRuntimeShared.ContainerState{}, err
 	}
 	state, err := readRuncState(ctx, binary.Path, stateRoot, containerID)
 	if err != nil {
-		return chamberRuntime.ContainerState{}, err
+		return chamberRuntimeShared.ContainerState{}, err
 	}
-	return chamberRuntime.ContainerState{
+	return chamberRuntimeShared.ContainerState{
 		ContainerID: containerID,
-		Status:      chamberRuntime.ContainerStatus(state.Status),
+		Status:      chamberRuntimeShared.ContainerStatus(state.Status),
 	}, nil
 }
 
-func (r *Runtime) Signal(ctx context.Context, request chamberRuntime.SignalRequest) error {
+func (r *Runtime) Signal(ctx context.Context, request chamberRuntimeShared.SignalRequest) error {
 	if err := containerid.Validate(request.ContainerID); err != nil {
 		return err
 	}
 	if strings.TrimSpace(string(request.Signal)) == "" {
 		return fmt.Errorf("%w: runtime signal is required", chamberErrors.ErrInvalidRequest)
 	}
-	if !chamberRuntime.IsSupportedSignal(request.Signal) {
+	if !chamberRuntimeShared.IsSupportedSignal(request.Signal) {
 		return fmt.Errorf("%w: unsupported runtime signal %q", chamberErrors.ErrInvalidRequest, request.Signal)
 	}
 	binary, stateRoot, err := r.binaryAndStateRoot()
@@ -271,7 +282,7 @@ func (r *Runtime) Signal(ctx context.Context, request chamberRuntime.SignalReque
 	return nil
 }
 
-func (r *Runtime) Delete(ctx context.Context, request chamberRuntime.DeleteRequest) error {
+func (r *Runtime) Delete(ctx context.Context, request chamberRuntimeShared.DeleteRequest) error {
 	if err := containerid.Validate(request.ContainerID); err != nil {
 		return err
 	}
@@ -307,11 +318,11 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 		return nil, nil, fmt.Errorf("create runc log directory: %w", err)
 	}
 
-	stdoutPath, err := r.logPath(containerID, chamberRuntime.StdoutLogStream)
+	stdoutPath, err := r.logPath(containerID, chamberRuntimeShared.StdoutLogStream)
 	if err != nil {
 		return nil, nil, err
 	}
-	stderrPath, err := r.logPath(containerID, chamberRuntime.StderrLogStream)
+	stderrPath, err := r.logPath(containerID, chamberRuntimeShared.StderrLogStream)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -328,13 +339,13 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 	return stdout, stderr, nil
 }
 
-func (r *Runtime) logPath(containerID string, stream chamberRuntime.LogStream) (string, error) {
+func (r *Runtime) logPath(containerID string, stream chamberRuntimeShared.LogStream) (string, error) {
 	logDir, err := r.logDir(containerID)
 	if err != nil {
 		return "", err
 	}
 	switch stream {
-	case chamberRuntime.StdoutLogStream, chamberRuntime.StderrLogStream:
+	case chamberRuntimeShared.StdoutLogStream, chamberRuntimeShared.StderrLogStream:
 		return filepath.Join(logDir, string(stream)+".log"), nil
 	default:
 		return "", fmt.Errorf("%w: unsupported log stream %q", chamberErrors.ErrInvalidRequest, stream)
@@ -352,14 +363,14 @@ func (r *Runtime) logDir(containerID string) (string, error) {
 	return filepath.Join(runtimeRoot, "logs", containerID), nil
 }
 
-func (r *Runtime) binaryAndStateRoot() (chamberRuntime.Binary, string, error) {
+func (r *Runtime) binaryAndStateRoot() (chamberRuntimeShared.Binary, string, error) {
 	binary := r.binary
 	if binary.Path == "" {
-		return chamberRuntime.Binary{}, "", fmt.Errorf("%w: runtime binary is required", chamberErrors.ErrInvalidRequest)
+		return chamberRuntimeShared.Binary{}, "", fmt.Errorf("%w: runtime binary is required", chamberErrors.ErrInvalidRequest)
 	}
 	stateRoot, err := r.stateRoot()
 	if err != nil {
-		return chamberRuntime.Binary{}, "", err
+		return chamberRuntimeShared.Binary{}, "", err
 	}
 	return binary, stateRoot, nil
 }
@@ -375,15 +386,15 @@ func (r *Runtime) stateRoot() (string, error) {
 	return runtimeRoot, nil
 }
 
-func configuredBinary(config chamberRuntime.Config) (chamberRuntime.Binary, error) {
+func configuredBinary(config chamberRuntimeShared.Config) (chamberRuntimeShared.Binary, error) {
 	if config.RuntimeBinDir == "" {
-		return chamberRuntime.Binary{}, fmt.Errorf("%w: runtime bin dir is required", chamberErrors.ErrInvalidRequest)
+		return chamberRuntimeShared.Binary{}, fmt.Errorf("%w: runtime bin dir is required", chamberErrors.ErrInvalidRequest)
 	}
 	binDir, err := absPath(config.RuntimeBinDir)
 	if err != nil {
-		return chamberRuntime.Binary{}, fmt.Errorf("resolve runtime bin dir: %w", err)
+		return chamberRuntimeShared.Binary{}, fmt.Errorf("resolve runtime bin dir: %w", err)
 	}
-	return chamberRuntime.Binary{
+	return chamberRuntimeShared.Binary{
 		Name: runtimeName,
 		Path: filepath.Join(binDir, runtimeName),
 	}, nil
@@ -392,9 +403,9 @@ func configuredBinary(config chamberRuntime.Config) (chamberRuntime.Binary, erro
 func defaultRuntimeArtifact(arch string) (runtimeArtifact, error) {
 	switch arch {
 	case "amd64":
-		return runtimeArtifact{version: DefaultVersion, url: defaultAMD64URL, sha256: defaultAMD64SHA256}, nil
+		return runtimeArtifact{version: defaultVersion, url: defaultAMD64URL, sha256: defaultAMD64SHA256}, nil
 	case "arm64":
-		return runtimeArtifact{version: DefaultVersion, url: defaultARM64URL, sha256: defaultARM64SHA256}, nil
+		return runtimeArtifact{version: defaultVersion, url: defaultARM64URL, sha256: defaultARM64SHA256}, nil
 	default:
 		return runtimeArtifact{}, fmt.Errorf("%w: runc runtime does not have a default artifact for architecture %q", chamberErrors.ErrInvalidRequest, arch)
 	}

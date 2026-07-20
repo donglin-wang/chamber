@@ -12,6 +12,7 @@ import (
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/google/uuid"
 )
@@ -125,10 +126,10 @@ func registerContainerRoutes(
 
 		rawStream := strings.TrimSpace(r.URL.Query().Get("stream"))
 		if rawStream == "" {
-			rawStream = string(chamberRuntime.StdoutLogStream)
+			rawStream = string(chamberRuntimeShared.StdoutLogStream)
 		}
 		stream := chamberRuntime.LogStream(rawStream)
-		if stream != chamberRuntime.StdoutLogStream && stream != chamberRuntime.StderrLogStream {
+		if stream != chamberRuntimeShared.StdoutLogStream && stream != chamberRuntimeShared.StderrLogStream {
 			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "unsupported log stream")
 			return
 		}

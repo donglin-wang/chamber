@@ -14,6 +14,7 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
@@ -69,7 +70,6 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 		case "github.com/donglin-wang/chamber/pkg/image/puller",
 			"github.com/donglin-wang/chamber/pkg/bundle/directory",
 			"github.com/donglin-wang/chamber/daemon/metadata/etcd",
-			"github.com/donglin-wang/chamber/pkg/runtime/runc",
 			"github.com/donglin-wang/chamber/pkg/shared/localfs":
 			t.Fatalf("config package must import generic package boundaries and not filesystem setup %q", importPath)
 		}
@@ -156,7 +156,7 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "bin"),
-			Name:          chamberRuntime.RuntimeNameRunc,
+			Name:          chamberRuntimeShared.RuntimeNameRunc,
 			Privilege:     capability.Rootless,
 			Logging:       defaultLogging,
 		},
@@ -232,7 +232,7 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   "default/runtime",
 			RuntimeBinDir: "default/bin",
-			Name:          chamberRuntime.RuntimeNameRunc,
+			Name:          chamberRuntimeShared.RuntimeNameRunc,
 			Privilege:     capability.Rootless,
 		},
 		Metadata: metadata.Config{
@@ -263,7 +263,7 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		Runtime: runtimeInput{
 			RuntimeRoot:   ptr("input/runtime"),
 			RuntimeBinDir: ptr("input/bin"),
-			Name:          ptr(chamberRuntime.RuntimeNameRunc),
+			Name:          ptr(chamberRuntimeShared.RuntimeNameRunc),
 		},
 		Metadata: metadataInput{
 			Root: ptr("input/metadata"),
@@ -308,7 +308,7 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   mustAbs(t, "input/runtime"),
 			RuntimeBinDir: mustAbs(t, "input/bin"),
-			Name:          chamberRuntime.RuntimeNameRunc,
+			Name:          chamberRuntimeShared.RuntimeNameRunc,
 			Privilege:     capability.Rootful,
 			Logging: chamberLogging.Config{
 				Level:  "debug",
@@ -359,7 +359,7 @@ func TestApplyInputLeavesDefaultsWhenInputFieldsAreNil(t *testing.T) {
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "default", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "default", "bin"),
-			Name:          chamberRuntime.RuntimeNameRunc,
+			Name:          chamberRuntimeShared.RuntimeNameRunc,
 			Privilege:     capability.Rootless,
 			Logging: chamberLogging.Config{
 				Level:  "warn",
@@ -490,7 +490,7 @@ func TestLoadFileAppliesConfigFileThenCommandLineInput(t *testing.T) {
 	if cfg.Image.Root != mustAbs(t, "file/images") {
 		t.Fatalf("Image.Root = %q, want config file value", cfg.Image.Root)
 	}
-	if cfg.Runtime.Name != chamberRuntime.RuntimeNameRunc {
+	if cfg.Runtime.Name != chamberRuntimeShared.RuntimeNameRunc {
 		t.Fatalf("Runtime.Name = %q, want runc", cfg.Runtime.Name)
 	}
 	if cfg.Runtime.Privilege != capability.Rootful {

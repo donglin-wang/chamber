@@ -1,4 +1,4 @@
-package runtime
+package shared
 
 import (
 	"path/filepath"
@@ -6,6 +6,8 @@ import (
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
+
+const RuntimeNameRunc = "runc"
 
 type Config struct {
 	RuntimeRoot   string

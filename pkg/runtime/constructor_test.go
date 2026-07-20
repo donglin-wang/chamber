@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -23,7 +24,7 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.RuntimeRoot != filepath.Join(root, "run", "runtime") {
 		t.Fatalf("RuntimeRoot = %q, want default runtime root", cfg.RuntimeRoot)
 	}
-	if cfg.Name != RuntimeNameRunc {
+	if cfg.Name != chamberRuntimeShared.RuntimeNameRunc {
 		t.Fatalf("Name = %q, want runc", cfg.Name)
 	}
 	if cfg.Privilege != capability.Rootless {
@@ -59,7 +60,7 @@ func TestNewRequiresFinalRuntimeConfig(t *testing.T) {
 		"privilege": {
 			RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 			RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
-			Name:          RuntimeNameRunc,
+			Name:          chamberRuntimeShared.RuntimeNameRunc,
 		},
 	}
 
@@ -80,23 +81,23 @@ func TestNewRequiresFinalRuntimeConfig(t *testing.T) {
 }
 
 func TestSupportedNamesListsKnownImplementations(t *testing.T) {
-	if !slices.Equal(SupportedNames(), []string{RuntimeNameRunc}) {
+	if !slices.Equal(SupportedNames(), []string{chamberRuntimeShared.RuntimeNameRunc}) {
 		t.Fatalf("SupportedNames() = %#v, want runc", SupportedNames())
 	}
-	if !IsSupportedName(RuntimeNameRunc) {
-		t.Fatalf("IsSupportedName(%q) = false, want true", RuntimeNameRunc)
+	if !IsSupportedName(chamberRuntimeShared.RuntimeNameRunc) {
+		t.Fatalf("IsSupportedName(%q) = false, want true", chamberRuntimeShared.RuntimeNameRunc)
 	}
 }
 
 func TestSupportedCapabilitiesListsRuncCapabilities(t *testing.T) {
-	capabilities, ok := SupportedCapabilities(RuntimeNameRunc)
+	capabilities, ok := SupportedCapabilities(chamberRuntimeShared.RuntimeNameRunc)
 	if !ok {
-		t.Fatalf("SupportedCapabilities(%q) ok = false, want true", RuntimeNameRunc)
+		t.Fatalf("SupportedCapabilities(%q) ok = false, want true", chamberRuntimeShared.RuntimeNameRunc)
 	}
 	if !slices.Equal(capabilities.Privileges, []capability.Privilege{capability.Rootless}) {
 		t.Fatalf("privileges = %#v, want rootless", capabilities.Privileges)
 	}
-	if !slices.Equal(capabilities.Isolation, []Isolation{ProcessIsolation}) {
+	if !slices.Equal(capabilities.Isolation, []Isolation{chamberRuntimeShared.ProcessIsolation}) {
 		t.Fatalf("isolation = %#v, want process", capabilities.Isolation)
 	}
 }
@@ -108,7 +109,7 @@ func TestNewRejectsUnsupportedPrivilegeBeforeFilesystemMutation(t *testing.T) {
 	_, err := New(context.Background(), Config{
 		RuntimeRoot:   runtimeRoot,
 		RuntimeBinDir: binDir,
-		Name:          RuntimeNameRunc,
+		Name:          chamberRuntimeShared.RuntimeNameRunc,
 		Privilege:     capability.Rootful,
 	}, localfs.NewDirectoryManager())
 
@@ -136,7 +137,7 @@ func TestNewRejectsNonLinuxHostBeforeFilesystemMutation(t *testing.T) {
 	_, err := New(context.Background(), Config{
 		RuntimeRoot:   runtimeRoot,
 		RuntimeBinDir: binDir,
-		Name:          RuntimeNameRunc,
+		Name:          chamberRuntimeShared.RuntimeNameRunc,
 		Privilege:     capability.Rootless,
 	}, localfs.NewDirectoryManager())
 
@@ -152,97 +153,4 @@ func TestNewRejectsNonLinuxHostBeforeFilesystemMutation(t *testing.T) {
 	if _, statErr := os.Stat(binDir); !os.IsNotExist(statErr) {
 		t.Fatalf("runtime bin dir stat error = %v, want not exist", statErr)
 	}
-}
-
-func TestNewDispatchesRegisteredRuntimeConstructor(t *testing.T) {
-	runtimeRoot := filepath.Join(t.TempDir(), "runtime")
-	binDir := filepath.Join(t.TempDir(), "bin")
-	called := false
-	restoreImplementation := registerConstructorForTest(t, RuntimeNameRunc, func(ctx context.Context, config Config, directoryManager localfs.DirectoryManager) (Runtime, error) {
-		called = true
-		if config.Name != RuntimeNameRunc {
-			t.Fatalf("constructor config name = %q, want %q", config.Name, RuntimeNameRunc)
-		}
-		if config.Privilege != capability.Rootless {
-			t.Fatalf("constructor privilege = %q, want rootless", config.Privilege)
-		}
-		assertPrivateDir(t, config.RuntimeRoot)
-		assertPrivateDir(t, config.RuntimeBinDir)
-		return fakeRuntime{}, nil
-	})
-	defer restoreImplementation()
-
-	runtime, err := newForGOOS(context.Background(), Config{
-		RuntimeRoot:   runtimeRoot,
-		RuntimeBinDir: binDir,
-		Name:          RuntimeNameRunc,
-		Privilege:     capability.Rootless,
-	}, localfs.NewDirectoryManager(), "linux")
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	if runtime == nil {
-		t.Fatal("New() runtime = nil, want runtime")
-	}
-	if !called {
-		t.Fatal("registered constructor was not called")
-	}
-}
-
-func registerConstructorForTest(t *testing.T, name string, constructor func(context.Context, Config, localfs.DirectoryManager) (Runtime, error)) func() {
-	t.Helper()
-
-	old := implementations[name]
-	implementation := old
-	implementation.New = nil
-	implementations[name] = implementation
-	Register(name, constructor)
-	return func() {
-		implementations[name] = old
-	}
-}
-
-func assertPrivateDir(t *testing.T, path string) {
-	t.Helper()
-
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("Stat(%q) error = %v", path, err)
-	}
-	if !info.IsDir() {
-		t.Fatalf("%q is not a directory", path)
-	}
-	if info.Mode().Perm() != 0700 {
-		t.Fatalf("mode = %o, want 0700", info.Mode().Perm())
-	}
-}
-
-type fakeRuntime struct{}
-
-func (fakeRuntime) Descriptor() Descriptor {
-	return Descriptor{Name: RuntimeNameRunc}
-}
-
-func (fakeRuntime) Binary() Binary {
-	return Binary{}
-}
-
-func (fakeRuntime) Run(context.Context, RunRequest) (Process, error) {
-	return nil, nil
-}
-
-func (fakeRuntime) State(context.Context, string) (ContainerState, error) {
-	return ContainerState{}, nil
-}
-
-func (fakeRuntime) Signal(context.Context, SignalRequest) error {
-	return nil
-}
-
-func (fakeRuntime) Delete(context.Context, DeleteRequest) error {
-	return nil
-}
-
-func (fakeRuntime) ReadLog(string, LogStream) ([]byte, error) {
-	return nil, nil
 }
