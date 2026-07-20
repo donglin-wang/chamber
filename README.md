@@ -23,6 +23,30 @@ SDK callers own storage placement, concurrency, cleanup, cancellation policy,
 and recovery. Constructors return ready objects or errors; there is no separate
 public setup phase.
 
+## Cleanup Contract
+
+The SDK does not provide all-in-one container cleanup in the 0.1.0 beta.
+Callers are responsible for cleaning up the storage they asked each package to
+create.
+
+For one container run, callers should:
+
+1. Call `Process.Wait` for every successful `Runtime.Run` call. This reaps the
+   `runc run` process and closes Chamber-owned stdout/stderr log file handles.
+2. Call `Runtime.Delete` with `Force: true` when runtime state may still exist
+   or the container may still be running. This delegates to `runc delete
+   --force`.
+3. Remove `ProvisionedBundle.BundlePath` when the unpacked bundle is no longer
+   needed.
+4. Remove runtime logs under `<RuntimeRoot>/logs/<containerID>` when they are no
+   longer needed.
+5. Decide separately when to remove shared image layouts and the cached runtime
+   binary.
+
+If a process crashes or a caller skips these steps, per-container runtime state,
+bundle directories, logs, or temporary files may remain in the caller-provided
+roots.
+
 ## Requirements
 
 - Go 1.26.4 or newer compatible with this module.
