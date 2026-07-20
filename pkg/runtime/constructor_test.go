@@ -30,7 +30,7 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestNewRejectsUnsupportedRuntimeName(t *testing.T) {
-	_, err := newForGOOS(context.Background(), chamberRuntimeShared.Config{
+	_, err := newRuntimeForOS(context.Background(), chamberRuntimeShared.Config{
 		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
 		Name:          "crun",
@@ -63,7 +63,7 @@ func TestNewRequiresFinalRuntimeConfig(t *testing.T) {
 
 	for name, config := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := newForGOOS(context.Background(), config, localfs.NewDirectoryManager(), "linux")
+			_, err := newRuntimeForOS(context.Background(), config, localfs.NewDirectoryManager(), "linux")
 			if err == nil {
 				t.Fatal("New() error = nil, want final config validation error")
 			}

@@ -26,10 +26,10 @@ var runtimeCapabilities = map[string]chamberRuntimeShared.Capabilities{
 }
 
 func NewRuntime(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager) (chamberRuntimeShared.Runtime, error) {
-	return newForGOOS(ctx, config, directoryManager, goruntime.GOOS)
+	return newRuntimeForOS(ctx, config, directoryManager, goruntime.GOOS)
 }
 
-func newForGOOS(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager, goos string) (chamberRuntimeShared.Runtime, error) {
+func newRuntimeForOS(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager, osName string) (chamberRuntimeShared.Runtime, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -49,8 +49,8 @@ func newForGOOS(ctx context.Context, config chamberRuntimeShared.Config, directo
 	if !supportsPrivilege(capabilities, config.Privilege) {
 		return nil, fmt.Errorf("%w: %s runtime does not support %q privilege", chamberErrors.ErrInvalidRequest, config.Name, config.Privilege)
 	}
-	if goos != "linux" {
-		return nil, fmt.Errorf("Chamber runtime requires a Linux host or Linux VM; current GOOS is %q", goos)
+	if osName != "linux" {
+		return nil, fmt.Errorf("Chamber runtime requires a Linux host or Linux VM; current GOOS is %q", osName)
 	}
 	if config.RuntimeRoot == "" {
 		return nil, fmt.Errorf("%w: runtime root is required", chamberErrors.ErrInvalidRequest)
