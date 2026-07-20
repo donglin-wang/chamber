@@ -324,20 +324,3 @@ func isPreparationName(name string) bool {
 	}
 	return false
 }
-
-func insideConstructor(file *ast.File, pos token.Pos) bool {
-	for _, declaration := range file.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Body == nil || function.Name.Name != "New" {
-			continue
-		}
-		if function.Body.Pos() <= pos && pos <= function.Body.End() {
-			return true
-		}
-	}
-	return false
-}
-
-func ptr(value string) *string {
-	return &value
-}
