@@ -233,6 +233,12 @@ func (s *Store) TransitionContainer(
 	container.UpdatedAt = update.At
 	container.ExitCode = cloneIntPtr(update.ExitCode)
 	container.ErrorCode = update.ErrorCode
+	if update.StdoutPath != "" {
+		container.StdoutPath = update.StdoutPath
+	}
+	if update.StderrPath != "" {
+		container.StderrPath = update.StderrPath
+	}
 
 	if err := compareAndPut(ctx, s.client, key, modRevision, container); err != nil {
 		return metadata.Container{}, err

@@ -46,6 +46,8 @@ type Container struct {
 	ImageDigest string             `json:"image_digest"`
 	ImageRef    string             `json:"image_ref"`
 	BundlePath  string             `json:"bundle_path"`
+	StdoutPath  string             `json:"stdout_path,omitempty"`
+	StderrPath  string             `json:"stderr_path,omitempty"`
 	Runtime     string             `json:"runtime"`
 	State       ContainerState     `json:"state"`
 	CreatedAt   time.Time          `json:"created_at"`
@@ -148,10 +150,12 @@ type Store interface {
 }
 
 type ContainerUpdate struct {
-	State     ContainerState
-	At        time.Time
-	ExitCode  *int
-	ErrorCode chamberErrors.Code
+	State      ContainerState
+	At         time.Time
+	ExitCode   *int
+	ErrorCode  chamberErrors.Code
+	StdoutPath string
+	StderrPath string
 }
 
 type OperationUpdate struct {

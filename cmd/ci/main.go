@@ -110,9 +110,8 @@ func run(cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("create runtime: %w", err)
 	}
-	binary := runtime.Binary()
 	descriptor := runtime.Descriptor()
-	logging.Info(ctx, "CI runtime ready", "runtime", descriptor.Name, "version", descriptor.Version, "path", binary.Path)
+	logging.Info(ctx, "CI runtime ready", "runtime", descriptor.Name, "version", descriptor.Version, "path", descriptor.BinaryPath)
 
 	puller, err := chamberImage.NewPuller(chamberImageShared.Config{
 		Root:    paths.imageRoot,
@@ -287,28 +286,27 @@ func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provision
 		}()
 	}
 
-	process, err := runtime.Run(ctx, chamberRuntimeShared.RunRequest{Bundle: provisioned})
+	container, err := runtime.Run(ctx, chamberRuntimeShared.RunRequest{Bundle: provisioned})
 	if err != nil {
 		result.err = fmt.Errorf("run job container: %w", err)
 		return result
 	}
-	result.exitCode, result.err = process.Wait()
+	waitResult, waitErr := container.Wait()
+	result.exitCode = waitResult.ExitCode
+	result.err = waitErr
 
-	if stdout, err := runtime.ReadLog(containerID, chamberRuntimeShared.StdoutLogStream); err == nil {
+	if stdout, err := container.ReadLog(chamberRuntimeShared.StdoutLogStream); err == nil {
 		result.stdout = stdout
 	} else if result.err == nil {
 		result.err = fmt.Errorf("read stdout: %w", err)
 	}
-	if stderr, err := runtime.ReadLog(containerID, chamberRuntimeShared.StderrLogStream); err == nil {
+	if stderr, err := container.ReadLog(chamberRuntimeShared.StderrLogStream); err == nil {
 		result.stderr = stderr
 	} else if result.err == nil {
 		result.err = fmt.Errorf("read stderr: %w", err)
 	}
 
-	if deleteErr := runtime.Delete(context.Background(), chamberRuntimeShared.DeleteRequest{
-		ContainerID: containerID,
-		Force:       true,
-	}); deleteErr != nil && result.err == nil && !looksAlreadyDeleted(deleteErr) {
+	if deleteErr := container.Delete(context.Background(), true); deleteErr != nil && result.err == nil && !looksAlreadyDeleted(deleteErr) {
 		result.err = fmt.Errorf("delete runtime container: %w", deleteErr)
 	}
 	return result

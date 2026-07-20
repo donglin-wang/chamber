@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -59,18 +60,17 @@ func TestNewDownloadsValidRuntimeBinary(t *testing.T) {
 		Name:          "runc",
 	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestArtifact(content))
 
-	binary := runtime.Binary()
-	if binary.Name != "runc" {
-		t.Fatalf("Binary.Name = %q, want runc", binary.Name)
-	}
-	if binary.Path != filepath.Join(binDir, "runc") {
-		t.Fatalf("Binary.Path = %q, want %q", binary.Path, filepath.Join(binDir, "runc"))
-	}
 	descriptor := runtime.Descriptor()
+	if descriptor.Name != "runc" {
+		t.Fatalf("Descriptor().Name = %q, want runc", descriptor.Name)
+	}
+	if descriptor.BinaryPath != filepath.Join(binDir, "runc") {
+		t.Fatalf("Descriptor().BinaryPath = %q, want %q", descriptor.BinaryPath, filepath.Join(binDir, "runc"))
+	}
 	if descriptor.Version != "test-version" {
 		t.Fatalf("Descriptor().Version = %q, want test-version", descriptor.Version)
 	}
-	assertFileContentAndMode(t, binary.Path, content, 0755)
+	assertFileContentAndMode(t, descriptor.BinaryPath, content, 0755)
 }
 
 func TestNewDefaultsToRuncAdapterName(t *testing.T) {
@@ -81,12 +81,12 @@ func TestNewDefaultsToRuncAdapterName(t *testing.T) {
 		RuntimeBinDir: binDir,
 	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestArtifact(content))
 
-	binary := runtime.Binary()
-	if binary.Name != "runc" {
-		t.Fatalf("Binary.Name = %q, want runc", binary.Name)
+	descriptor := runtime.Descriptor()
+	if descriptor.Name != "runc" {
+		t.Fatalf("Descriptor().Name = %q, want runc", descriptor.Name)
 	}
-	if binary.Path != filepath.Join(binDir, "runc") {
-		t.Fatalf("Binary.Path = %q, want %q", binary.Path, filepath.Join(binDir, "runc"))
+	if descriptor.BinaryPath != filepath.Join(binDir, "runc") {
+		t.Fatalf("Descriptor().BinaryPath = %q, want %q", descriptor.BinaryPath, filepath.Join(binDir, "runc"))
 	}
 }
 
@@ -162,9 +162,9 @@ func TestNewUsesExistingValidBinary(t *testing.T) {
 		Name:          "runc",
 	}, localfs.NewDirectoryManager(), withHTTPClient(client), withTestArtifact(content))
 
-	binary := runtime.Binary()
-	if binary.Path != path {
-		t.Fatalf("Binary.Path = %q, want %q", binary.Path, path)
+	descriptor := runtime.Descriptor()
+	if descriptor.BinaryPath != path {
+		t.Fatalf("Descriptor().BinaryPath = %q, want %q", descriptor.BinaryPath, path)
 	}
 	if requests != 0 {
 		t.Fatalf("download requests = %d, want 0", requests)
@@ -192,9 +192,9 @@ func TestNewMakesExistingValidBinaryExecutable(t *testing.T) {
 		Name:          "runc",
 	}, localfs.NewDirectoryManager(), withHTTPClient(client), withTestArtifact(content))
 
-	binary := runtime.Binary()
-	if binary.Path != path {
-		t.Fatalf("Binary.Path = %q, want %q", binary.Path, path)
+	descriptor := runtime.Descriptor()
+	if descriptor.BinaryPath != path {
+		t.Fatalf("Descriptor().BinaryPath = %q, want %q", descriptor.BinaryPath, path)
 	}
 	if requests != 0 {
 		t.Fatalf("download requests = %d, want 0", requests)
@@ -218,19 +218,16 @@ func TestNewReplacesExistingInvalidBinary(t *testing.T) {
 		Name:          "runc",
 	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(newContent))))), withTestArtifact(newContent))
 
-	binary := runtime.Binary()
-	if binary.Path != path {
-		t.Fatalf("Binary.Path = %q, want %q", binary.Path, path)
+	descriptor := runtime.Descriptor()
+	if descriptor.BinaryPath != path {
+		t.Fatalf("Descriptor().BinaryPath = %q, want %q", descriptor.BinaryPath, path)
 	}
 	assertFileContentAndMode(t, path, newContent, 0755)
 }
 
 func TestDescriptorDeclaresRuncSupport(t *testing.T) {
 	runtime := &Runtime{
-		binary: chamberRuntimeShared.Binary{
-			Name: "runc",
-			Path: "/tmp/runc",
-		},
+		binaryPath: "/tmp/runc",
 		artifact: runtimeArtifact{
 			version: "test-version",
 		},
@@ -243,6 +240,9 @@ func TestDescriptorDeclaresRuncSupport(t *testing.T) {
 	}
 	if descriptor.Version != "test-version" {
 		t.Fatalf("Descriptor().Version = %q, want test-version", descriptor.Version)
+	}
+	if descriptor.BinaryPath != "/tmp/runc" {
+		t.Fatalf("Descriptor().BinaryPath = %q, want /tmp/runc", descriptor.BinaryPath)
 	}
 	if !slices.Equal(descriptor.Capabilities.Privileges, []capability.Privilege{capability.Rootless}) {
 		t.Fatalf("privileges = %#v, want rootless only", descriptor.Capabilities.Privileges)
@@ -263,12 +263,9 @@ func TestDescriptorDefaultsToRuncAdapterName(t *testing.T) {
 	}
 }
 
-func TestDescriptorNameDoesNotFollowConfiguredBinaryName(t *testing.T) {
+func TestDescriptorNameDoesNotFollowBinaryPath(t *testing.T) {
 	runtime := &Runtime{
-		binary: chamberRuntimeShared.Binary{
-			Name: "custom-runc-binary",
-			Path: "/tmp/custom-runc-binary",
-		},
+		binaryPath: "/tmp/custom-runc-binary",
 		artifact: runtimeArtifact{
 			version: "test-version",
 		},
@@ -278,6 +275,9 @@ func TestDescriptorNameDoesNotFollowConfiguredBinaryName(t *testing.T) {
 
 	if descriptor.Name != "runc" {
 		t.Fatalf("Descriptor().Name = %q, want runc adapter name", descriptor.Name)
+	}
+	if descriptor.BinaryPath != "/tmp/custom-runc-binary" {
+		t.Fatalf("Descriptor().BinaryPath = %q, want configured binary path", descriptor.BinaryPath)
 	}
 	if descriptor.Version != "test-version" {
 		t.Fatalf("Descriptor().Version = %q, want configured binary version", descriptor.Version)
@@ -299,9 +299,9 @@ func TestNewReturnsAbsoluteBinaryPath(t *testing.T) {
 		Name:          "runc",
 	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestArtifact(content))
 
-	binary := runtime.Binary()
-	if !filepath.IsAbs(binary.Path) {
-		t.Fatalf("Binary.Path = %q, want absolute path", binary.Path)
+	descriptor := runtime.Descriptor()
+	if !filepath.IsAbs(descriptor.BinaryPath) {
+		t.Fatalf("Descriptor().BinaryPath = %q, want absolute path", descriptor.BinaryPath)
 	}
 }
 
@@ -353,7 +353,7 @@ func TestDefaultRuntimeArtifactSupportsLinuxReleaseArchitectures(t *testing.T) {
 	}
 }
 
-func TestRunStartsRuncAndReturnsProcess(t *testing.T) {
+func TestRunStartsRuncAndReturnsContainer(t *testing.T) {
 	logDir := privateTempDir(t)
 	binaryPath := writeFakeRunc(t, logDir, `
 case "$cmd" in
@@ -377,18 +377,28 @@ esac
 	bundlePath := privateTempDir(t)
 	stateRoot := filepath.Join(privateTempDir(t), "state")
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
-	process, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
+	var streamedStdout strings.Builder
+	var streamedStderr strings.Builder
+	container, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
 		Bundle: chamberBundleShared.ProvisionedBundle{
 			ContainerID: "container-1",
 			BundlePath:  bundlePath,
 		},
-		Stdin: strings.NewReader("stdin for fake runc"),
+		Stdin:  strings.NewReader("stdin for fake runc"),
+		Stdout: []io.Writer{&streamedStdout},
+		Stderr: []io.Writer{&streamedStderr},
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if process == nil {
-		t.Fatal("Run() process = nil, want process")
+	if container == nil {
+		t.Fatal("Run() container = nil, want container")
+	}
+	if container.ID() != "container-1" {
+		t.Fatalf("Container.ID() = %q, want container-1", container.ID())
+	}
+	if container.PID() <= 0 {
+		t.Fatalf("Container.PID() = %d, want positive pid", container.PID())
 	}
 	waitForFile(t, filepath.Join(logDir, "run-started"))
 
@@ -399,21 +409,21 @@ esac
 	if err := os.WriteFile(filepath.Join(logDir, "release"), []byte("ok"), 0600); err != nil {
 		t.Fatalf("WriteFile(release) error = %v", err)
 	}
-	exitCode, err := process.Wait()
+	result, err := container.Wait()
 	if err != nil {
-		t.Fatalf("Process.Wait() error = %v", err)
+		t.Fatalf("Container.Wait() error = %v", err)
 	}
-	if exitCode != 0 {
-		t.Fatalf("Process.Wait() exit code = %d, want 0", exitCode)
+	if result.ExitCode != 0 {
+		t.Fatalf("Container.Wait() exit code = %d, want 0", result.ExitCode)
 	}
-	stdoutContent, err := runtime.ReadLog("container-1", chamberRuntimeShared.StdoutLogStream)
+	stdoutContent, err := container.ReadLog(chamberRuntimeShared.StdoutLogStream)
 	if err != nil {
 		t.Fatalf("ReadLog(stdout) error = %v", err)
 	}
 	if string(stdoutContent) != "stdout from fake runc" {
 		t.Fatalf("ReadLog(stdout) = %q, want fake runc stdout", string(stdoutContent))
 	}
-	stderrContent, err := runtime.ReadLog("container-1", chamberRuntimeShared.StderrLogStream)
+	stderrContent, err := container.ReadLog(chamberRuntimeShared.StderrLogStream)
 	if err != nil {
 		t.Fatalf("ReadLog(stderr) error = %v", err)
 	}
@@ -421,12 +431,22 @@ esac
 		t.Fatalf("ReadLog(stderr) = %q, want fake runc stderr", string(stderrContent))
 	}
 	stdoutPath := filepath.Join(stateRoot, "logs", "container-1", "stdout.log")
-	if _, err := os.Stat(stdoutPath); err != nil {
-		t.Fatalf("Stat(%q) error = %v", stdoutPath, err)
+	stderrPath := filepath.Join(stateRoot, "logs", "container-1", "stderr.log")
+	if container.StdoutPath() != stdoutPath {
+		t.Fatalf("Container.StdoutPath() = %q, want %q", container.StdoutPath(), stdoutPath)
+	}
+	if container.StderrPath() != stderrPath {
+		t.Fatalf("Container.StderrPath() = %q, want %q", container.StderrPath(), stderrPath)
+	}
+	if streamedStdout.String() != "stdout from fake runc" {
+		t.Fatalf("streamed stdout = %q, want fake runc stdout", streamedStdout.String())
+	}
+	if streamedStderr.String() != "stderr from fake runc" {
+		t.Fatalf("streamed stderr = %q, want fake runc stderr", streamedStderr.String())
 	}
 }
 
-func TestRunReturnsProcessForFastExit(t *testing.T) {
+func TestRunReturnsContainerForFastExit(t *testing.T) {
 	logDir := privateTempDir(t)
 	binaryPath := writeFakeRunc(t, logDir, `
 case "$cmd" in
@@ -440,7 +460,7 @@ esac
 `)
 
 	runtime := runtimeWithBinary(t, binaryPath, privateTempDir(t))
-	process, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
+	container, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
 		Bundle: chamberBundleShared.ProvisionedBundle{
 			ContainerID: "short.job",
 			BundlePath:  privateTempDir(t),
@@ -449,17 +469,17 @@ esac
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if process == nil {
-		t.Fatal("Run() process = nil, want process")
+	if container == nil {
+		t.Fatal("Run() container = nil, want container")
 	}
 
 	for i := 0; i < 2; i++ {
-		exitCode, err := process.Wait()
+		result, err := container.Wait()
 		if err != nil {
-			t.Fatalf("Process.Wait() call %d error = %v", i+1, err)
+			t.Fatalf("Container.Wait() call %d error = %v", i+1, err)
 		}
-		if exitCode != 7 {
-			t.Fatalf("Process.Wait() call %d exit code = %d, want 7", i+1, exitCode)
+		if result.ExitCode != 7 {
+			t.Fatalf("Container.Wait() call %d exit code = %d, want 7", i+1, result.ExitCode)
 		}
 	}
 
@@ -483,8 +503,12 @@ esac
 `)
 
 	stateRoot := privateTempDir(t)
-	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
-	state, err := runtime.State(context.Background(), "stateful")
+	container := &runcContainer{containerConfig: containerConfig{
+		id:         "stateful",
+		binaryPath: binaryPath,
+		stateRoot:  stateRoot,
+	}}
+	state, err := container.State(context.Background())
 	if err != nil {
 		t.Fatalf("State() error = %v", err)
 	}
@@ -508,24 +532,26 @@ esac
 `)
 
 	stateRoot := privateTempDir(t)
-	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
-	err := runtime.Signal(context.Background(), chamberRuntimeShared.SignalRequest{
-		ContainerID: "signaled",
-		Signal:      chamberRuntimeShared.SignalTERM,
-	})
+	container := &runcContainer{containerConfig: containerConfig{
+		id:         "signaled",
+		binaryPath: binaryPath,
+		stateRoot:  stateRoot,
+	}}
+	err := container.Signal(context.Background(), syscall.SIGTERM)
 	if err != nil {
 		t.Fatalf("Signal() error = %v", err)
 	}
-	assertLines(t, filepath.Join(logDir, "kill-args"), []string{"--root", stateRoot, "kill", "signaled", "TERM"})
+	assertLines(t, filepath.Join(logDir, "kill-args"), []string{"--root", stateRoot, "kill", "signaled", "15"})
 }
 
 func TestSignalRejectsUnsupportedSignal(t *testing.T) {
-	runtime := runtimeWithConfigOnly(t)
+	container := &runcContainer{containerConfig: containerConfig{
+		id:         "signaled",
+		binaryPath: "/tmp/runc",
+		stateRoot:  privateTempDir(t),
+	}}
 
-	err := runtime.Signal(context.Background(), chamberRuntimeShared.SignalRequest{
-		ContainerID: "signaled",
-		Signal:      chamberRuntimeShared.Signal("HUP"),
-	})
+	err := container.Signal(context.Background(), unsupportedSignal("unsupported"))
 	if err == nil {
 		t.Fatal("Signal() error = nil, want unsupported signal error")
 	}
@@ -533,6 +559,14 @@ func TestSignalRejectsUnsupportedSignal(t *testing.T) {
 		t.Fatalf("Signal() error = %v, want invalid request code", err)
 	}
 }
+
+type unsupportedSignal string
+
+func (signal unsupportedSignal) String() string {
+	return string(signal)
+}
+
+func (unsupportedSignal) Signal() {}
 
 func TestDeleteRemovesRuncContainer(t *testing.T) {
 	logDir := privateTempDir(t)
@@ -548,11 +582,12 @@ esac
 `)
 
 	stateRoot := privateTempDir(t)
-	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
-	err := runtime.Delete(context.Background(), chamberRuntimeShared.DeleteRequest{
-		ContainerID: "deleted",
-		Force:       true,
-	})
+	container := &runcContainer{containerConfig: containerConfig{
+		id:         "deleted",
+		binaryPath: binaryPath,
+		stateRoot:  stateRoot,
+	}}
+	err := container.Delete(context.Background(), true)
 	if err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
@@ -587,15 +622,48 @@ func TestRunRejectsUnsafeContainerID(t *testing.T) {
 	}
 }
 
-func TestReadLogRejectsInvalidInput(t *testing.T) {
-	runtime := runtimeWithConfigOnly(t)
+func TestContainerLogMethodsRejectInvalidStream(t *testing.T) {
+	container := &runcContainer{containerConfig: containerConfig{
+		id:         "container-logs",
+		binaryPath: "/tmp/runc",
+		stateRoot:  privateTempDir(t),
+		stdoutPath: filepath.Join(privateTempDir(t), "stdout.log"),
+		stderrPath: filepath.Join(privateTempDir(t), "stderr.log"),
+	}}
 
-	if _, err := runtime.ReadLog("container-logs", "stdin"); err == nil {
+	if _, err := container.ReadLog("stdin"); err == nil {
 		t.Fatal("ReadLog(unsupported) error = nil, want error")
 	}
-	if _, err := runtime.ReadLog("", chamberRuntimeShared.StdoutLogStream); err == nil {
-		t.Fatal("ReadLog(empty container ID) error = nil, want error")
+	if err := container.DeleteLog("stdin"); err == nil {
+		t.Fatal("DeleteLog(unsupported) error = nil, want error")
 	}
+}
+
+func TestDeleteLogRemovesSelectedStream(t *testing.T) {
+	logDir := privateTempDir(t)
+	stdoutPath := filepath.Join(logDir, "stdout.log")
+	stderrPath := filepath.Join(logDir, "stderr.log")
+	if err := os.WriteFile(stdoutPath, []byte("stdout"), 0600); err != nil {
+		t.Fatalf("WriteFile(stdout) error = %v", err)
+	}
+	if err := os.WriteFile(stderrPath, []byte("stderr"), 0600); err != nil {
+		t.Fatalf("WriteFile(stderr) error = %v", err)
+	}
+	container := &runcContainer{containerConfig: containerConfig{
+		id:         "container-logs",
+		binaryPath: "/tmp/runc",
+		stateRoot:  privateTempDir(t),
+		stdoutPath: stdoutPath,
+		stderrPath: stderrPath,
+	}}
+
+	if err := container.DeleteLog(chamberRuntimeShared.StdoutLogStream); err != nil {
+		t.Fatalf("DeleteLog(stdout) error = %v", err)
+	}
+	if _, err := os.Stat(stdoutPath); !os.IsNotExist(err) {
+		t.Fatalf("stdout log stat error = %v, want not exist", err)
+	}
+	assertFileContent(t, stderrPath, "stderr")
 }
 
 func sha256Hex(content []byte) string {

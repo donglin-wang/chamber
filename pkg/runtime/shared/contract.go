@@ -3,15 +3,11 @@ package shared
 import (
 	"context"
 	"io"
+	"os"
 
 	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 )
-
-type Binary struct {
-	Name string
-	Path string
-}
 
 type Isolation string
 
@@ -28,6 +24,7 @@ type Capabilities struct {
 type Descriptor struct {
 	Name         string
 	Version      string
+	BinaryPath   string
 	Capabilities Capabilities
 }
 
@@ -40,23 +37,6 @@ const (
 	ContainerStatusStopped  ContainerStatus = "stopped"
 )
 
-type Signal string
-
-const (
-	SignalTERM Signal = "TERM"
-	SignalKILL Signal = "KILL"
-	SignalINT  Signal = "INT"
-)
-
-func IsSupportedSignal(signal Signal) bool {
-	switch signal {
-	case SignalTERM, SignalKILL, SignalINT:
-		return true
-	default:
-		return false
-	}
-}
-
 type LogStream string
 
 const (
@@ -67,41 +47,34 @@ const (
 type RunRequest struct {
 	Bundle chamberBundleShared.ProvisionedBundle
 	Stdin  io.Reader
+	Stdout []io.Writer
+	Stderr []io.Writer
 }
 
-type Process interface {
-	Wait() (exitCode int, err error)
+type ContainerResult struct {
+	ExitCode int
+}
+
+type Container interface {
+	ID() string
+	PID() int
+	StdoutPath() string
+	StderrPath() string
+	Wait() (ContainerResult, error)
+	State(ctx context.Context) (ContainerState, error)
+	Signal(ctx context.Context, signal os.Signal) error
+	Delete(ctx context.Context, force bool) error
+	ReadLog(stream LogStream) ([]byte, error)
+	DeleteLog(stream LogStream) error
 }
 
 type Runtime interface {
 	Descriptor() Descriptor
 
-	Binary() Binary
-
-	// Run starts the OCI runtime process. Wait observes or returns its cached
-	// exit result.
-	Run(ctx context.Context, request RunRequest) (Process, error)
-
-	State(ctx context.Context, containerID string) (ContainerState, error)
-
-	Signal(ctx context.Context, request SignalRequest) error
-
-	Delete(ctx context.Context, request DeleteRequest) error
-
-	ReadLog(containerID string, stream LogStream) ([]byte, error)
+	Run(ctx context.Context, request RunRequest) (Container, error)
 }
 
 type ContainerState struct {
 	ContainerID string
 	Status      ContainerStatus
-}
-
-type SignalRequest struct {
-	ContainerID string
-	Signal      Signal
-}
-
-type DeleteRequest struct {
-	ContainerID string
-	Force       bool
 }

@@ -234,6 +234,12 @@ func (s *MemoryStore) TransitionContainer(
 	container.UpdatedAt = update.At
 	container.ExitCode = cloneIntPtr(update.ExitCode)
 	container.ErrorCode = update.ErrorCode
+	if update.StdoutPath != "" {
+		container.StdoutPath = update.StdoutPath
+	}
+	if update.StderrPath != "" {
+		container.StderrPath = update.StderrPath
+	}
 	s.containers[id] = cloneContainer(container)
 	return cloneContainer(container), nil
 }

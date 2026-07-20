@@ -146,11 +146,15 @@ func registerContainerRoutes(
 			writeDaemonError(w, operationError("", chamberErrors.ErrMetadataFailed, err))
 			return
 		}
-		if runtime == nil {
-			writeDaemonError(w, fmt.Errorf("runtime is required"))
+		logPath := container.StdoutPath
+		if stream == chamberRuntimeShared.StderrLogStream {
+			logPath = container.StderrPath
+		}
+		if logPath == "" {
+			writeDaemonError(w, operationError("", chamberErrors.ErrLogNotFound, os.ErrNotExist))
 			return
 		}
-		content, err := runtime.ReadLog(container.ID, stream)
+		content, err := os.ReadFile(logPath)
 		if errors.Is(err, os.ErrNotExist) {
 			writeDaemonError(w, operationError("", chamberErrors.ErrLogNotFound, err))
 			return
@@ -229,9 +233,6 @@ func runContainer(
 	}
 
 	runtimeName := runtime.Descriptor().Name
-	if runtimeName == "" {
-		runtimeName = runtime.Binary().Name
-	}
 
 	provisioned, err := provisioner.Provision(ctx, chamberBundleShared.ProvisionRequest{
 		ContainerID: containerID,
@@ -287,7 +288,7 @@ func runContainer(
 		return runContainerResult{operation: operation, container: container}, failErr
 	}
 
-	process, err := runtime.Run(runtimeCtx, chamberRuntimeShared.RunRequest{
+	runtimeContainer, err := runtime.Run(runtimeCtx, chamberRuntimeShared.RunRequest{
 		Bundle: provisioned,
 	})
 	if err != nil {
@@ -306,19 +307,21 @@ func runContainer(
 	}
 
 	running, err := store.TransitionContainer(ctx, containerID, metadata.ContainerStarting, metadata.ContainerUpdate{
-		State: metadata.ContainerRunning,
-		At:    time.Now().UTC(),
+		State:      metadata.ContainerRunning,
+		At:         time.Now().UTC(),
+		StdoutPath: runtimeContainer.StdoutPath(),
+		StderrPath: runtimeContainer.StderrPath(),
 	})
 	if err != nil {
-		go finishRunningProcess(store, operationID, containerID, metadata.ContainerStarting, process)
+		go finishRunningProcess(store, operationID, containerID, metadata.ContainerStarting, runtimeContainer)
 		return runContainerResult{operation: operation, container: starting}, operationError(operationID, chamberErrors.ErrMetadataFailed, err)
 	}
-	go finishRunningProcess(store, operationID, containerID, metadata.ContainerRunning, process)
+	go finishRunningProcess(store, operationID, containerID, metadata.ContainerRunning, runtimeContainer)
 	return runContainerResult{operation: operation, container: running}, nil
 }
 
-func finishRunningProcess(store metadata.Store, operationID string, containerID string, from metadata.ContainerState, process chamberRuntimeShared.Process) {
-	_, _, err := finishExitedProcess(context.Background(), store, operationID, containerID, from, process)
+func finishRunningProcess(store metadata.Store, operationID string, containerID string, from metadata.ContainerState, runtimeContainer chamberRuntimeShared.Container) {
+	_, _, err := finishExitedProcess(context.Background(), store, operationID, containerID, from, runtimeContainer)
 	if err != nil {
 		// The HTTP request already returned. Leave the error in logs; the
 		// operation/container records remain the durable debugging surface.
@@ -326,22 +329,22 @@ func finishRunningProcess(store metadata.Store, operationID string, containerID 
 	}
 }
 
-func finishExitedProcess(ctx context.Context, store metadata.Store, operationID string, containerID string, from metadata.ContainerState, process chamberRuntimeShared.Process) (metadata.Container, metadata.Operation, error) {
-	if process == nil {
-		err := fmt.Errorf("runtime process is required")
+func finishExitedProcess(ctx context.Context, store metadata.Store, operationID string, containerID string, from metadata.ContainerState, runtimeContainer chamberRuntimeShared.Container) (metadata.Container, metadata.Operation, error) {
+	if runtimeContainer == nil {
+		err := fmt.Errorf("runtime container is required")
 		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, from, operationID, chamberErrors.ErrRuntimeWaitFailed)
 		failErr := operationError(operationID, chamberErrors.ErrRuntimeWaitFailed, errors.Join(err, transitionErr))
 		return failedContainer, failedOperation, failErr
 	}
 
-	exitCode, waitErr := process.Wait()
-	exitCodePtr := &exitCode
+	result, waitErr := runtimeContainer.Wait()
+	exitCodePtr := &result.ExitCode
 	code := chamberErrors.Code("")
 	operationState := metadata.OperationSucceeded
 	if waitErr != nil {
 		code = chamberErrors.ErrRuntimeWaitFailed
 		operationState = metadata.OperationFailed
-	} else if exitCode != 0 {
+	} else if result.ExitCode != 0 {
 		code = chamberErrors.ErrContainerExitNonzero
 		operationState = metadata.OperationFailed
 	}
@@ -373,8 +376,8 @@ func finishExitedProcess(ctx context.Context, store metadata.Store, operationID 
 	if waitErr != nil {
 		return exited, operation, operationError(operationID, code, waitErr)
 	}
-	if exitCode != 0 {
-		return exited, operation, operationError(operationID, code, fmt.Errorf("container exited with status %d", exitCode))
+	if result.ExitCode != 0 {
+		return exited, operation, operationError(operationID, code, fmt.Errorf("container exited with status %d", result.ExitCode))
 	}
 	return exited, operation, nil
 }

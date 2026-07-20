@@ -13,7 +13,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"strconv"
 	"strings"
+	"syscall"
 
 	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
@@ -34,6 +36,7 @@ const (
 )
 
 var _ chamberRuntimeShared.Runtime = (*Runtime)(nil)
+var _ chamberRuntimeShared.Container = (*runcContainer)(nil)
 
 var capabilities = chamberRuntimeShared.Capabilities{
 	Privileges: []capability.Privilege{
@@ -46,7 +49,7 @@ var capabilities = chamberRuntimeShared.Capabilities{
 
 type Runtime struct {
 	config           chamberRuntimeShared.Config
-	binary           chamberRuntimeShared.Binary
+	binaryPath       string
 	artifact         runtimeArtifact
 	client           *http.Client
 	directoryManager localfs.DirectoryManager
@@ -99,11 +102,11 @@ func newWithOptions(ctx context.Context, config chamberRuntimeShared.Config, dir
 	for _, option := range options {
 		option(runtime)
 	}
-	binary, err := configuredBinary(config)
+	binaryPath, err := configuredBinaryPath(config)
 	if err != nil {
 		return nil, err
 	}
-	runtime.binary = binary
+	runtime.binaryPath = binaryPath
 	if err := runtime.installBinary(ctx); err != nil {
 		return nil, err
 	}
@@ -113,14 +116,17 @@ func newWithOptions(ctx context.Context, config chamberRuntimeShared.Config, dir
 
 func (r *Runtime) Descriptor() chamberRuntimeShared.Descriptor {
 	version := defaultVersion
+	binaryPath := ""
 	if r != nil {
 		if r.artifact.version != "" {
 			version = r.artifact.version
 		}
+		binaryPath = r.binaryPath
 	}
 	return chamberRuntimeShared.Descriptor{
 		Name:         runtimeName,
 		Version:      version,
+		BinaryPath:   binaryPath,
 		Capabilities: cloneCapabilities(capabilities),
 	}
 }
@@ -130,13 +136,6 @@ func cloneCapabilities(capabilities chamberRuntimeShared.Capabilities) chamberRu
 		Privileges: append([]capability.Privilege(nil), capabilities.Privileges...),
 		Isolation:  append([]chamberRuntimeShared.Isolation(nil), capabilities.Isolation...),
 	}
-}
-
-func (r *Runtime) Binary() chamberRuntimeShared.Binary {
-	if r == nil {
-		return chamberRuntimeShared.Binary{}
-	}
-	return r.binary
 }
 
 func (r *Runtime) installBinary(ctx context.Context) error {
@@ -152,44 +151,44 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 		return err
 	}
 
-	binary := r.binary
-	binDir := filepath.Dir(binary.Path)
+	binaryPath := r.binaryPath
+	binDir := filepath.Dir(binaryPath)
 
-	if ok, err := fileMatchesSHA256(binary.Path, expectedDigest); err != nil {
+	if ok, err := fileMatchesSHA256(binaryPath, expectedDigest); err != nil {
 		return fmt.Errorf("verify existing runtime binary: %w", err)
 	} else if ok {
-		if err := os.Chmod(binary.Path, 0755); err != nil {
+		if err := os.Chmod(binaryPath, 0755); err != nil {
 			return fmt.Errorf("make existing runtime binary executable: %w", err)
 		}
 		chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
-			"runtime", binary.Name,
+			"runtime", runtimeName,
 			"version", artifact.version,
-			"path", binary.Path,
+			"path", binaryPath,
 			"source", "cache",
 		)
 		return nil
 	}
 
 	chamberLogging.InfoWith(r.logger, ctx, "downloading runtime binary",
-		"runtime", binary.Name,
+		"runtime", runtimeName,
 		"version", artifact.version,
 		"url", artifact.url,
-		"path", binary.Path,
+		"path", binaryPath,
 	)
-	if err := r.download(ctx, artifact.url, expectedDigest, binDir, binary.Path); err != nil {
+	if err := r.download(ctx, artifact.url, expectedDigest, binDir, binaryPath); err != nil {
 		return err
 	}
 
 	chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
-		"runtime", binary.Name,
+		"runtime", runtimeName,
 		"version", artifact.version,
-		"path", binary.Path,
+		"path", binaryPath,
 		"source", "download",
 	)
 	return nil
 }
 
-func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunRequest) (chamberRuntimeShared.Process, error) {
+func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunRequest) (chamberRuntimeShared.Container, error) {
 	if request.Bundle.BundlePath == "" {
 		return nil, fmt.Errorf("%w: runtime bundle path is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -197,8 +196,8 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunReque
 	if err := containerid.Validate(containerID); err != nil {
 		return nil, err
 	}
-	binary := r.binary
-	if binary.Path == "" {
+	binaryPath := r.binaryPath
+	if binaryPath == "" {
 		return nil, fmt.Errorf("%w: runtime binary is required", chamberErrors.ErrInvalidRequest)
 	}
 	stateRoot, err := r.stateRoot()
@@ -214,12 +213,24 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunReque
 	if err != nil {
 		return nil, err
 	}
+	stdoutPath, err := r.logPath(containerID, chamberRuntimeShared.StdoutLogStream)
+	if err != nil {
+		_ = stdout.Close()
+		_ = stderr.Close()
+		return nil, err
+	}
+	stderrPath, err := r.logPath(containerID, chamberRuntimeShared.StderrLogStream)
+	if err != nil {
+		_ = stdout.Close()
+		_ = stderr.Close()
+		return nil, err
+	}
 
-	cmd := exec.CommandContext(ctx, binary.Path, "--root", stateRoot, "run", containerID)
+	cmd := exec.CommandContext(ctx, binaryPath, "--root", stateRoot, "run", containerID)
 	cmd.Dir = request.Bundle.BundlePath
 	cmd.Stdin = request.Stdin
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	cmd.Stdout = outputWriter(stdout, request.Stdout)
+	cmd.Stderr = outputWriter(stderr, request.Stderr)
 
 	if err := cmd.Start(); err != nil {
 		_ = stdout.Close()
@@ -231,82 +242,15 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunReque
 		"container_id", containerID,
 		"pid", cmd.Process.Pid,
 	)
-	return newRuncProcess(cmd, stdout, stderr), nil
-}
-
-func (r *Runtime) ReadLog(containerID string, stream chamberRuntimeShared.LogStream) ([]byte, error) {
-	path, err := r.logPath(containerID, stream)
-	if err != nil {
-		return nil, err
-	}
-	return os.ReadFile(path)
-}
-
-func (r *Runtime) State(ctx context.Context, containerID string) (chamberRuntimeShared.ContainerState, error) {
-	if err := containerid.Validate(containerID); err != nil {
-		return chamberRuntimeShared.ContainerState{}, err
-	}
-	binary, stateRoot, err := r.binaryAndStateRoot()
-	if err != nil {
-		return chamberRuntimeShared.ContainerState{}, err
-	}
-	state, err := readRuncState(ctx, binary.Path, stateRoot, containerID)
-	if err != nil {
-		return chamberRuntimeShared.ContainerState{}, err
-	}
-	return chamberRuntimeShared.ContainerState{
-		ContainerID: containerID,
-		Status:      chamberRuntimeShared.ContainerStatus(state.Status),
-	}, nil
-}
-
-func (r *Runtime) Signal(ctx context.Context, request chamberRuntimeShared.SignalRequest) error {
-	if err := containerid.Validate(request.ContainerID); err != nil {
-		return err
-	}
-	if strings.TrimSpace(string(request.Signal)) == "" {
-		return fmt.Errorf("%w: runtime signal is required", chamberErrors.ErrInvalidRequest)
-	}
-	if !chamberRuntimeShared.IsSupportedSignal(request.Signal) {
-		return fmt.Errorf("%w: unsupported runtime signal %q", chamberErrors.ErrInvalidRequest, request.Signal)
-	}
-	binary, stateRoot, err := r.binaryAndStateRoot()
-	if err != nil {
-		return err
-	}
-	chamberLogging.InfoWith(r.logger, ctx, "signaling runtime container",
-		"container_id", request.ContainerID,
-		"signal", request.Signal,
-	)
-	cmd := exec.CommandContext(ctx, binary.Path, "--root", stateRoot, "kill", request.ContainerID, string(request.Signal))
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("signal runc container %q: %w: %s", request.ContainerID, err, strings.TrimSpace(string(output)))
-	}
-	return nil
-}
-
-func (r *Runtime) Delete(ctx context.Context, request chamberRuntimeShared.DeleteRequest) error {
-	if err := containerid.Validate(request.ContainerID); err != nil {
-		return err
-	}
-	binary, stateRoot, err := r.binaryAndStateRoot()
-	if err != nil {
-		return err
-	}
-	args := []string{"--root", stateRoot, "delete"}
-	if request.Force {
-		args = append(args, "--force")
-	}
-	args = append(args, request.ContainerID)
-	chamberLogging.InfoWith(r.logger, ctx, "deleting runtime container",
-		"container_id", request.ContainerID,
-		"force", request.Force,
-	)
-	cmd := exec.CommandContext(ctx, binary.Path, args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("delete runc container %q: %w: %s", request.ContainerID, err, strings.TrimSpace(string(output)))
-	}
-	return nil
+	return newRuncContainer(containerConfig{
+		id:         containerID,
+		pid:        cmd.Process.Pid,
+		binaryPath: binaryPath,
+		stateRoot:  stateRoot,
+		stdoutPath: stdoutPath,
+		stderrPath: stderrPath,
+		logger:     r.logger,
+	}, cmd, stdout, stderr), nil
 }
 
 func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
@@ -342,6 +286,17 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 	return stdout, stderr, nil
 }
 
+func outputWriter(logFile io.Writer, writers []io.Writer) io.Writer {
+	all := make([]io.Writer, 0, len(writers)+1)
+	all = append(all, logFile)
+	for _, writer := range writers {
+		if writer != nil {
+			all = append(all, writer)
+		}
+	}
+	return io.MultiWriter(all...)
+}
+
 func (r *Runtime) logPath(containerID string, stream chamberRuntimeShared.LogStream) (string, error) {
 	logDir, err := r.logDir(containerID)
 	if err != nil {
@@ -366,18 +321,6 @@ func (r *Runtime) logDir(containerID string) (string, error) {
 	return filepath.Join(runtimeRoot, "logs", containerID), nil
 }
 
-func (r *Runtime) binaryAndStateRoot() (chamberRuntimeShared.Binary, string, error) {
-	binary := r.binary
-	if binary.Path == "" {
-		return chamberRuntimeShared.Binary{}, "", fmt.Errorf("%w: runtime binary is required", chamberErrors.ErrInvalidRequest)
-	}
-	stateRoot, err := r.stateRoot()
-	if err != nil {
-		return chamberRuntimeShared.Binary{}, "", err
-	}
-	return binary, stateRoot, nil
-}
-
 func (r *Runtime) stateRoot() (string, error) {
 	if r.config.RuntimeRoot == "" {
 		return "", fmt.Errorf("%w: runtime root is required", chamberErrors.ErrInvalidRequest)
@@ -389,18 +332,15 @@ func (r *Runtime) stateRoot() (string, error) {
 	return runtimeRoot, nil
 }
 
-func configuredBinary(config chamberRuntimeShared.Config) (chamberRuntimeShared.Binary, error) {
+func configuredBinaryPath(config chamberRuntimeShared.Config) (string, error) {
 	if config.RuntimeBinDir == "" {
-		return chamberRuntimeShared.Binary{}, fmt.Errorf("%w: runtime bin dir is required", chamberErrors.ErrInvalidRequest)
+		return "", fmt.Errorf("%w: runtime bin dir is required", chamberErrors.ErrInvalidRequest)
 	}
 	binDir, err := absPath(config.RuntimeBinDir)
 	if err != nil {
-		return chamberRuntimeShared.Binary{}, fmt.Errorf("resolve runtime bin dir: %w", err)
+		return "", fmt.Errorf("resolve runtime bin dir: %w", err)
 	}
-	return chamberRuntimeShared.Binary{
-		Name: runtimeName,
-		Path: filepath.Join(binDir, runtimeName),
-	}, nil
+	return filepath.Join(binDir, runtimeName), nil
 }
 
 func defaultRuntimeArtifact(arch string) (runtimeArtifact, error) {
@@ -414,7 +354,18 @@ func defaultRuntimeArtifact(arch string) (runtimeArtifact, error) {
 	}
 }
 
-type runcProcess struct {
+type containerConfig struct {
+	id         string
+	pid        int
+	binaryPath string
+	stateRoot  string
+	stdoutPath string
+	stderrPath string
+	logger     *chamberLogging.SlogLogger
+}
+
+type runcContainer struct {
+	containerConfig
 	done   chan struct{}
 	result waitResult
 }
@@ -424,25 +375,156 @@ type waitResult struct {
 	err      error
 }
 
-func newRuncProcess(cmd *exec.Cmd, closers ...io.Closer) *runcProcess {
-	process := &runcProcess{
-		done: make(chan struct{}),
+func newRuncContainer(config containerConfig, cmd *exec.Cmd, closers ...io.Closer) *runcContainer {
+	container := &runcContainer{
+		containerConfig: config,
+		done:            make(chan struct{}),
 	}
 	go func() {
-		process.result = convertWaitResult(cmd.Wait())
+		container.result = convertWaitResult(cmd.Wait())
 		for _, closer := range closers {
-			if closeErr := closer.Close(); closeErr != nil && process.result.err == nil {
-				process.result.err = fmt.Errorf("close runtime stdio: %w", closeErr)
+			if closeErr := closer.Close(); closeErr != nil && container.result.err == nil {
+				container.result.err = fmt.Errorf("close runtime stdio: %w", closeErr)
 			}
 		}
-		close(process.done)
+		close(container.done)
 	}()
-	return process
+	return container
 }
 
-func (p *runcProcess) Wait() (int, error) {
-	<-p.done
-	return p.result.exitCode, p.result.err
+func (c *runcContainer) ID() string {
+	if c == nil {
+		return ""
+	}
+	return c.id
+}
+
+func (c *runcContainer) PID() int {
+	if c == nil {
+		return 0
+	}
+	return c.pid
+}
+
+func (c *runcContainer) StdoutPath() string {
+	if c == nil {
+		return ""
+	}
+	return c.stdoutPath
+}
+
+func (c *runcContainer) StderrPath() string {
+	if c == nil {
+		return ""
+	}
+	return c.stderrPath
+}
+
+func (c *runcContainer) Wait() (chamberRuntimeShared.ContainerResult, error) {
+	<-c.done
+	return chamberRuntimeShared.ContainerResult{
+		ExitCode: c.result.exitCode,
+	}, c.result.err
+}
+
+func (c *runcContainer) State(ctx context.Context) (chamberRuntimeShared.ContainerState, error) {
+	if c == nil {
+		return chamberRuntimeShared.ContainerState{}, fmt.Errorf("%w: runtime container is required", chamberErrors.ErrInvalidRequest)
+	}
+	state, err := readRuncState(ctx, c.binaryPath, c.stateRoot, c.id)
+	if err != nil {
+		return chamberRuntimeShared.ContainerState{}, err
+	}
+	return chamberRuntimeShared.ContainerState{
+		ContainerID: c.id,
+		Status:      chamberRuntimeShared.ContainerStatus(state.Status),
+	}, nil
+}
+
+func (c *runcContainer) Signal(ctx context.Context, signal os.Signal) error {
+	if c == nil {
+		return fmt.Errorf("%w: runtime container is required", chamberErrors.ErrInvalidRequest)
+	}
+	signalArg, err := signalArgument(signal)
+	if err != nil {
+		return err
+	}
+	chamberLogging.InfoWith(c.logger, ctx, "signaling runtime container",
+		"container_id", c.id,
+		"signal", signal,
+	)
+	cmd := exec.CommandContext(ctx, c.binaryPath, "--root", c.stateRoot, "kill", c.id, signalArg)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("signal runc container %q: %w: %s", c.id, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func signalArgument(signal os.Signal) (string, error) {
+	if signal == nil {
+		return "", fmt.Errorf("%w: runtime signal is required", chamberErrors.ErrInvalidRequest)
+	}
+	syscallSignal, ok := signal.(syscall.Signal)
+	if !ok {
+		return "", fmt.Errorf("%w: unsupported runtime signal %q", chamberErrors.ErrInvalidRequest, signal)
+	}
+	if syscallSignal <= 0 {
+		return "", fmt.Errorf("%w: unsupported runtime signal %q", chamberErrors.ErrInvalidRequest, signal)
+	}
+	return strconv.Itoa(int(syscallSignal)), nil
+}
+
+func (c *runcContainer) Delete(ctx context.Context, force bool) error {
+	if c == nil {
+		return fmt.Errorf("%w: runtime container is required", chamberErrors.ErrInvalidRequest)
+	}
+	args := []string{"--root", c.stateRoot, "delete"}
+	if force {
+		args = append(args, "--force")
+	}
+	args = append(args, c.id)
+	chamberLogging.InfoWith(c.logger, ctx, "deleting runtime container",
+		"container_id", c.id,
+		"force", force,
+	)
+	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("delete runc container %q: %w: %s", c.id, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func (c *runcContainer) ReadLog(stream chamberRuntimeShared.LogStream) ([]byte, error) {
+	path, err := c.logPath(stream)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}
+
+func (c *runcContainer) DeleteLog(stream chamberRuntimeShared.LogStream) error {
+	path, err := c.logPath(stream)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete runtime log %q: %w", path, err)
+	}
+	return nil
+}
+
+func (c *runcContainer) logPath(stream chamberRuntimeShared.LogStream) (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("%w: runtime container is required", chamberErrors.ErrInvalidRequest)
+	}
+	switch stream {
+	case chamberRuntimeShared.StdoutLogStream:
+		return c.stdoutPath, nil
+	case chamberRuntimeShared.StderrLogStream:
+		return c.stderrPath, nil
+	default:
+		return "", fmt.Errorf("%w: unsupported log stream %q", chamberErrors.ErrInvalidRequest, stream)
+	}
 }
 
 func convertWaitResult(err error) waitResult {

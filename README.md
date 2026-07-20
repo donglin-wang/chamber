@@ -31,15 +31,15 @@ create.
 
 For one container run, callers should:
 
-1. Call `Process.Wait` for every successful `Runtime.Run` call. This reaps the
+1. Call `Container.Wait` for every successful `Runtime.Run` call. This reaps the
    `runc run` process and closes Chamber-owned stdout/stderr log file handles.
-2. Call `Runtime.Delete` with `Force: true` when runtime state may still exist
+2. Call `Container.Delete` with `force` set to `true` when runtime state may still exist
    or the container may still be running. This delegates to `runc delete
    --force`.
 3. Remove `ProvisionedBundle.BundlePath` when the unpacked bundle is no longer
    needed.
-4. Remove runtime logs under `<RuntimeRoot>/logs/<containerID>` when they are no
-   longer needed.
+4. Call `Container.DeleteLog` for default stdout/stderr logs when they are no
+   longer needed, or remove `<RuntimeRoot>/logs/<containerID>` directly.
 5. Decide separately when to remove shared image layouts and the cached runtime
    binary.
 
@@ -64,6 +64,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/donglin-wang/chamber/pkg/bundle"
@@ -123,21 +125,23 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	process, err := runc.Run(ctx, chamberRuntimeShared.RunRequest{
+	container, err := runc.Run(ctx, chamberRuntimeShared.RunRequest{
 		Bundle: provisioned,
+		Stdout: []io.Writer{os.Stdout},
+		Stderr: []io.Writer{os.Stderr},
 	})
 	if err != nil {
 		panic(err)
 	}
-	exitCode, err := process.Wait()
+	result, err := container.Wait()
 	if err != nil {
 		panic(err)
 	}
-	stdout, err := runc.ReadLog("demo", chamberRuntimeShared.StdoutLogStream)
+	stdout, err := container.ReadLog(chamberRuntimeShared.StdoutLogStream)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("exit=%d stdout=%s", exitCode, stdout)
+	fmt.Printf("exit=%d stdout=%s", result.ExitCode, stdout)
 }
 ```
 

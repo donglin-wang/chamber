@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +17,7 @@ import (
 	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
 	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
 	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/google/uuid"
 )
 
@@ -119,7 +122,7 @@ func TestRunContainerStoresProvisionedBundlePath(t *testing.T) {
 	registerContainerRoutes(
 		mux,
 		store,
-		fakeRuntime{t: t},
+		fakeRuntime{},
 		fakeProvisioner{bundlePath: provisionedBundlePath},
 		context.Background(),
 	)
@@ -157,20 +160,21 @@ func TestContainerLogsReadByContainerID(t *testing.T) {
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
 	}
+	logDir := t.TempDir()
+	stderrPath := filepath.Join(logDir, "stderr.log")
+	if err := os.WriteFile(stderrPath, []byte("hello stderr"), 0600); err != nil {
+		t.Fatalf("WriteFile(stderr log) error = %v", err)
+	}
+	container.StderrPath = stderrPath
 	if err := store.CreateContainer(context.Background(), container); err != nil {
 		t.Fatalf("CreateContainer() error = %v", err)
 	}
 
-	runtime := fakeRuntime{
-		t:       t,
-		logs:    map[string][]byte{"container-1:stderr": []byte("hello stderr")},
-		wantLog: "container-1:stderr",
-	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/v1/containers/container-1/logs?stream=stderr", nil)
 
 	mux := newServer()
-	registerContainerRoutes(mux, store, runtime, nil, context.Background())
+	registerContainerRoutes(mux, store, nil, nil, context.Background())
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
@@ -219,50 +223,73 @@ func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundleSha
 }
 
 type fakeRuntime struct {
-	t       *testing.T
-	logs    map[string][]byte
-	wantLog string
 }
 
 func (r fakeRuntime) Descriptor() chamberRuntimeShared.Descriptor {
 	return chamberRuntimeShared.Descriptor{Name: "fake"}
 }
 
-func (r fakeRuntime) Binary() chamberRuntimeShared.Binary {
-	return chamberRuntimeShared.Binary{}
-}
-
-func (r fakeRuntime) Run(ctx context.Context, request chamberRuntimeShared.RunRequest) (chamberRuntimeShared.Process, error) {
+func (r fakeRuntime) Run(ctx context.Context, request chamberRuntimeShared.RunRequest) (chamberRuntimeShared.Container, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return fakeProcess{}, nil
+	return fakeContainer{
+		id:         request.Bundle.ContainerID,
+		stdoutPath: filepath.Join(os.TempDir(), request.Bundle.ContainerID, "stdout.log"),
+		stderrPath: filepath.Join(os.TempDir(), request.Bundle.ContainerID, "stderr.log"),
+	}, nil
 }
 
-func (r fakeRuntime) State(ctx context.Context, containerID string) (chamberRuntimeShared.ContainerState, error) {
-	return chamberRuntimeShared.ContainerState{}, ctx.Err()
+type fakeContainer struct {
+	id         string
+	stdoutPath string
+	stderrPath string
 }
 
-func (r fakeRuntime) Signal(ctx context.Context, request chamberRuntimeShared.SignalRequest) error {
+func (c fakeContainer) ID() string { return c.id }
+
+func (fakeContainer) PID() int { return 1234 }
+
+func (c fakeContainer) StdoutPath() string { return c.stdoutPath }
+
+func (c fakeContainer) StderrPath() string { return c.stderrPath }
+
+func (fakeContainer) Wait() (chamberRuntimeShared.ContainerResult, error) {
+	return chamberRuntimeShared.ContainerResult{}, nil
+}
+
+func (c fakeContainer) State(ctx context.Context) (chamberRuntimeShared.ContainerState, error) {
+	return chamberRuntimeShared.ContainerState{ContainerID: c.id}, ctx.Err()
+}
+
+func (fakeContainer) Signal(ctx context.Context, signal os.Signal) error {
 	return ctx.Err()
 }
 
-func (r fakeRuntime) Delete(ctx context.Context, request chamberRuntimeShared.DeleteRequest) error {
+func (fakeContainer) Delete(ctx context.Context, force bool) error {
 	return ctx.Err()
 }
 
-func (r fakeRuntime) ReadLog(containerID string, stream chamberRuntimeShared.LogStream) ([]byte, error) {
-	key := containerID + ":" + string(stream)
-	if r.wantLog != "" && key != r.wantLog {
-		r.t.Fatalf("ReadLog key = %q, want %q", key, r.wantLog)
+func (c fakeContainer) ReadLog(stream chamberRuntimeShared.LogStream) ([]byte, error) {
+	switch stream {
+	case chamberRuntimeShared.StdoutLogStream:
+		return os.ReadFile(c.stdoutPath)
+	case chamberRuntimeShared.StderrLogStream:
+		return os.ReadFile(c.stderrPath)
+	default:
+		return nil, chamberErrors.ErrInvalidRequest
 	}
-	return r.logs[key], nil
 }
 
-type fakeProcess struct{}
-
-func (fakeProcess) Wait() (int, error) {
-	return 0, nil
+func (c fakeContainer) DeleteLog(stream chamberRuntimeShared.LogStream) error {
+	switch stream {
+	case chamberRuntimeShared.StdoutLogStream:
+		return os.Remove(c.stdoutPath)
+	case chamberRuntimeShared.StderrLogStream:
+		return os.Remove(c.stderrPath)
+	default:
+		return chamberErrors.ErrInvalidRequest
+	}
 }
 
 type fakePuller struct{}

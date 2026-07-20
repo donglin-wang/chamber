@@ -4,6 +4,7 @@
 // RuntimeBinDir and executes OCI runtime bundles from caller-owned storage. The
 // current beta implementation supports rootless process isolation on Linux.
 //
-// Delete delegates to runc delete for runtime state. It does not remove bundle
-// directories, image layouts, runtime logs, or the cached runc binary.
+// Container.Delete delegates to runc delete for runtime state. Container.DeleteLog
+// removes a selected default log stream. Callers still own bundle directories,
+// image layouts, and the cached runc binary.
 package runc
