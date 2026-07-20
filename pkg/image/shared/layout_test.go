@@ -1,4 +1,4 @@
-package image_test
+package shared_test
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
 	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -25,10 +25,10 @@ type layoutFixture struct {
 func TestValidateLayoutRequiresOCILayoutAndManifest(t *testing.T) {
 	fixture := writeValidLayout(t)
 
-	if err := chamberImage.ValidateLayout(fixture.path); err != nil {
+	if err := chamberImageShared.ValidateLayout(fixture.path); err != nil {
 		t.Fatalf("ValidateLayout(valid) error = %v", err)
 	}
-	if !chamberImage.LayoutExists(fixture.path) {
+	if !chamberImageShared.LayoutExists(fixture.path) {
 		t.Fatal("LayoutExists(valid) = false, want true")
 	}
 }
@@ -39,10 +39,10 @@ func TestValidateLayoutRejectsMissingLayoutFile(t *testing.T) {
 		t.Fatalf("Remove(oci-layout) error = %v", err)
 	}
 
-	if err := chamberImage.ValidateLayout(fixture.path); err == nil {
+	if err := chamberImageShared.ValidateLayout(fixture.path); err == nil {
 		t.Fatal("ValidateLayout(missing oci-layout) error = nil, want error")
 	}
-	if chamberImage.LayoutExists(fixture.path) {
+	if chamberImageShared.LayoutExists(fixture.path) {
 		t.Fatal("LayoutExists(missing oci-layout) = true, want false")
 	}
 }
@@ -53,10 +53,10 @@ func TestValidateLayoutRejectsIndexWithoutManifests(t *testing.T) {
 		t.Fatalf("WriteFile(index.json) error = %v", err)
 	}
 
-	if err := chamberImage.ValidateLayout(fixture.path); err == nil {
+	if err := chamberImageShared.ValidateLayout(fixture.path); err == nil {
 		t.Fatal("ValidateLayout(empty index) error = nil, want error")
 	}
-	if chamberImage.LayoutExists(fixture.path) {
+	if chamberImageShared.LayoutExists(fixture.path) {
 		t.Fatal("LayoutExists(empty index) = true, want false")
 	}
 }
@@ -65,10 +65,10 @@ func TestValidateLayoutRejectsMissingManifestBlob(t *testing.T) {
 	fixture := writeValidLayout(t)
 	removeBlob(t, fixture.path, fixture.manifest)
 
-	if err := chamberImage.ValidateLayout(fixture.path); err == nil {
+	if err := chamberImageShared.ValidateLayout(fixture.path); err == nil {
 		t.Fatal("ValidateLayout(missing manifest blob) error = nil, want error")
 	}
-	if chamberImage.LayoutExists(fixture.path) {
+	if chamberImageShared.LayoutExists(fixture.path) {
 		t.Fatal("LayoutExists(missing manifest blob) = true, want false")
 	}
 }
@@ -77,10 +77,10 @@ func TestValidateLayoutRejectsMissingManifestChildBlob(t *testing.T) {
 	fixture := writeValidLayout(t)
 	removeBlob(t, fixture.path, fixture.config)
 
-	if err := chamberImage.ValidateLayout(fixture.path); err == nil {
+	if err := chamberImageShared.ValidateLayout(fixture.path); err == nil {
 		t.Fatal("ValidateLayout(missing config blob) error = nil, want error")
 	}
-	if chamberImage.LayoutExists(fixture.path) {
+	if chamberImageShared.LayoutExists(fixture.path) {
 		t.Fatal("LayoutExists(missing config blob) = true, want false")
 	}
 }
@@ -89,10 +89,10 @@ func TestValidateLayoutRejectsManifestBlobWithWrongDigest(t *testing.T) {
 	fixture := writeValidLayout(t)
 	overwriteBlob(t, fixture.path, fixture.manifest, bytes.Repeat([]byte("x"), int(fixture.manifest.Size)))
 
-	if err := chamberImage.ValidateLayout(fixture.path); err == nil {
+	if err := chamberImageShared.ValidateLayout(fixture.path); err == nil {
 		t.Fatal("ValidateLayout(corrupt manifest blob) error = nil, want error")
 	}
-	if chamberImage.LayoutExists(fixture.path) {
+	if chamberImageShared.LayoutExists(fixture.path) {
 		t.Fatal("LayoutExists(corrupt manifest blob) = true, want false")
 	}
 }

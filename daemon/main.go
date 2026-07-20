@@ -15,8 +15,8 @@ import (
 
 	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	chamberEtcdMetadataStore "github.com/donglin-wang/chamber/daemon/metadata/etcd"
-	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/directory"
-	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
@@ -73,21 +73,20 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer store.Close()
 
-	runtime, err := chamberRuntime.New(lifetime, cfg.Runtime, directoryManager)
+	runtime, err := chamberRuntime.NewRuntime(lifetime, cfg.Runtime, directoryManager)
 	if err != nil {
 		return fmt.Errorf("create runtime: %w", err)
 	}
 
 	mux := newServer()
-	puller, err := chamberImagePuller.New(cfg.Image, directoryManager)
+	puller, err := chamberImage.NewPuller(cfg.Image, directoryManager)
 	if err != nil {
 		return fmt.Errorf("create image puller: %w", err)
 	}
 	registerImageRoutes(mux, cfg, store, puller)
-	provisioner, err := chamberDirectoryProvisioner.New(
+	provisioner, err := chamberBundle.NewProvisioner(
 		cfg.Bundle,
 		directoryManager,
-		chamberDirectoryProvisioner.WithIDMap(uint32(os.Geteuid()), uint32(os.Getegid())),
 	)
 	if err != nil {
 		return fmt.Errorf("create bundle provisioner: %w", err)

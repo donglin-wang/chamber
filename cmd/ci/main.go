@@ -12,9 +12,9 @@ import (
 	"time"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/directory"
+	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
-	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
+	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
@@ -100,7 +100,7 @@ func run(cfg *config) error {
 		}
 	}
 
-	runtime, err := chamberRuntime.New(ctx, chamberRuntime.Config{
+	runtime, err := chamberRuntime.NewRuntime(ctx, chamberRuntimeShared.Config{
 		RuntimeRoot:   paths.runtimeRoot,
 		RuntimeBinDir: paths.runtimeBinDir,
 		Name:          chamberRuntimeShared.RuntimeNameRunc,
@@ -114,7 +114,7 @@ func run(cfg *config) error {
 	descriptor := runtime.Descriptor()
 	logging.Info(ctx, "CI runtime ready", "runtime", descriptor.Name, "version", descriptor.Version, "path", binary.Path)
 
-	puller, err := chamberImagePuller.New(chamberImage.Config{
+	puller, err := chamberImage.NewPuller(chamberImageShared.Config{
 		Root:    paths.imageRoot,
 		Logging: loggingConfig,
 	}, directoryManager)
@@ -126,14 +126,14 @@ func run(cfg *config) error {
 		return err
 	}
 
-	provisioner, err := chamberDirectoryProvisioner.New(
-		chamberBundle.Config{
+	provisioner, err := chamberBundle.NewProvisioner(
+		chamberBundleShared.Config{
 			Root:      paths.bundleRoot,
+			Name:      chamberBundleShared.ProvisionerNameDirectory,
 			Privilege: capability.Rootless,
 			Logging:   loggingConfig,
 		},
 		directoryManager,
-		chamberDirectoryProvisioner.WithIDMap(uint32(os.Geteuid()), uint32(os.Getegid())),
 	)
 	if err != nil {
 		return fmt.Errorf("create bundle provisioner: %w", err)
@@ -221,11 +221,11 @@ func ciPaths(root string) paths {
 	}
 }
 
-func ensureImage(ctx context.Context, puller chamberImage.Puller, imageRef string) (string, error) {
+func ensureImage(ctx context.Context, puller chamberImageShared.Puller, imageRef string) (string, error) {
 	logging.Info(ctx, "CI image pull started", "image_ref", imageRef)
-	pulled, err := puller.Pull(ctx, chamberImage.PullRequest{
+	pulled, err := puller.Pull(ctx, chamberImageShared.PullRequest{
 		Reference: imageRef,
-		Platform: chamberImage.Platform{
+		Platform: chamberImageShared.Platform{
 			OS: "linux",
 		},
 	})
@@ -249,16 +249,16 @@ type jobRequest struct {
 	keep         bool
 }
 
-func runJob(ctx context.Context, runtime chamberRuntime.Runtime, provisioner chamberBundle.Provisioner, request jobRequest) jobResult {
+func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provisioner chamberBundleShared.Provisioner, request jobRequest) jobResult {
 	containerID := "chamber-ci-" + request.job.name + "-" + uuid.NewString()
 	result := jobResult{name: request.job.name, exitCode: 1}
 
 	logging.Info(ctx, "CI job started", "job", request.job.name, "args", request.job.args)
-	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
+	provisioned, err := provisioner.Provision(ctx, chamberBundleShared.ProvisionRequest{
 		ContainerID: containerID,
 		ImageLayout: request.imageLayout,
 		ImageRef:    request.imageRef,
-		Process: chamberBundle.ProcessSpec{
+		Process: chamberBundleShared.ProcessSpec{
 			Args: request.job.args,
 			Env: []string{
 				"PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -269,7 +269,7 @@ func runJob(ctx context.Context, runtime chamberRuntime.Runtime, provisioner cha
 			},
 			Cwd: "/workspace",
 		},
-		Mounts: []chamberBundle.Mount{
+		Mounts: []chamberBundleShared.Mount{
 			{Source: request.workspace, Target: "/workspace"},
 			{Source: request.goBuildCache, Target: "/gocache"},
 			{Source: request.goModCache, Target: "/gomodcache"},
@@ -287,7 +287,7 @@ func runJob(ctx context.Context, runtime chamberRuntime.Runtime, provisioner cha
 		}()
 	}
 
-	process, err := runtime.Run(ctx, chamberRuntime.RunRequest{Bundle: provisioned})
+	process, err := runtime.Run(ctx, chamberRuntimeShared.RunRequest{Bundle: provisioned})
 	if err != nil {
 		result.err = fmt.Errorf("run job container: %w", err)
 		return result
@@ -305,7 +305,7 @@ func runJob(ctx context.Context, runtime chamberRuntime.Runtime, provisioner cha
 		result.err = fmt.Errorf("read stderr: %w", err)
 	}
 
-	if deleteErr := runtime.Delete(context.Background(), chamberRuntime.DeleteRequest{
+	if deleteErr := runtime.Delete(context.Background(), chamberRuntimeShared.DeleteRequest{
 		ContainerID: containerID,
 		Force:       true,
 	}); deleteErr != nil && result.err == nil && !looksAlreadyDeleted(deleteErr) {

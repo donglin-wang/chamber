@@ -11,9 +11,8 @@ import (
 	"time"
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chamberImage "github.com/donglin-wang/chamber/pkg/image"
-	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
+	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
 	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
@@ -144,16 +143,17 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 		SocketPath: filepath.Join(root, "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "run", "tmp"),
 		Privilege:  capability.Rootless,
-		Bundle: chamberBundle.Config{
+		Bundle: chamberBundleShared.Config{
 			Root:      filepath.Join(root, "bundles"),
+			Name:      chamberBundleShared.ProvisionerNameDirectory,
 			Privilege: capability.Rootless,
 			Logging:   defaultLogging,
 		},
-		Image: chamberImage.Config{
+		Image: chamberImageShared.Config{
 			Root:    filepath.Join(root, "images"),
 			Logging: defaultLogging,
 		},
-		Runtime: chamberRuntime.Config{
+		Runtime: chamberRuntimeShared.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "bin"),
 			Name:          chamberRuntimeShared.RuntimeNameRunc,
@@ -222,14 +222,15 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		SocketPath: "default/run/chamber.sock",
 		TmpRoot:    "default/tmp",
 		Privilege:  capability.Rootless,
-		Bundle: chamberBundle.Config{
+		Bundle: chamberBundleShared.Config{
 			Root:      "default/bundles",
+			Name:      chamberBundleShared.ProvisionerNameDirectory,
 			Privilege: capability.Rootless,
 		},
-		Image: chamberImage.Config{
+		Image: chamberImageShared.Config{
 			Root: "default/images",
 		},
-		Runtime: chamberRuntime.Config{
+		Runtime: chamberRuntimeShared.Config{
 			RuntimeRoot:   "default/runtime",
 			RuntimeBinDir: "default/bin",
 			Name:          chamberRuntimeShared.RuntimeNameRunc,
@@ -290,22 +291,23 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		SocketPath: mustAbs(t, "input/run/chamber.sock"),
 		TmpRoot:    mustAbs(t, "input/tmp"),
 		Privilege:  capability.Rootful,
-		Bundle: chamberBundle.Config{
+		Bundle: chamberBundleShared.Config{
 			Root:      mustAbs(t, "input/bundles"),
+			Name:      chamberBundleShared.ProvisionerNameDirectory,
 			Privilege: capability.Rootful,
 			Logging: chamberLogging.Config{
 				Level:  "debug",
 				Format: "text",
 			},
 		},
-		Image: chamberImage.Config{
+		Image: chamberImageShared.Config{
 			Root: mustAbs(t, "input/images"),
 			Logging: chamberLogging.Config{
 				Level:  "debug",
 				Format: "text",
 			},
 		},
-		Runtime: chamberRuntime.Config{
+		Runtime: chamberRuntimeShared.Config{
 			RuntimeRoot:   mustAbs(t, "input/runtime"),
 			RuntimeBinDir: mustAbs(t, "input/bin"),
 			Name:          chamberRuntimeShared.RuntimeNameRunc,
@@ -341,22 +343,23 @@ func TestApplyInputLeavesDefaultsWhenInputFieldsAreNil(t *testing.T) {
 		SocketPath: filepath.Join(root, "default", "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "default", "tmp"),
 		Privilege:  capability.Rootless,
-		Bundle: chamberBundle.Config{
+		Bundle: chamberBundleShared.Config{
 			Root:      filepath.Join(root, "default", "bundles"),
+			Name:      chamberBundleShared.ProvisionerNameDirectory,
 			Privilege: capability.Rootless,
 			Logging: chamberLogging.Config{
 				Level:  "warn",
 				Format: "text",
 			},
 		},
-		Image: chamberImage.Config{
+		Image: chamberImageShared.Config{
 			Root: filepath.Join(root, "default", "images"),
 			Logging: chamberLogging.Config{
 				Level:  "warn",
 				Format: "text",
 			},
 		},
-		Runtime: chamberRuntime.Config{
+		Runtime: chamberRuntimeShared.Config{
 			RuntimeRoot:   filepath.Join(root, "default", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "default", "bin"),
 			Name:          chamberRuntimeShared.RuntimeNameRunc,
@@ -393,10 +396,11 @@ func TestApplyInputLeavesDefaultsWhenInputFieldsAreNil(t *testing.T) {
 
 func TestApplyInputProjectsTopLevelPrivilegeToSDKConfigs(t *testing.T) {
 	cfg, err := ApplyInput(Config{
-		Bundle: chamberBundle.Config{
+		Bundle: chamberBundleShared.Config{
+			Name:      chamberBundleShared.ProvisionerNameDirectory,
 			Privilege: capability.Rootless,
 		},
-		Runtime: chamberRuntime.Config{
+		Runtime: chamberRuntimeShared.Config{
 			Privilege: capability.Rootless,
 		},
 	}, Input{
@@ -441,6 +445,25 @@ func TestApplyInputRejectsNestedSDKPrivilegeInputs(t *testing.T) {
 				t.Fatalf("ApplyInput() error = %v, want top-level privilege error", err)
 			}
 		})
+	}
+}
+
+func TestApplyInputRejectsUnsupportedBundleProvisionerName(t *testing.T) {
+	_, err := ApplyInput(Config{
+		Bundle: chamberBundleShared.Config{
+			Name:      "overlay",
+			Privilege: capability.Rootless,
+		},
+		Runtime: chamberRuntimeShared.Config{
+			Name:      chamberRuntimeShared.RuntimeNameRunc,
+			Privilege: capability.Rootless,
+		},
+	}, Input{})
+	if err == nil {
+		t.Fatal("ApplyInput() error = nil, want unsupported bundle provisioner name error")
+	}
+	if !strings.Contains(err.Error(), "unsupported bundle provisioner name") {
+		t.Fatalf("ApplyInput() error = %v, want unsupported bundle provisioner name", err)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	securejoin "github.com/cyphar/filepath-securejoin"
-	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
@@ -26,10 +26,10 @@ import (
 	"github.com/opencontainers/umoci/oci/layer"
 )
 
-var _ chamberBundle.Provisioner = (*Provisioner)(nil)
+var _ chamberBundleShared.Provisioner = (*Provisioner)(nil)
 
 type Provisioner struct {
-	config           chamberBundle.Config
+	config           chamberBundleShared.Config
 	uid              uint32
 	gid              uint32
 	directoryManager localfs.DirectoryManager
@@ -45,27 +45,12 @@ func WithIDMap(uid uint32, gid uint32) Option {
 	}
 }
 
-func New(config chamberBundle.Config, directoryManager localfs.DirectoryManager, options ...Option) (*Provisioner, error) {
-	if directoryManager == nil {
-		return nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
-	}
+func New(config chamberBundleShared.Config, directoryManager localfs.DirectoryManager, options ...Option) (*Provisioner, error) {
 	installApexBridge()
 
 	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
 	if err != nil {
 		return nil, err
-	}
-	if config.Privilege == "" {
-		return nil, fmt.Errorf("%w: bundle privilege is required", chamberErrors.ErrInvalidRequest)
-	}
-	if config.Privilege != capability.Rootless {
-		return nil, fmt.Errorf("%w: directory bundle provisioner does not support %q privilege", chamberErrors.ErrInvalidRequest, config.Privilege)
-	}
-	if config.Root == "" {
-		return nil, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
-	}
-	if err := directoryManager.MkdirPrivate(config.Root); err != nil {
-		return nil, fmt.Errorf("create bundle root: %w", err)
 	}
 
 	provisioner := &Provisioner{
@@ -81,10 +66,10 @@ func New(config chamberBundle.Config, directoryManager localfs.DirectoryManager,
 	return provisioner, nil
 }
 
-func (p *Provisioner) Descriptor() chamberBundle.Descriptor {
-	return chamberBundle.Descriptor{
-		Name: "directory",
-		Capabilities: chamberBundle.Capabilities{
+func (p *Provisioner) Descriptor() chamberBundleShared.Descriptor {
+	return chamberBundleShared.Descriptor{
+		Name: chamberBundleShared.ProvisionerNameDirectory,
+		Capabilities: chamberBundleShared.Capabilities{
 			Privileges: []capability.Privilege{
 				capability.Rootless,
 			},
@@ -94,29 +79,29 @@ func (p *Provisioner) Descriptor() chamberBundle.Descriptor {
 
 func (p *Provisioner) Provision(
 	ctx context.Context,
-	request chamberBundle.ProvisionRequest,
-) (chamberBundle.ProvisionedBundle, error) {
+	request chamberBundleShared.ProvisionRequest,
+) (chamberBundleShared.ProvisionedBundle, error) {
 	if err := ctx.Err(); err != nil {
-		return chamberBundle.ProvisionedBundle{}, err
+		return chamberBundleShared.ProvisionedBundle{}, err
 	}
 	if p == nil || p.directoryManager == nil {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
 	if p.config.Root == "" {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
+		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := containerid.Validate(request.ContainerID); err != nil {
-		return chamberBundle.ProvisionedBundle{}, err
+		return chamberBundleShared.ProvisionedBundle{}, err
 	}
 	if request.ImageLayout == "" {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: image layout is required", chamberErrors.ErrInvalidRequest)
+		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: image layout is required", chamberErrors.ErrInvalidRequest)
 	}
 	if request.ImageRef == "" {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: image ref is required", chamberErrors.ErrInvalidRequest)
+		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: image ref is required", chamberErrors.ErrInvalidRequest)
 	}
 	imageRef, err := imageref.Canonical(request.ImageRef)
 	if err != nil {
-		return chamberBundle.ProvisionedBundle{}, err
+		return chamberBundleShared.ProvisionedBundle{}, err
 	}
 
 	bundleRoot := p.config.Root
@@ -129,7 +114,7 @@ func (p *Provisioner) Provision(
 	)
 	tmpBundle, err := p.directoryManager.MkdirTemp(bundleRoot, "."+request.ContainerID+".tmp-*")
 	if err != nil {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("create temporary bundle: %w", err)
+		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("create temporary bundle: %w", err)
 	}
 	committed := false
 	defer func() {
@@ -140,7 +125,7 @@ func (p *Provisioner) Provision(
 
 	engine, err := ociumoci.OpenLayout(request.ImageLayout)
 	if err != nil {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("open OCI image layout: %w", err)
+		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("open OCI image layout: %w", err)
 	}
 	defer engine.Close()
 
@@ -152,29 +137,29 @@ func (p *Provisioner) Provision(
 	if err := ociumoci.Unpack(engine, imageRef, tmpBundle, layer.UnpackOptions{
 		OnDiskFormat: layer.DirRootfs{MapOptions: mapOptions},
 	}); err != nil {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("unpack OCI image into runtime bundle: %w", err)
+		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("unpack OCI image into runtime bundle: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return chamberBundle.ProvisionedBundle{}, err
+		return chamberBundleShared.ProvisionedBundle{}, err
 	}
 
 	mounts, err := normalizeBindMounts(request.Mounts)
 	if err != nil {
-		return chamberBundle.ProvisionedBundle{}, err
+		return chamberBundleShared.ProvisionedBundle{}, err
 	}
 	if err := createBindMountTargets(filepath.Join(tmpBundle, "rootfs"), mounts); err != nil {
-		return chamberBundle.ProvisionedBundle{}, err
+		return chamberBundleShared.ProvisionedBundle{}, err
 	}
 	if err := patchBundleConfig(tmpBundle, p.uid, p.gid, request.Process, mounts); err != nil {
-		return chamberBundle.ProvisionedBundle{}, err
+		return chamberBundleShared.ProvisionedBundle{}, err
 	}
 
 	if err := os.Rename(tmpBundle, finalBundle); err != nil {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("commit runtime bundle: %w", err)
+		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("commit runtime bundle: %w", err)
 	}
 	committed = true
 
-	provisioned := chamberBundle.ProvisionedBundle{
+	provisioned := chamberBundleShared.ProvisionedBundle{
 		ContainerID: request.ContainerID,
 		BundlePath:  finalBundle,
 	}
@@ -185,7 +170,7 @@ func (p *Provisioner) Provision(
 	return provisioned, nil
 }
 
-func patchBundleConfig(bundlePath string, uid uint32, gid uint32, process chamberBundle.ProcessSpec, mounts []specs.Mount) error {
+func patchBundleConfig(bundlePath string, uid uint32, gid uint32, process chamberBundleShared.ProcessSpec, mounts []specs.Mount) error {
 	configPath := filepath.Join(bundlePath, "config.json")
 	file, err := os.Open(configPath)
 	if err != nil {
@@ -225,7 +210,7 @@ func patchRootlessSpec(
 	spec *specs.Spec,
 	uid uint32,
 	gid uint32,
-	process chamberBundle.ProcessSpec,
+	process chamberBundleShared.ProcessSpec,
 	mounts []specs.Mount,
 ) error {
 	if spec == nil {
@@ -263,7 +248,7 @@ func patchRootlessSpec(
 	return nil
 }
 
-func normalizeBindMounts(mounts []chamberBundle.Mount) ([]specs.Mount, error) {
+func normalizeBindMounts(mounts []chamberBundleShared.Mount) ([]specs.Mount, error) {
 	normalized := make([]specs.Mount, 0, len(mounts))
 	for _, mount := range mounts {
 		mountType := strings.TrimSpace(mount.Type)
@@ -368,7 +353,7 @@ func cloneMounts(mounts []specs.Mount) []specs.Mount {
 	return cloned
 }
 
-func applyProcessUser(process *specs.Process, user chamberBundle.ProcessUser) {
+func applyProcessUser(process *specs.Process, user chamberBundleShared.ProcessUser) {
 	if user.UID != nil {
 		process.User.UID = *user.UID
 	}

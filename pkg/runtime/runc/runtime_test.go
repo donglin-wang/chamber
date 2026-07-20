@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
 	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
@@ -348,7 +348,7 @@ esac
 	stateRoot := filepath.Join(privateTempDir(t), "state")
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
 	process, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
-		Bundle: chamberBundle.ProvisionedBundle{
+		Bundle: chamberBundleShared.ProvisionedBundle{
 			ContainerID: "container-1",
 			BundlePath:  bundlePath,
 		},
@@ -411,7 +411,7 @@ esac
 
 	runtime := runtimeWithBinary(t, binaryPath, privateTempDir(t))
 	process, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
-		Bundle: chamberBundle.ProvisionedBundle{
+		Bundle: chamberBundleShared.ProvisionedBundle{
 			ContainerID: "short.job",
 			BundlePath:  privateTempDir(t),
 		},
@@ -542,7 +542,7 @@ func TestRunRejectsUnsafeContainerID(t *testing.T) {
 		t.Run(containerID, func(t *testing.T) {
 			runtime := runtimeWithConfigOnly(t)
 			_, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
-				Bundle: chamberBundle.ProvisionedBundle{
+				Bundle: chamberBundleShared.ProvisionedBundle{
 					ContainerID: containerID,
 					BundlePath:  privateTempDir(t),
 				},

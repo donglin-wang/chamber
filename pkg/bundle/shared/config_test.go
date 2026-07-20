@@ -1,4 +1,4 @@
-package bundle
+package shared
 
 import (
 	"path/filepath"
@@ -14,6 +14,9 @@ func TestDefaultConfig(t *testing.T) {
 
 	if cfg.Root != filepath.Join(root, "bundles") {
 		t.Fatalf("Root = %q, want default bundle root", cfg.Root)
+	}
+	if cfg.Name != ProvisionerNameDirectory {
+		t.Fatalf("Name = %q, want directory", cfg.Name)
 	}
 	if cfg.Privilege != capability.Rootless {
 		t.Fatalf("Privilege = %q, want rootless", cfg.Privilege)

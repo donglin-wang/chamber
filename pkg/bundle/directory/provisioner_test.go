@@ -3,7 +3,6 @@ package directory
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -11,73 +10,16 @@ import (
 	"strings"
 	"testing"
 
-	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
-	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	ociumoci "github.com/opencontainers/umoci"
 )
 
-func TestNewPreparesConfiguredBundleRoot(t *testing.T) {
-	root := filepath.Join(privateTempDir(t), "bundles")
-
-	provisioner, err := New(chamberBundle.Config{
-		Root:      root,
-		Privilege: capability.Rootless,
-	}, localfs.NewDirectoryManager())
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	if provisioner == nil {
-		t.Fatal("New() provisioner = nil, want provisioner")
-	}
-	assertPrivateDir(t, root)
-}
-
-func TestNewRequiresDirectoryManager(t *testing.T) {
-	if _, err := New(chamberBundle.Config{Root: privateTempDir(t)}, nil); err == nil {
-		t.Fatal("New() error = nil, want directory manager error")
-	}
-}
-
-func TestNewRequiresConfiguredPrivilege(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "bundles")
-
-	_, err := New(chamberBundle.Config{Root: root}, localfs.NewDirectoryManager())
-	if err == nil {
-		t.Fatal("New() error = nil, want privilege required error")
-	}
-	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
-		t.Fatalf("New() error = %v, want invalid request code", err)
-	}
-	if _, statErr := os.Stat(root); !os.IsNotExist(statErr) {
-		t.Fatalf("bundle root stat error = %v, want not exist", statErr)
-	}
-}
-
-func TestNewRejectsUnsupportedPrivilegeBeforeFilesystemMutation(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "bundles")
-
-	_, err := New(chamberBundle.Config{
-		Root:      root,
-		Privilege: capability.Rootful,
-	}, localfs.NewDirectoryManager())
-
-	if err == nil {
-		t.Fatal("New() error = nil, want unsupported privilege error")
-	}
-	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
-		t.Fatalf("New() error = %v, want invalid request code", err)
-	}
-	if _, statErr := os.Stat(root); !os.IsNotExist(statErr) {
-		t.Fatalf("bundle root stat error = %v, want not exist", statErr)
-	}
-}
-
 func TestNewAppliesIDMapOption(t *testing.T) {
 	provisioner, err := New(
-		chamberBundle.Config{
+		chamberBundleShared.Config{
 			Root:      filepath.Join(privateTempDir(t), "bundles"),
 			Privilege: capability.Rootless,
 		},
@@ -118,7 +60,7 @@ func TestProvisionCanonicalizesImageRefBeforeUnpack(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 
-	provisioner, err := New(chamberBundle.Config{
+	provisioner, err := New(chamberBundleShared.Config{
 		Root:      filepath.Join(privateTempDir(t), "bundles"),
 		Privilege: capability.Rootless,
 	}, localfs.NewDirectoryManager())
@@ -126,7 +68,7 @@ func TestProvisionCanonicalizesImageRefBeforeUnpack(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	provisioned, err := provisioner.Provision(context.Background(), chamberBundle.ProvisionRequest{
+	provisioned, err := provisioner.Provision(context.Background(), chamberBundleShared.ProvisionRequest{
 		ContainerID: "container-1",
 		ImageLayout: imageLayout,
 		ImageRef:    "docker.io/library/golang:1.26.4-bookworm",
@@ -182,12 +124,12 @@ func TestPatchRootlessSpec(t *testing.T) {
 
 	uid := uint32(1000)
 	gid := uint32(1001)
-	process := chamberBundle.ProcessSpec{
+	process := chamberBundleShared.ProcessSpec{
 		Args:     []string{"/bin/sh", "-c", "echo hi"},
 		Env:      []string{"KEY=value"},
 		Cwd:      "/work",
 		Terminal: boolPtr(true),
-		User: chamberBundle.ProcessUser{
+		User: chamberBundleShared.ProcessUser{
 			UID:            &uid,
 			GID:            &gid,
 			AdditionalGIDs: []uint32{44, 55},
@@ -255,21 +197,6 @@ func privateTempDir(t *testing.T) string {
 	return path
 }
 
-func assertPrivateDir(t *testing.T, path string) {
-	t.Helper()
-
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("Stat(%q) error = %v", path, err)
-	}
-	if !info.IsDir() {
-		t.Fatalf("%q is not a directory", path)
-	}
-	if info.Mode().Perm() != 0700 {
-		t.Fatalf("mode = %o, want 0700", info.Mode().Perm())
-	}
-}
-
 func TestPatchBundleConfigWritesPrivateSpec(t *testing.T) {
 	bundlePath := t.TempDir()
 	spec := specs.Spec{
@@ -285,7 +212,7 @@ func TestPatchBundleConfigWritesPrivateSpec(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	if err := patchBundleConfig(bundlePath, 501, 20, chamberBundle.ProcessSpec{
+	if err := patchBundleConfig(bundlePath, 501, 20, chamberBundleShared.ProcessSpec{
 		Args: []string{"/bin/sh"},
 	}, nil); err != nil {
 		t.Fatalf("patchBundleConfig() error = %v", err)
@@ -327,7 +254,7 @@ func TestPatchRootlessSpecKeepsExistingProcessFieldsWhenRequestFieldsAreEmpty(t 
 		Linux: &specs.Linux{},
 	}
 
-	if err := patchRootlessSpec(spec, 501, 20, chamberBundle.ProcessSpec{}, nil); err != nil {
+	if err := patchRootlessSpec(spec, 501, 20, chamberBundleShared.ProcessSpec{}, nil); err != nil {
 		t.Fatalf("patchRootlessSpec() error = %v", err)
 	}
 	if !slices.Equal(spec.Process.Args, []string{"/bin/from-image"}) {
@@ -345,7 +272,7 @@ func TestPatchRootlessSpecKeepsExistingProcessFieldsWhenRequestFieldsAreEmpty(t 
 }
 
 func TestPatchRootlessSpecRejectsMissingProcess(t *testing.T) {
-	if err := patchRootlessSpec(&specs.Spec{Linux: &specs.Linux{}}, 501, 20, chamberBundle.ProcessSpec{}, nil); err == nil {
+	if err := patchRootlessSpec(&specs.Spec{Linux: &specs.Linux{}}, 501, 20, chamberBundleShared.ProcessSpec{}, nil); err == nil {
 		t.Fatal("patchRootlessSpec() error = nil, want missing process error")
 	}
 }
@@ -363,7 +290,7 @@ func TestPatchRootlessSpecAppendsBindMounts(t *testing.T) {
 		{Destination: "/workspace", Type: "bind", Source: "/host/workspace", Options: []string{"rbind", "rw"}},
 	}
 
-	if err := patchRootlessSpec(spec, 501, 20, chamberBundle.ProcessSpec{}, mounts); err != nil {
+	if err := patchRootlessSpec(spec, 501, 20, chamberBundleShared.ProcessSpec{}, mounts); err != nil {
 		t.Fatalf("patchRootlessSpec() error = %v", err)
 	}
 	mounts[0].Options[0] = "mutated"
@@ -390,7 +317,7 @@ func TestNormalizeBindMountsDefaultsAndExplicitOptions(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	mounts, err := normalizeBindMounts([]chamberBundle.Mount{
+	mounts, err := normalizeBindMounts([]chamberBundleShared.Mount{
 		{Source: sourceDir, Target: "/workspace"},
 		{Type: "bind", Source: sourceFile, Target: "/input/go.sum", Options: []string{"rbind", "ro"}},
 	})
@@ -410,7 +337,7 @@ func TestNormalizeBindMountsDefaultsAndExplicitOptions(t *testing.T) {
 
 func TestNormalizeBindMountsRejectsInvalidRequests(t *testing.T) {
 	sourceDir := t.TempDir()
-	tests := map[string]chamberBundle.Mount{
+	tests := map[string]chamberBundleShared.Mount{
 		"missing source": {Source: filepath.Join(sourceDir, "missing"), Target: "/workspace"},
 		"empty source":   {Target: "/workspace"},
 		"relative target": {
@@ -430,7 +357,7 @@ func TestNormalizeBindMountsRejectsInvalidRequests(t *testing.T) {
 
 	for name, mount := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := normalizeBindMounts([]chamberBundle.Mount{mount}); err == nil {
+			if _, err := normalizeBindMounts([]chamberBundleShared.Mount{mount}); err == nil {
 				t.Fatal("normalizeBindMounts() error = nil, want error")
 			}
 		})
@@ -448,7 +375,7 @@ func TestCreateBindMountTargetsCreatesRootfsPlaceholders(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	mounts, err := normalizeBindMounts([]chamberBundle.Mount{
+	mounts, err := normalizeBindMounts([]chamberBundleShared.Mount{
 		{Source: sourceDir, Target: "/workspace"},
 		{Source: sourceFile, Target: "/inputs/go.mod"},
 	})

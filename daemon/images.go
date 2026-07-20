@@ -10,7 +10,7 @@ import (
 
 	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/google/uuid"
 )
@@ -26,7 +26,7 @@ type pullImageResponse struct {
 	PulledAt    time.Time `json:"pulled_at"`
 }
 
-func registerImageRoutes(mux *http.ServeMux, cfg chamberDaemonConfig.Config, store metadata.Store, puller chamberImage.Puller) {
+func registerImageRoutes(mux *http.ServeMux, cfg chamberDaemonConfig.Config, store metadata.Store, puller chamberImageShared.Puller) {
 	mux.HandleFunc("POST /v1/images/pull", func(w http.ResponseWriter, r *http.Request) {
 		var request pullImageRequest
 		if err := decodeJSON(w, r, &request); err != nil {
@@ -59,7 +59,7 @@ type pullImageResult struct {
 	image     metadata.Image
 }
 
-func pullImage(ctx context.Context, store metadata.Store, puller chamberImage.Puller, reference string) (pullImageResult, error) {
+func pullImage(ctx context.Context, store metadata.Store, puller chamberImageShared.Puller, reference string) (pullImageResult, error) {
 	if store == nil {
 		return pullImageResult{}, fmt.Errorf("metadata store is required")
 	}
@@ -86,7 +86,7 @@ func pullImage(ctx context.Context, store metadata.Store, puller chamberImage.Pu
 	}
 
 	existing, err := store.GetImage(ctx, reference)
-	if err == nil && chamberImage.LayoutExists(existing.LayoutPath) {
+	if err == nil && chamberImageShared.LayoutExists(existing.LayoutPath) {
 		completed, err := store.SucceedOperation(ctx, operationID)
 		if err != nil {
 			return pullImageResult{operation: operation, image: existing}, operationError(operationID, chamberErrors.ErrMetadataFailed, err)
@@ -102,7 +102,7 @@ func pullImage(ctx context.Context, store metadata.Store, puller chamberImage.Pu
 		return pullImageResult{operation: operation}, failErr
 	}
 
-	pulled, err := puller.Pull(ctx, chamberImage.PullRequest{
+	pulled, err := puller.Pull(ctx, chamberImageShared.PullRequest{
 		Reference: reference,
 	})
 	if err != nil {

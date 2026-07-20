@@ -12,9 +12,9 @@ import (
 	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	"github.com/donglin-wang/chamber/daemon/metadata/memory"
-	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chamberImage "github.com/donglin-wang/chamber/pkg/image"
-	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
+	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
+	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/google/uuid"
 )
 
@@ -187,13 +187,14 @@ func testConfig(t *testing.T) chamberDaemonConfig.Config {
 	root := t.TempDir()
 	return chamberDaemonConfig.Config{
 		HTTPAddr: "127.0.0.1:0",
-		Bundle: chamberBundle.Config{
+		Bundle: chamberBundleShared.Config{
 			Root: root + "/bundles",
+			Name: chamberBundleShared.ProvisionerNameDirectory,
 		},
-		Image: chamberImage.Config{
+		Image: chamberImageShared.Config{
 			Root: root + "/images",
 		},
-		Runtime: chamberRuntime.Config{
+		Runtime: chamberRuntimeShared.Config{
 			RuntimeRoot: root + "/runtime",
 		},
 	}
@@ -203,15 +204,15 @@ type fakeProvisioner struct {
 	bundlePath string
 }
 
-func (p fakeProvisioner) Descriptor() chamberBundle.Descriptor {
-	return chamberBundle.Descriptor{Name: "fake"}
+func (p fakeProvisioner) Descriptor() chamberBundleShared.Descriptor {
+	return chamberBundleShared.Descriptor{Name: "fake"}
 }
 
-func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundle.ProvisionRequest) (chamberBundle.ProvisionedBundle, error) {
+func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundleShared.ProvisionRequest) (chamberBundleShared.ProvisionedBundle, error) {
 	if err := ctx.Err(); err != nil {
-		return chamberBundle.ProvisionedBundle{}, err
+		return chamberBundleShared.ProvisionedBundle{}, err
 	}
-	return chamberBundle.ProvisionedBundle{
+	return chamberBundleShared.ProvisionedBundle{
 		ContainerID: request.ContainerID,
 		BundlePath:  p.bundlePath,
 	}, nil
@@ -223,34 +224,34 @@ type fakeRuntime struct {
 	wantLog string
 }
 
-func (r fakeRuntime) Descriptor() chamberRuntime.Descriptor {
-	return chamberRuntime.Descriptor{Name: "fake"}
+func (r fakeRuntime) Descriptor() chamberRuntimeShared.Descriptor {
+	return chamberRuntimeShared.Descriptor{Name: "fake"}
 }
 
-func (r fakeRuntime) Binary() chamberRuntime.Binary {
-	return chamberRuntime.Binary{}
+func (r fakeRuntime) Binary() chamberRuntimeShared.Binary {
+	return chamberRuntimeShared.Binary{}
 }
 
-func (r fakeRuntime) Run(ctx context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Process, error) {
+func (r fakeRuntime) Run(ctx context.Context, request chamberRuntimeShared.RunRequest) (chamberRuntimeShared.Process, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return fakeProcess{}, nil
 }
 
-func (r fakeRuntime) State(ctx context.Context, containerID string) (chamberRuntime.ContainerState, error) {
-	return chamberRuntime.ContainerState{}, ctx.Err()
+func (r fakeRuntime) State(ctx context.Context, containerID string) (chamberRuntimeShared.ContainerState, error) {
+	return chamberRuntimeShared.ContainerState{}, ctx.Err()
 }
 
-func (r fakeRuntime) Signal(ctx context.Context, request chamberRuntime.SignalRequest) error {
+func (r fakeRuntime) Signal(ctx context.Context, request chamberRuntimeShared.SignalRequest) error {
 	return ctx.Err()
 }
 
-func (r fakeRuntime) Delete(ctx context.Context, request chamberRuntime.DeleteRequest) error {
+func (r fakeRuntime) Delete(ctx context.Context, request chamberRuntimeShared.DeleteRequest) error {
 	return ctx.Err()
 }
 
-func (r fakeRuntime) ReadLog(containerID string, stream chamberRuntime.LogStream) ([]byte, error) {
+func (r fakeRuntime) ReadLog(containerID string, stream chamberRuntimeShared.LogStream) ([]byte, error) {
 	key := containerID + ":" + string(stream)
 	if r.wantLog != "" && key != r.wantLog {
 		r.t.Fatalf("ReadLog key = %q, want %q", key, r.wantLog)
@@ -266,11 +267,11 @@ func (fakeProcess) Wait() (int, error) {
 
 type fakePuller struct{}
 
-func (fakePuller) Pull(ctx context.Context, request chamberImage.PullRequest) (chamberImage.PulledImage, error) {
+func (fakePuller) Pull(ctx context.Context, request chamberImageShared.PullRequest) (chamberImageShared.PulledImage, error) {
 	if err := ctx.Err(); err != nil {
-		return chamberImage.PulledImage{}, err
+		return chamberImageShared.PulledImage{}, err
 	}
-	return chamberImage.PulledImage{
+	return chamberImageShared.PulledImage{
 		Reference:  request.Reference,
 		Digest:     "sha256:abc123",
 		LayoutPath: "/tmp/chamber-test/images/fake-layout",

@@ -14,45 +14,22 @@ import (
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
-type Config = chamberRuntimeShared.Config
-type Binary = chamberRuntimeShared.Binary
-type Isolation = chamberRuntimeShared.Isolation
-type Capabilities = chamberRuntimeShared.Capabilities
-type Descriptor = chamberRuntimeShared.Descriptor
-type ContainerStatus = chamberRuntimeShared.ContainerStatus
-type Signal = chamberRuntimeShared.Signal
-type LogStream = chamberRuntimeShared.LogStream
-type RunRequest = chamberRuntimeShared.RunRequest
-type Process = chamberRuntimeShared.Process
-type Runtime = chamberRuntimeShared.Runtime
-type ContainerState = chamberRuntimeShared.ContainerState
-type SignalRequest = chamberRuntimeShared.SignalRequest
-type DeleteRequest = chamberRuntimeShared.DeleteRequest
-
-var runtimeCapabilities = map[string]Capabilities{
+var runtimeCapabilities = map[string]chamberRuntimeShared.Capabilities{
 	chamberRuntimeShared.RuntimeNameRunc: {
 		Privileges: []capability.Privilege{
 			capability.Rootless,
 		},
-		Isolation: []Isolation{
+		Isolation: []chamberRuntimeShared.Isolation{
 			chamberRuntimeShared.ProcessIsolation,
 		},
 	},
 }
 
-func DefaultConfig(rootPath string) Config {
-	return chamberRuntimeShared.DefaultConfig(rootPath)
-}
-
-func IsSupportedSignal(signal Signal) bool {
-	return chamberRuntimeShared.IsSupportedSignal(signal)
-}
-
-func New(ctx context.Context, config Config, directoryManager localfs.DirectoryManager) (Runtime, error) {
+func NewRuntime(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager) (chamberRuntimeShared.Runtime, error) {
 	return newForGOOS(ctx, config, directoryManager, goruntime.GOOS)
 }
 
-func newForGOOS(ctx context.Context, config Config, directoryManager localfs.DirectoryManager, goos string) (Runtime, error) {
+func newForGOOS(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager, goos string) (chamberRuntimeShared.Runtime, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -110,15 +87,15 @@ func IsSupportedName(name string) bool {
 	return ok
 }
 
-func SupportedCapabilities(name string) (Capabilities, bool) {
+func SupportedCapabilities(name string) (chamberRuntimeShared.Capabilities, bool) {
 	capabilities, ok := runtimeCapabilities[name]
 	if !ok {
-		return Capabilities{}, false
+		return chamberRuntimeShared.Capabilities{}, false
 	}
 	return cloneCapabilities(capabilities), true
 }
 
-func supportsPrivilege(capabilities Capabilities, privilege capability.Privilege) bool {
+func supportsPrivilege(capabilities chamberRuntimeShared.Capabilities, privilege capability.Privilege) bool {
 	for _, supported := range capabilities.Privileges {
 		if supported == privilege {
 			return true
@@ -127,9 +104,9 @@ func supportsPrivilege(capabilities Capabilities, privilege capability.Privilege
 	return false
 }
 
-func cloneCapabilities(capabilities Capabilities) Capabilities {
-	return Capabilities{
+func cloneCapabilities(capabilities chamberRuntimeShared.Capabilities) chamberRuntimeShared.Capabilities {
+	return chamberRuntimeShared.Capabilities{
 		Privileges: append([]capability.Privilege(nil), capabilities.Privileges...),
-		Isolation:  append([]Isolation(nil), capabilities.Isolation...),
+		Isolation:  append([]chamberRuntimeShared.Isolation(nil), capabilities.Isolation...),
 	}
 }

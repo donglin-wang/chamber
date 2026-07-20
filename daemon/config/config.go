@@ -13,8 +13,10 @@ import (
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
+	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
@@ -31,13 +33,13 @@ type Config struct {
 	Privilege capability.Privilege
 
 	// OCI Bundles
-	Bundle chamberBundle.Config
+	Bundle chamberBundleShared.Config
 
 	// Images
-	Image chamberImage.Config
+	Image chamberImageShared.Config
 
 	// OCI Runtime
-	Runtime chamberRuntime.Config
+	Runtime chamberRuntimeShared.Config
 
 	// Metadata
 	Metadata metadata.Config
@@ -75,6 +77,7 @@ type Input struct {
 
 type bundleInput struct {
 	Root      *string               `json:"root,omitempty"`
+	Name      *string               `json:"name,omitempty"`
 	Privilege *capability.Privilege `json:"privilege,omitempty"`
 	Logging   loggingInput          `json:"logging,omitempty"`
 }
@@ -137,9 +140,9 @@ func Load(input Input, getenv func(string) string) (Config, error) {
 		TmpRoot:    filepath.Join(rootPath, "run", "tmp"),
 		Privilege:  capability.Rootless,
 
-		Bundle:   chamberBundle.DefaultConfig(rootPath),
-		Image:    chamberImage.DefaultConfig(rootPath),
-		Runtime:  chamberRuntime.DefaultConfig(rootPath),
+		Bundle:   chamberBundleShared.DefaultConfig(rootPath),
+		Image:    chamberImageShared.DefaultConfig(rootPath),
+		Runtime:  chamberRuntimeShared.DefaultConfig(rootPath),
 		Metadata: metadata.DefaultConfig(rootPath),
 
 		OpenTelemetryTraceSampleRatio:      defaultOpenTelemetryTraceSampleRatio,
@@ -233,6 +236,9 @@ func ApplyInput(defaultConfig Config, input Input) (Config, error) {
 	}
 	defaultConfig.Bundle.Privilege = defaultConfig.Privilege
 	defaultConfig.Runtime.Privilege = defaultConfig.Privilege
+	if defaultConfig.Bundle.Name != "" && !chamberBundle.IsSupportedProvisionerName(defaultConfig.Bundle.Name) {
+		return Config{}, fmt.Errorf("unsupported bundle provisioner name %q (supported: %s)", defaultConfig.Bundle.Name, strings.Join(chamberBundle.SupportedProvisionerNames(), ", "))
+	}
 	if defaultConfig.Runtime.Name != "" && !chamberRuntime.IsSupportedName(defaultConfig.Runtime.Name) {
 		return Config{}, fmt.Errorf("unsupported runtime name %q (supported: %s)", defaultConfig.Runtime.Name, strings.Join(chamberRuntime.SupportedNames(), ", "))
 	}
@@ -311,6 +317,9 @@ func mergeBundleInput(base bundleInput, overlay bundleInput) bundleInput {
 	if overlay.Root != nil {
 		base.Root = overlay.Root
 	}
+	if overlay.Name != nil {
+		base.Name = overlay.Name
+	}
 	if overlay.Privilege != nil {
 		base.Privilege = overlay.Privilege
 	}
@@ -360,21 +369,24 @@ func mergeLoggingInput(base loggingInput, overlay loggingInput) loggingInput {
 	return base
 }
 
-func applyBundleInput(config *chamberBundle.Config, input bundleInput) {
+func applyBundleInput(config *chamberBundleShared.Config, input bundleInput) {
+	if input.Root != nil {
+		config.Root = *input.Root
+	}
+	if input.Name != nil {
+		config.Name = *input.Name
+	}
+	config.Logging = applyLoggingInput(config.Logging, input.Logging)
+}
+
+func applyImageInput(config *chamberImageShared.Config, input imageInput) {
 	if input.Root != nil {
 		config.Root = *input.Root
 	}
 	config.Logging = applyLoggingInput(config.Logging, input.Logging)
 }
 
-func applyImageInput(config *chamberImage.Config, input imageInput) {
-	if input.Root != nil {
-		config.Root = *input.Root
-	}
-	config.Logging = applyLoggingInput(config.Logging, input.Logging)
-}
-
-func applyRuntimeInput(config *chamberRuntime.Config, input runtimeInput) {
+func applyRuntimeInput(config *chamberRuntimeShared.Config, input runtimeInput) {
 	if input.RuntimeRoot != nil {
 		config.RuntimeRoot = *input.RuntimeRoot
 	}

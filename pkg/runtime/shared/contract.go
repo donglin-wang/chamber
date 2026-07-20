@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 )
 
@@ -65,7 +65,7 @@ const (
 )
 
 type RunRequest struct {
-	Bundle chamberBundle.ProvisionedBundle
+	Bundle chamberBundleShared.ProvisionedBundle
 	Stdin  io.Reader
 }
 

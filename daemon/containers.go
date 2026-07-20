@@ -10,8 +10,7 @@ import (
 	"time"
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
 	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/google/uuid"
@@ -49,8 +48,8 @@ type containerResponse struct {
 func registerContainerRoutes(
 	mux *http.ServeMux,
 	store metadata.Store,
-	runtime chamberRuntime.Runtime,
-	provisioner chamberBundle.Provisioner,
+	runtime chamberRuntimeShared.Runtime,
+	provisioner chamberBundleShared.Provisioner,
 	lifetime context.Context,
 ) {
 	runtimeCtx := lifetime
@@ -128,7 +127,7 @@ func registerContainerRoutes(
 		if rawStream == "" {
 			rawStream = string(chamberRuntimeShared.StdoutLogStream)
 		}
-		stream := chamberRuntime.LogStream(rawStream)
+		stream := chamberRuntimeShared.LogStream(rawStream)
 		if stream != chamberRuntimeShared.StdoutLogStream && stream != chamberRuntimeShared.StderrLogStream {
 			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "unsupported log stream")
 			return
@@ -176,8 +175,8 @@ type runContainerResult struct {
 func runContainer(
 	ctx context.Context,
 	store metadata.Store,
-	runtime chamberRuntime.Runtime,
-	provisioner chamberBundle.Provisioner,
+	runtime chamberRuntimeShared.Runtime,
+	provisioner chamberBundleShared.Provisioner,
 	runtimeCtx context.Context,
 	imageRef string,
 	command []string,
@@ -234,11 +233,11 @@ func runContainer(
 		runtimeName = runtime.Binary().Name
 	}
 
-	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
+	provisioned, err := provisioner.Provision(ctx, chamberBundleShared.ProvisionRequest{
 		ContainerID: containerID,
 		ImageLayout: image.LayoutPath,
 		ImageRef:    image.Reference,
-		Process: chamberBundle.ProcessSpec{
+		Process: chamberBundleShared.ProcessSpec{
 			Args: command,
 		},
 	})
@@ -288,7 +287,7 @@ func runContainer(
 		return runContainerResult{operation: operation, container: container}, failErr
 	}
 
-	process, err := runtime.Run(runtimeCtx, chamberRuntime.RunRequest{
+	process, err := runtime.Run(runtimeCtx, chamberRuntimeShared.RunRequest{
 		Bundle: provisioned,
 	})
 	if err != nil {
@@ -318,7 +317,7 @@ func runContainer(
 	return runContainerResult{operation: operation, container: running}, nil
 }
 
-func finishRunningProcess(store metadata.Store, operationID string, containerID string, from metadata.ContainerState, process chamberRuntime.Process) {
+func finishRunningProcess(store metadata.Store, operationID string, containerID string, from metadata.ContainerState, process chamberRuntimeShared.Process) {
 	_, _, err := finishExitedProcess(context.Background(), store, operationID, containerID, from, process)
 	if err != nil {
 		// The HTTP request already returned. Leave the error in logs; the
@@ -327,7 +326,7 @@ func finishRunningProcess(store metadata.Store, operationID string, containerID 
 	}
 }
 
-func finishExitedProcess(ctx context.Context, store metadata.Store, operationID string, containerID string, from metadata.ContainerState, process chamberRuntime.Process) (metadata.Container, metadata.Operation, error) {
+func finishExitedProcess(ctx context.Context, store metadata.Store, operationID string, containerID string, from metadata.ContainerState, process chamberRuntimeShared.Process) (metadata.Container, metadata.Operation, error) {
 	if process == nil {
 		err := fmt.Errorf("runtime process is required")
 		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, from, operationID, chamberErrors.ErrRuntimeWaitFailed)
