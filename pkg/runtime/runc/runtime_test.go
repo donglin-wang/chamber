@@ -172,6 +172,36 @@ func TestNewUsesExistingValidBinary(t *testing.T) {
 	assertFileContentAndMode(t, path, content, 0755)
 }
 
+func TestNewMakesExistingValidBinaryExecutable(t *testing.T) {
+	content := []byte("cached without executable mode")
+	binDir := privateTempDir(t)
+	path := filepath.Join(binDir, "runc")
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	requests := 0
+	client := &http.Client{Transport: httpClientFunc(func(*http.Request) (*http.Response, error) {
+		requests++
+		return response(http.StatusOK, io.NopCloser(strings.NewReader(""))), nil
+	})}
+
+	runtime := mustNew(t, chamberRuntimeShared.Config{
+		RuntimeRoot:   privateTempDir(t),
+		RuntimeBinDir: binDir,
+		Name:          "runc",
+	}, localfs.NewDirectoryManager(), withHTTPClient(client), withTestArtifact(content))
+
+	binary := runtime.Binary()
+	if binary.Path != path {
+		t.Fatalf("Binary.Path = %q, want %q", binary.Path, path)
+	}
+	if requests != 0 {
+		t.Fatalf("download requests = %d, want 0", requests)
+	}
+	assertFileContentAndMode(t, path, content, 0755)
+}
+
 func TestNewReplacesExistingInvalidBinary(t *testing.T) {
 	oldContent := []byte("corrupt cached binary")
 	newContent := []byte("replacement binary")

@@ -158,6 +158,9 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 	if ok, err := fileMatchesSHA256(binary.Path, expectedDigest); err != nil {
 		return fmt.Errorf("verify existing runtime binary: %w", err)
 	} else if ok {
+		if err := os.Chmod(binary.Path, 0755); err != nil {
+			return fmt.Errorf("make existing runtime binary executable: %w", err)
+		}
 		chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
 			"runtime", binary.Name,
 			"version", artifact.version,
