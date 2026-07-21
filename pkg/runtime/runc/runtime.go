@@ -50,7 +50,7 @@ var capabilities = chamberRuntimeShared.Capabilities{
 type Runtime struct {
 	config           chamberRuntimeShared.Config
 	binaryPath       string
-	artifact         runtimeArtifact
+	binary           runtimeBinary
 	client           *http.Client
 	directoryManager localfs.DirectoryManager
 	logger           *chamberLogging.SlogLogger
@@ -58,24 +58,10 @@ type Runtime struct {
 
 type option func(*Runtime)
 
-type runtimeArtifact struct {
+type runtimeBinary struct {
 	version string
 	url     string
 	sha256  string
-}
-
-func withHTTPClient(client *http.Client) option {
-	return func(runtime *Runtime) {
-		if client != nil {
-			runtime.client = client
-		}
-	}
-}
-
-func withArtifact(artifact runtimeArtifact) option {
-	return func(runtime *Runtime) {
-		runtime.artifact = artifact
-	}
 }
 
 func New(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager) (*Runtime, error) {
@@ -95,13 +81,13 @@ func newWithOptions(ctx context.Context, config chamberRuntimeShared.Config, dir
 		return nil, err
 	}
 
-	artifact, err := defaultRuntimeArtifact(goruntime.GOARCH)
+	binary, err := defaultRuntimeBinary(goruntime.GOARCH)
 	if err != nil {
 		return nil, err
 	}
 	runtime := &Runtime{
 		config:           config,
-		artifact:         artifact,
+		binary:           binary,
 		client:           http.DefaultClient,
 		directoryManager: directoryManager,
 		logger:           logger,
@@ -125,8 +111,8 @@ func (r *Runtime) Descriptor() chamberRuntimeShared.Descriptor {
 	version := defaultVersion
 	binaryPath := ""
 	if r != nil {
-		if r.artifact.version != "" {
-			version = r.artifact.version
+		if r.binary.version != "" {
+			version = r.binary.version
 		}
 		binaryPath = r.binaryPath
 	}
@@ -134,14 +120,7 @@ func (r *Runtime) Descriptor() chamberRuntimeShared.Descriptor {
 		Name:         runtimeName,
 		Version:      version,
 		BinaryPath:   binaryPath,
-		Capabilities: cloneCapabilities(capabilities),
-	}
-}
-
-func cloneCapabilities(capabilities chamberRuntimeShared.Capabilities) chamberRuntimeShared.Capabilities {
-	return chamberRuntimeShared.Capabilities{
-		Privileges: append([]capability.Privilege(nil), capabilities.Privileges...),
-		Isolation:  append([]chamberRuntimeShared.Isolation(nil), capabilities.Isolation...),
+		Capabilities: chamberRuntimeShared.CloneCapabilities(capabilities),
 	}
 }
 
@@ -149,11 +128,11 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 	if r == nil || r.directoryManager == nil {
 		return fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
-	artifact := r.artifact
-	if artifact.version == "" || artifact.url == "" || artifact.sha256 == "" {
+	binary := r.binary
+	if binary.version == "" || binary.url == "" || binary.sha256 == "" {
 		return fmt.Errorf("%w: runc runtime requires version, url, and sha256", chamberErrors.ErrInvalidRequest)
 	}
-	expectedDigest, err := parseSHA256(artifact.sha256)
+	expectedDigest, err := parseSHA256(binary.sha256)
 	if err != nil {
 		return err
 	}
@@ -169,7 +148,7 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 		}
 		chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
 			"runtime", runtimeName,
-			"version", artifact.version,
+			"version", binary.version,
 			"path", binaryPath,
 			"source", "cache",
 		)
@@ -178,17 +157,17 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 
 	chamberLogging.InfoWith(r.logger, ctx, "downloading runtime binary",
 		"runtime", runtimeName,
-		"version", artifact.version,
-		"url", artifact.url,
+		"version", binary.version,
+		"url", binary.url,
 		"path", binaryPath,
 	)
-	if err := r.download(ctx, artifact.url, expectedDigest, binDir, binaryPath); err != nil {
+	if err := r.download(ctx, binary.url, expectedDigest, binDir, binaryPath); err != nil {
 		return err
 	}
 
 	chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
 		"runtime", runtimeName,
-		"version", artifact.version,
+		"version", binary.version,
 		"path", binaryPath,
 		"source", "download",
 	)
@@ -357,14 +336,14 @@ func configuredBinaryPath(config chamberRuntimeShared.Config) (string, error) {
 	return filepath.Join(binDir, runtimeName), nil
 }
 
-func defaultRuntimeArtifact(arch string) (runtimeArtifact, error) {
+func defaultRuntimeBinary(arch string) (runtimeBinary, error) {
 	switch arch {
 	case "amd64":
-		return runtimeArtifact{version: defaultVersion, url: defaultAMD64URL, sha256: defaultAMD64SHA256}, nil
+		return runtimeBinary{version: defaultVersion, url: defaultAMD64URL, sha256: defaultAMD64SHA256}, nil
 	case "arm64":
-		return runtimeArtifact{version: defaultVersion, url: defaultARM64URL, sha256: defaultARM64SHA256}, nil
+		return runtimeBinary{version: defaultVersion, url: defaultARM64URL, sha256: defaultARM64SHA256}, nil
 	default:
-		return runtimeArtifact{}, fmt.Errorf("%w: runc runtime does not have a default artifact for architecture %q", chamberErrors.ErrUnsupportedHost, arch)
+		return runtimeBinary{}, fmt.Errorf("%w: runc runtime does not have a default binary for architecture %q", chamberErrors.ErrUnsupportedHost, arch)
 	}
 }
 

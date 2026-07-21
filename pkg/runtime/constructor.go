@@ -95,7 +95,7 @@ func SupportedCapabilities(name string) (chamberRuntimeShared.Capabilities, bool
 	if !ok {
 		return chamberRuntimeShared.Capabilities{}, false
 	}
-	return cloneCapabilities(capabilities), true
+	return chamberRuntimeShared.CloneCapabilities(capabilities), true
 }
 
 func supportsPrivilege(capabilities chamberRuntimeShared.Capabilities, privilege capability.Privilege) bool {
@@ -105,11 +105,4 @@ func supportsPrivilege(capabilities chamberRuntimeShared.Capabilities, privilege
 		}
 	}
 	return false
-}
-
-func cloneCapabilities(capabilities chamberRuntimeShared.Capabilities) chamberRuntimeShared.Capabilities {
-	return chamberRuntimeShared.Capabilities{
-		Privileges: append([]capability.Privilege(nil), capabilities.Privileges...),
-		Isolation:  append([]chamberRuntimeShared.Isolation(nil), capabilities.Isolation...),
-	}
 }

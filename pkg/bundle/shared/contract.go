@@ -47,6 +47,12 @@ type Capabilities struct {
 	Privileges []capability.Privilege
 }
 
+func CloneCapabilities(capabilities Capabilities) Capabilities {
+	return Capabilities{
+		Privileges: append([]capability.Privilege(nil), capabilities.Privileges...),
+	}
+}
+
 type Descriptor struct {
 	Name         string
 	Version      string

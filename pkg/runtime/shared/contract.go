@@ -21,6 +21,13 @@ type Capabilities struct {
 	Isolation  []Isolation
 }
 
+func CloneCapabilities(capabilities Capabilities) Capabilities {
+	return Capabilities{
+		Privileges: append([]capability.Privilege(nil), capabilities.Privileges...),
+		Isolation:  append([]Isolation(nil), capabilities.Isolation...),
+	}
+}
+
 type Descriptor struct {
 	Name         string
 	Version      string

@@ -71,7 +71,7 @@ func SupportedProvisionerCapabilities(name string) (chamberBundleShared.Capabili
 	if !ok {
 		return chamberBundleShared.Capabilities{}, false
 	}
-	return cloneCapabilities(capabilities), true
+	return chamberBundleShared.CloneCapabilities(capabilities), true
 }
 
 func supportsPrivilege(capabilities chamberBundleShared.Capabilities, privilege capability.Privilege) bool {
@@ -81,10 +81,4 @@ func supportsPrivilege(capabilities chamberBundleShared.Capabilities, privilege 
 		}
 	}
 	return false
-}
-
-func cloneCapabilities(capabilities chamberBundleShared.Capabilities) chamberBundleShared.Capabilities {
-	return chamberBundleShared.Capabilities{
-		Privileges: append([]capability.Privilege(nil), capabilities.Privileges...),
-	}
 }
