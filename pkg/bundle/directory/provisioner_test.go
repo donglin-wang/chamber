@@ -19,20 +19,19 @@ import (
 	ociumoci "github.com/opencontainers/umoci"
 )
 
-func TestNewAppliesIDMapOption(t *testing.T) {
-	provisioner, err := New(
-		chamberBundleShared.Config{
-			Root:      filepath.Join(privateTempDir(t), "bundles"),
-			Privilege: capability.Rootless,
-		},
-		localfs.NewDirectoryManager(),
-		WithIDMap(123, 456),
-	)
+func TestNewUsesCurrentUserIDMap(t *testing.T) {
+	provisioner, err := New(chamberBundleShared.Config{
+		Root:      filepath.Join(privateTempDir(t), "bundles"),
+		Privilege: capability.Rootless,
+	}, localfs.NewDirectoryManager())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	if provisioner.uid != 123 || provisioner.gid != 456 {
-		t.Fatalf("uid/gid = %d/%d, want 123/456", provisioner.uid, provisioner.gid)
+
+	wantUID := uint32(os.Geteuid())
+	wantGID := uint32(os.Getegid())
+	if provisioner.uid != wantUID || provisioner.gid != wantGID {
+		t.Fatalf("uid/gid = %d/%d, want %d/%d", provisioner.uid, provisioner.gid, wantUID, wantGID)
 	}
 }
 
@@ -117,7 +116,7 @@ func TestProvisionCanonicalizesImageRefBeforeUnpack(t *testing.T) {
 	}
 }
 
-func TestPatchRootlessSpec(t *testing.T) {
+func TestSetupRootlessRuntimeSpec(t *testing.T) {
 	resources := &specs.LinuxResources{}
 	spec := &specs.Spec{
 		Process: &specs.Process{
@@ -162,8 +161,10 @@ func TestPatchRootlessSpec(t *testing.T) {
 			AdditionalGIDs: []uint32{0},
 		},
 	}
-	if err := patchRootlessSpec(spec, 501, 20, process, nil); err != nil {
-		t.Fatalf("patchRootlessSpec() error = %v", err)
+	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}}
+	gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 20, Size: 1}}
+	if err := setupRootlessRuntimeSpec(spec, uidMappings, gidMappings, process, nil); err != nil {
+		t.Fatalf("setupRootlessRuntimeSpec() error = %v", err)
 	}
 	process.Args[0] = "mutated"
 	process.Env[0] = "mutated"
@@ -224,7 +225,7 @@ func privateTempDir(t *testing.T) string {
 	return path
 }
 
-func TestPatchBundleConfigWritesPrivateSpec(t *testing.T) {
+func TestWriteRootlessRuntimeSpecWritesPrivateConfig(t *testing.T) {
 	bundlePath := t.TempDir()
 	spec := specs.Spec{
 		Process: &specs.Process{Args: []string{"/bin/from-image"}},
@@ -239,10 +240,12 @@ func TestPatchBundleConfigWritesPrivateSpec(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	if err := patchBundleConfig(bundlePath, 501, 20, chamberBundleShared.ProcessSpec{
+	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}}
+	gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 20, Size: 1}}
+	if err := writeRootlessRuntimeSpec(bundlePath, uidMappings, gidMappings, chamberBundleShared.ProcessSpec{
 		Args: []string{"/bin/sh"},
 	}, nil); err != nil {
-		t.Fatalf("patchBundleConfig() error = %v", err)
+		t.Fatalf("writeRootlessRuntimeSpec() error = %v", err)
 	}
 
 	info, err := os.Stat(configPath)
@@ -270,7 +273,7 @@ func TestPatchBundleConfigWritesPrivateSpec(t *testing.T) {
 	assertIDMappings(t, patched.Linux.GIDMappings, 20)
 }
 
-func TestPatchRootlessSpecKeepsExistingProcessFieldsWhenRequestFieldsAreEmpty(t *testing.T) {
+func TestSetupRootlessRuntimeSpecKeepsExistingProcessFieldsWhenRequestFieldsAreEmpty(t *testing.T) {
 	spec := &specs.Spec{
 		Process: &specs.Process{
 			Args:     []string{"/bin/from-image"},
@@ -281,8 +284,10 @@ func TestPatchRootlessSpecKeepsExistingProcessFieldsWhenRequestFieldsAreEmpty(t 
 		Linux: &specs.Linux{},
 	}
 
-	if err := patchRootlessSpec(spec, 501, 20, chamberBundleShared.ProcessSpec{}, nil); err != nil {
-		t.Fatalf("patchRootlessSpec() error = %v", err)
+	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}}
+	gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 20, Size: 1}}
+	if err := setupRootlessRuntimeSpec(spec, uidMappings, gidMappings, chamberBundleShared.ProcessSpec{}, nil); err != nil {
+		t.Fatalf("setupRootlessRuntimeSpec() error = %v", err)
 	}
 	if !slices.Equal(spec.Process.Args, []string{"/bin/from-image"}) {
 		t.Fatalf("Process.Args = %#v, want original image args", spec.Process.Args)
@@ -298,13 +303,15 @@ func TestPatchRootlessSpecKeepsExistingProcessFieldsWhenRequestFieldsAreEmpty(t 
 	}
 }
 
-func TestPatchRootlessSpecRejectsMissingProcess(t *testing.T) {
-	if err := patchRootlessSpec(&specs.Spec{Linux: &specs.Linux{}}, 501, 20, chamberBundleShared.ProcessSpec{}, nil); err == nil {
-		t.Fatal("patchRootlessSpec() error = nil, want missing process error")
+func TestSetupRootlessRuntimeSpecRejectsMissingProcess(t *testing.T) {
+	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}}
+	gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 20, Size: 1}}
+	if err := setupRootlessRuntimeSpec(&specs.Spec{Linux: &specs.Linux{}}, uidMappings, gidMappings, chamberBundleShared.ProcessSpec{}, nil); err == nil {
+		t.Fatal("setupRootlessRuntimeSpec() error = nil, want missing process error")
 	}
 }
 
-func TestPatchRootlessSpecRejectsUnmappedProcessUser(t *testing.T) {
+func TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser(t *testing.T) {
 	tests := map[string]struct {
 		specUser    specs.User
 		requestUser chamberBundleShared.ProcessUser
@@ -352,23 +359,25 @@ func TestPatchRootlessSpecRejectsUnmappedProcessUser(t *testing.T) {
 				Linux: &specs.Linux{},
 			}
 
-			err := patchRootlessSpec(spec, 501, 20, chamberBundleShared.ProcessSpec{
+			uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}}
+			gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 20, Size: 1}}
+			err := setupRootlessRuntimeSpec(spec, uidMappings, gidMappings, chamberBundleShared.ProcessSpec{
 				User: test.requestUser,
 			}, nil)
 			if err == nil {
-				t.Fatal("patchRootlessSpec() error = nil, want unmapped process user error")
+				t.Fatal("setupRootlessRuntimeSpec() error = nil, want unmapped process user error")
 			}
 			if !errors.Is(err, chamberErrors.ErrInvalidProcessSpec) {
-				t.Fatalf("patchRootlessSpec() error = %v, want invalid process spec code", err)
+				t.Fatalf("setupRootlessRuntimeSpec() error = %v, want invalid process spec code", err)
 			}
 			if !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("patchRootlessSpec() error = %v, want %q", err, test.want)
+				t.Fatalf("setupRootlessRuntimeSpec() error = %v, want %q", err, test.want)
 			}
 		})
 	}
 }
 
-func TestPatchRootlessSpecAppendsBindMounts(t *testing.T) {
+func TestSetupRootlessRuntimeSpecAppendsBindMounts(t *testing.T) {
 	spec := &specs.Spec{
 		Process: &specs.Process{Args: []string{"/bin/from-image"}},
 		Mounts: []specs.Mount{
@@ -381,8 +390,10 @@ func TestPatchRootlessSpecAppendsBindMounts(t *testing.T) {
 		{Destination: "/workspace", Type: "bind", Source: "/host/workspace", Options: []string{"rbind", "rw"}},
 	}
 
-	if err := patchRootlessSpec(spec, 501, 20, chamberBundleShared.ProcessSpec{}, mounts); err != nil {
-		t.Fatalf("patchRootlessSpec() error = %v", err)
+	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}}
+	gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 20, Size: 1}}
+	if err := setupRootlessRuntimeSpec(spec, uidMappings, gidMappings, chamberBundleShared.ProcessSpec{}, mounts); err != nil {
+		t.Fatalf("setupRootlessRuntimeSpec() error = %v", err)
 	}
 	mounts[0].Options[0] = "mutated"
 
@@ -401,19 +412,19 @@ func TestPatchRootlessSpecAppendsBindMounts(t *testing.T) {
 	}
 }
 
-func TestNormalizeBindMountsDefaultsAndExplicitOptions(t *testing.T) {
+func TestTranslateToOCIBindMountsDefaultsAndExplicitOptions(t *testing.T) {
 	sourceDir := t.TempDir()
 	sourceFile := filepath.Join(t.TempDir(), "go.sum")
 	if err := os.WriteFile(sourceFile, []byte("content"), 0600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	mounts, err := normalizeBindMounts([]chamberBundleShared.Mount{
+	mounts, err := translateToOCIBindMounts([]chamberBundleShared.Mount{
 		{Source: sourceDir, Target: "/workspace"},
 		{Type: "bind", Source: sourceFile, Target: "/input/go.sum", Options: []string{"rbind", "ro"}},
 	})
 	if err != nil {
-		t.Fatalf("normalizeBindMounts() error = %v", err)
+		t.Fatalf("translateToOCIBindMounts() error = %v", err)
 	}
 	if len(mounts) != 2 {
 		t.Fatalf("mount count = %d, want 2", len(mounts))
@@ -426,7 +437,7 @@ func TestNormalizeBindMountsDefaultsAndExplicitOptions(t *testing.T) {
 	}
 }
 
-func TestNormalizeBindMountsRejectsInvalidRequests(t *testing.T) {
+func TestTranslateToOCIBindMountsRejectsInvalidRequests(t *testing.T) {
 	sourceDir := t.TempDir()
 	tests := map[string]chamberBundleShared.Mount{
 		"missing source": {Source: filepath.Join(sourceDir, "missing"), Target: "/workspace"},
@@ -448,12 +459,12 @@ func TestNormalizeBindMountsRejectsInvalidRequests(t *testing.T) {
 
 	for name, mount := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := normalizeBindMounts([]chamberBundleShared.Mount{mount})
+			_, err := translateToOCIBindMounts([]chamberBundleShared.Mount{mount})
 			if err == nil {
-				t.Fatal("normalizeBindMounts() error = nil, want error")
+				t.Fatal("translateToOCIBindMounts() error = nil, want error")
 			}
 			if !errors.Is(err, chamberErrors.ErrInvalidBundleMount) {
-				t.Fatalf("normalizeBindMounts() error = %v, want invalid bundle mount code", err)
+				t.Fatalf("translateToOCIBindMounts() error = %v, want invalid bundle mount code", err)
 			}
 		})
 	}
@@ -495,7 +506,7 @@ func TestValidateImageRefInLayoutHonorsCanceledContext(t *testing.T) {
 	}
 }
 
-func TestCreateBindMountTargetsCreatesRootfsPlaceholders(t *testing.T) {
+func TestCreateBindMountTargetPathsCreatesRootfsPlaceholders(t *testing.T) {
 	rootfs := filepath.Join(t.TempDir(), "rootfs")
 	if err := os.MkdirAll(rootfs, 0700); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -506,15 +517,15 @@ func TestCreateBindMountTargetsCreatesRootfsPlaceholders(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	mounts, err := normalizeBindMounts([]chamberBundleShared.Mount{
+	mounts, err := translateToOCIBindMounts([]chamberBundleShared.Mount{
 		{Source: sourceDir, Target: "/workspace"},
 		{Source: sourceFile, Target: "/inputs/go.mod"},
 	})
 	if err != nil {
-		t.Fatalf("normalizeBindMounts() error = %v", err)
+		t.Fatalf("translateToOCIBindMounts() error = %v", err)
 	}
-	if err := createBindMountTargets(rootfs, mounts); err != nil {
-		t.Fatalf("createBindMountTargets() error = %v", err)
+	if err := createBindMountTargetPaths(rootfs, mounts); err != nil {
+		t.Fatalf("createBindMountTargetPaths() error = %v", err)
 	}
 
 	workspaceInfo, err := os.Stat(filepath.Join(rootfs, "workspace"))
@@ -533,7 +544,7 @@ func TestCreateBindMountTargetsCreatesRootfsPlaceholders(t *testing.T) {
 	}
 }
 
-func TestCreateBindMountTargetsRejectsDirectorySourceOntoFileTarget(t *testing.T) {
+func TestCreateBindMountTargetPathsRejectsDirectorySourceOntoFileTarget(t *testing.T) {
 	rootfs := filepath.Join(t.TempDir(), "rootfs")
 	if err := os.MkdirAll(rootfs, 0700); err != nil {
 		t.Fatalf("MkdirAll(rootfs) error = %v", err)
@@ -541,29 +552,29 @@ func TestCreateBindMountTargetsRejectsDirectorySourceOntoFileTarget(t *testing.T
 	if err := os.WriteFile(filepath.Join(rootfs, "workspace"), []byte("file"), 0600); err != nil {
 		t.Fatalf("WriteFile(target) error = %v", err)
 	}
-	mounts, err := normalizeBindMounts([]chamberBundleShared.Mount{
+	mounts, err := translateToOCIBindMounts([]chamberBundleShared.Mount{
 		{Source: t.TempDir(), Target: "/workspace"},
 	})
 	if err != nil {
-		t.Fatalf("normalizeBindMounts() error = %v", err)
+		t.Fatalf("translateToOCIBindMounts() error = %v", err)
 	}
 
-	err = createBindMountTargets(rootfs, mounts)
+	err = createBindMountTargetPaths(rootfs, mounts)
 	if err == nil {
-		t.Fatal("createBindMountTargets() error = nil, want invalid bundle mount")
+		t.Fatal("createBindMountTargetPaths() error = nil, want invalid bundle mount")
 	}
 	if !errors.Is(err, chamberErrors.ErrInvalidBundleMount) {
-		t.Fatalf("createBindMountTargets() error = %v, want invalid bundle mount code", err)
+		t.Fatalf("createBindMountTargetPaths() error = %v, want invalid bundle mount code", err)
 	}
 }
 
-func TestRootfsPathRejectsEscapes(t *testing.T) {
+func TestSanitizeBindMountTargetPathRejectsEscapes(t *testing.T) {
 	rootfs := t.TempDir()
-	if _, err := rootfsPath(rootfs, "/"); err == nil {
-		t.Fatal("rootfsPath(/) error = nil, want error")
+	if _, err := sanitizeBindMountTargetPath(rootfs, "/"); err == nil {
+		t.Fatal("sanitizeBindMountTargetPath(/) error = nil, want error")
 	}
-	if _, err := rootfsPath(rootfs, "workspace"); err == nil {
-		t.Fatal("rootfsPath(relative) error = nil, want error")
+	if _, err := sanitizeBindMountTargetPath(rootfs, "workspace"); err == nil {
+		t.Fatal("sanitizeBindMountTargetPath(relative) error = nil, want error")
 	}
 }
 

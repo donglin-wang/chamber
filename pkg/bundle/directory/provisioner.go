@@ -38,16 +38,7 @@ type Provisioner struct {
 	logger           *chamberLogging.SlogLogger
 }
 
-type Option func(*Provisioner)
-
-func WithIDMap(uid uint32, gid uint32) Option {
-	return func(provisioner *Provisioner) {
-		provisioner.uid = uid
-		provisioner.gid = gid
-	}
-}
-
-func New(config chamberBundleShared.Config, directoryManager localfs.DirectoryManager, options ...Option) (*Provisioner, error) {
+func New(config chamberBundleShared.Config, directoryManager localfs.DirectoryManager) (*Provisioner, error) {
 	installApexBridge()
 
 	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
@@ -61,9 +52,6 @@ func New(config chamberBundleShared.Config, directoryManager localfs.DirectoryMa
 		gid:              uint32(os.Getegid()),
 		directoryManager: directoryManager,
 		logger:           logger,
-	}
-	for _, option := range options {
-		option(provisioner)
 	}
 	return provisioner, nil
 }
@@ -141,9 +129,11 @@ func (p *Provisioner) Provision(
 		return chamberBundleShared.ProvisionedBundle{}, err
 	}
 
+	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.uid, Size: 1}}
+	gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.gid, Size: 1}}
 	mapOptions := layer.MapOptions{
-		UIDMappings: []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.uid, Size: 1}},
-		GIDMappings: []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.gid, Size: 1}},
+		UIDMappings: uidMappings,
+		GIDMappings: gidMappings,
 		Rootless:    true,
 	}
 	if err := ociumoci.Unpack(engine, imageRef, tmpBundle, layer.UnpackOptions{
@@ -155,14 +145,14 @@ func (p *Provisioner) Provision(
 		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: bundle provisioning canceled after unpack: %w", chamberErrors.ErrCanceled, err)
 	}
 
-	mounts, err := normalizeBindMounts(request.Mounts)
+	mounts, err := translateToOCIBindMounts(request.Mounts)
 	if err != nil {
 		return chamberBundleShared.ProvisionedBundle{}, err
 	}
-	if err := createBindMountTargets(filepath.Join(tmpBundle, "rootfs"), mounts); err != nil {
+	if err := createBindMountTargetPaths(filepath.Join(tmpBundle, "rootfs"), mounts); err != nil {
 		return chamberBundleShared.ProvisionedBundle{}, err
 	}
-	if err := patchBundleConfig(tmpBundle, p.uid, p.gid, request.Process, mounts); err != nil {
+	if err := writeRootlessRuntimeSpec(tmpBundle, uidMappings, gidMappings, request.Process, mounts); err != nil {
 		return chamberBundleShared.ProvisionedBundle{}, err
 	}
 
@@ -202,7 +192,13 @@ func validateImageRefInLayout(ctx context.Context, engine casext.Engine, layoutP
 	return nil
 }
 
-func patchBundleConfig(bundlePath string, uid uint32, gid uint32, process chamberBundleShared.ProcessSpec, mounts []specs.Mount) error {
+func writeRootlessRuntimeSpec(
+	bundlePath string,
+	uidMappings []specs.LinuxIDMapping,
+	gidMappings []specs.LinuxIDMapping,
+	process chamberBundleShared.ProcessSpec,
+	mounts []specs.Mount,
+) error {
 	configPath := filepath.Join(bundlePath, "config.json")
 	file, err := os.Open(configPath)
 	if err != nil {
@@ -219,7 +215,7 @@ func patchBundleConfig(bundlePath string, uid uint32, gid uint32, process chambe
 		return fmt.Errorf("%w: close runtime spec: %w", chamberErrors.ErrBundlePrepareFailed, closeErr)
 	}
 
-	if err := patchRootlessSpec(&spec, uid, gid, process, mounts); err != nil {
+	if err := setupRootlessRuntimeSpec(&spec, uidMappings, gidMappings, process, mounts); err != nil {
 		return err
 	}
 
@@ -238,10 +234,10 @@ func patchBundleConfig(bundlePath string, uid uint32, gid uint32, process chambe
 	return nil
 }
 
-func patchRootlessSpec(
+func setupRootlessRuntimeSpec(
 	spec *specs.Spec,
-	uid uint32,
-	gid uint32,
+	uidMappings []specs.LinuxIDMapping,
+	gidMappings []specs.LinuxIDMapping,
 	process chamberBundleShared.ProcessSpec,
 	mounts []specs.Mount,
 ) error {
@@ -255,9 +251,9 @@ func patchRootlessSpec(
 		spec.Linux = &specs.Linux{}
 	}
 
-	spec.Linux.UIDMappings = []specs.LinuxIDMapping{{ContainerID: 0, HostID: uid, Size: 1}}
-	spec.Linux.GIDMappings = []specs.LinuxIDMapping{{ContainerID: 0, HostID: gid, Size: 1}}
-	spec.Linux.Namespaces = patchNamespaces(spec.Linux.Namespaces)
+	spec.Linux.UIDMappings = uidMappings
+	spec.Linux.GIDMappings = gidMappings
+	spec.Linux.Namespaces = pruneNamespaces(spec.Linux.Namespaces)
 	spec.Linux.CgroupsPath = ""
 	spec.Linux.Resources = nil
 	spec.Mounts = removeCgroupMounts(spec.Mounts)
@@ -275,15 +271,23 @@ func patchRootlessSpec(
 	if process.Cwd != "" {
 		spec.Process.Cwd = process.Cwd
 	}
-	applyProcessUser(spec.Process, process.User)
-	if err := validateProcessUserMapped(spec.Process.User, spec.Linux.UIDMappings, spec.Linux.GIDMappings); err != nil {
+	if process.User.UID != nil {
+		spec.Process.User.UID = *process.User.UID
+	}
+	if process.User.GID != nil {
+		spec.Process.User.GID = *process.User.GID
+	}
+	if process.User.AdditionalGIDs != nil {
+		spec.Process.User.AdditionalGids = slices.Clone(process.User.AdditionalGIDs)
+	}
+	if err := validateProcessUserIDsMapped(spec.Process.User, spec.Linux.UIDMappings, spec.Linux.GIDMappings); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func normalizeBindMounts(mounts []chamberBundleShared.Mount) ([]specs.Mount, error) {
+func translateToOCIBindMounts(mounts []chamberBundleShared.Mount) ([]specs.Mount, error) {
 	normalized := make([]specs.Mount, 0, len(mounts))
 	for _, mount := range mounts {
 		mountType := strings.TrimSpace(mount.Type)
@@ -329,14 +333,14 @@ func normalizeBindMounts(mounts []chamberBundleShared.Mount) ([]specs.Mount, err
 	return normalized, nil
 }
 
-func createBindMountTargets(rootfs string, mounts []specs.Mount) error {
+func createBindMountTargetPaths(rootfs string, mounts []specs.Mount) error {
 	for _, mount := range mounts {
 		sourceInfo, err := os.Stat(mount.Source)
 		if err != nil {
 			return fmt.Errorf("%w: stat bind mount source %q: %w", chamberErrors.ErrInvalidBundleMount, mount.Source, err)
 		}
 
-		targetPath, err := rootfsPath(rootfs, mount.Destination)
+		targetPath, err := sanitizeBindMountTargetPath(rootfs, mount.Destination)
 		if err != nil {
 			return err
 		}
@@ -375,7 +379,7 @@ func createBindMountTargets(rootfs string, mounts []specs.Mount) error {
 	return nil
 }
 
-func rootfsPath(rootfs string, target string) (string, error) {
+func sanitizeBindMountTargetPath(rootfs string, target string) (string, error) {
 	cleanTarget := path.Clean(target)
 	if !path.IsAbs(cleanTarget) || cleanTarget == "/" {
 		return "", fmt.Errorf("%w: bind mount target must be an absolute container path below root: %q", chamberErrors.ErrInvalidBundleMount, target)
@@ -396,34 +400,22 @@ func cloneMounts(mounts []specs.Mount) []specs.Mount {
 	return cloned
 }
 
-func applyProcessUser(process *specs.Process, user chamberBundleShared.ProcessUser) {
-	if user.UID != nil {
-		process.User.UID = *user.UID
-	}
-	if user.GID != nil {
-		process.User.GID = *user.GID
-	}
-	if user.AdditionalGIDs != nil {
-		process.User.AdditionalGids = slices.Clone(user.AdditionalGIDs)
-	}
-}
-
-func validateProcessUserMapped(user specs.User, uidMappings []specs.LinuxIDMapping, gidMappings []specs.LinuxIDMapping) error {
-	if !idMapped(user.UID, uidMappings) {
+func validateProcessUserIDsMapped(user specs.User, uidMappings []specs.LinuxIDMapping, gidMappings []specs.LinuxIDMapping) error {
+	if !processUserIDMappedInNamespace(user.UID, uidMappings) {
 		return fmt.Errorf("%w: process UID %d is not mapped by the rootless user namespace", chamberErrors.ErrInvalidProcessSpec, user.UID)
 	}
-	if !idMapped(user.GID, gidMappings) {
+	if !processUserIDMappedInNamespace(user.GID, gidMappings) {
 		return fmt.Errorf("%w: process GID %d is not mapped by the rootless user namespace", chamberErrors.ErrInvalidProcessSpec, user.GID)
 	}
 	for _, gid := range user.AdditionalGids {
-		if !idMapped(gid, gidMappings) {
+		if !processUserIDMappedInNamespace(gid, gidMappings) {
 			return fmt.Errorf("%w: additional process GID %d is not mapped by the rootless user namespace", chamberErrors.ErrInvalidProcessSpec, gid)
 		}
 	}
 	return nil
 }
 
-func idMapped(id uint32, mappings []specs.LinuxIDMapping) bool {
+func processUserIDMappedInNamespace(id uint32, mappings []specs.LinuxIDMapping) bool {
 	for _, mapping := range mappings {
 		start := uint64(mapping.ContainerID)
 		end := start + uint64(mapping.Size)
@@ -435,8 +427,8 @@ func idMapped(id uint32, mappings []specs.LinuxIDMapping) bool {
 	return false
 }
 
-func patchNamespaces(namespaces []specs.LinuxNamespace) []specs.LinuxNamespace {
-	patched := make([]specs.LinuxNamespace, 0, len(namespaces)+1)
+func pruneNamespaces(namespaces []specs.LinuxNamespace) []specs.LinuxNamespace {
+	rootless := make([]specs.LinuxNamespace, 0, len(namespaces)+1)
 	hasUserNamespace := false
 	for _, namespace := range namespaces {
 		switch namespace.Type {
@@ -448,23 +440,23 @@ func patchNamespaces(namespaces []specs.LinuxNamespace) []specs.LinuxNamespace {
 			}
 			hasUserNamespace = true
 		}
-		patched = append(patched, namespace)
+		rootless = append(rootless, namespace)
 	}
 	if !hasUserNamespace {
-		patched = append(patched, specs.LinuxNamespace{Type: specs.UserNamespace})
+		rootless = append(rootless, specs.LinuxNamespace{Type: specs.UserNamespace})
 	}
-	return patched
+	return rootless
 }
 
 func removeCgroupMounts(mounts []specs.Mount) []specs.Mount {
-	patched := mounts[:0]
+	filtered := mounts[:0]
 	for _, mount := range mounts {
 		if isCgroupMount(mount) {
 			continue
 		}
-		patched = append(patched, mount)
+		filtered = append(filtered, mount)
 	}
-	return patched
+	return filtered
 }
 
 func isCgroupMount(mount specs.Mount) bool {
