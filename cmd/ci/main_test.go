@@ -4,10 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
+	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
+	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
@@ -51,6 +56,31 @@ func TestResolveRootAllowsExternalRoot(t *testing.T) {
 	}
 }
 
+func TestWaitForContainerForceDeletesWhenContextExpires(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	container := newBlockingContainer()
+
+	done := make(chan waitOutcome, 1)
+	go func() {
+		result, err := waitForContainer(ctx, container)
+		done <- waitOutcome{result: result, err: err}
+	}()
+
+	<-container.waitStarted
+	cancel()
+
+	outcome := <-done
+	if !errors.Is(outcome.err, chamberErrors.ErrCanceled) {
+		t.Fatalf("waitForContainer() error = %v, want canceled code", outcome.err)
+	}
+	if outcome.result.ExitCode != 137 {
+		t.Fatalf("ExitCode = %d, want 137 from deleted container", outcome.result.ExitCode)
+	}
+	if !container.forceDeleted {
+		t.Fatal("container was not force deleted")
+	}
+}
+
 func TestLogResultUsesStructuredLogger(t *testing.T) {
 	var buffer bytes.Buffer
 	old := chamberLogging.Logger()
@@ -81,6 +111,60 @@ func TestLogResultUsesStructuredLogger(t *testing.T) {
 	if entries[1]["msg"] != "CI job passed" || entries[1]["job"] != "pkg" {
 		t.Fatalf("second entry = %#v, want passed pkg event", entries[1])
 	}
+}
+
+type blockingContainer struct {
+	waitStarted chan struct{}
+	deleted     chan struct{}
+	deleteOnce  sync.Once
+
+	forceDeleted bool
+}
+
+func newBlockingContainer() *blockingContainer {
+	return &blockingContainer{
+		waitStarted: make(chan struct{}),
+		deleted:     make(chan struct{}),
+	}
+}
+
+func (c *blockingContainer) ID() string { return "blocking-container" }
+
+func (c *blockingContainer) StdoutPath() string { return "" }
+
+func (c *blockingContainer) StderrPath() string { return "" }
+
+func (c *blockingContainer) Wait() (chamberRuntimeShared.ContainerResult, error) {
+	close(c.waitStarted)
+	<-c.deleted
+	return chamberRuntimeShared.ContainerResult{ExitCode: 137}, nil
+}
+
+func (c *blockingContainer) State(ctx context.Context) (chamberRuntimeShared.ContainerState, error) {
+	return chamberRuntimeShared.ContainerState{ContainerID: c.ID()}, ctx.Err()
+}
+
+func (c *blockingContainer) Signal(ctx context.Context, signal os.Signal) error {
+	return ctx.Err()
+}
+
+func (c *blockingContainer) Delete(ctx context.Context, force bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.forceDeleted = force
+	c.deleteOnce.Do(func() {
+		close(c.deleted)
+	})
+	return nil
+}
+
+func (c *blockingContainer) ReadLog(chamberRuntimeShared.LogStream) ([]byte, error) {
+	return nil, nil
+}
+
+func (c *blockingContainer) DeleteLog(chamberRuntimeShared.LogStream) error {
+	return nil
 }
 
 func decodeLogEntries(t *testing.T, data []byte) []map[string]any {

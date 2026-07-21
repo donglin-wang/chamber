@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -87,6 +88,30 @@ func TestPullImagePullsAndRecordsImage(t *testing.T) {
 	}
 }
 
+func TestPullImageRecordsPreciseSDKErrorCode(t *testing.T) {
+	store := memory.NewMemoryStore()
+
+	result, err := pullImage(
+		context.Background(),
+		store,
+		fakePuller{err: fmt.Errorf("%w: bad ref", chamberErrors.ErrInvalidImageReference)},
+		"not a reference",
+	)
+	if err == nil {
+		t.Fatal("pullImage() error = nil, want SDK error")
+	}
+	if result.operation.ID == "" {
+		t.Fatal("pullImage() operation ID = empty, want failed operation")
+	}
+	operation, getErr := store.GetOperation(context.Background(), result.operation.ID)
+	if getErr != nil {
+		t.Fatalf("GetOperation() error = %v", getErr)
+	}
+	if operation.ErrorCode != chamberErrors.ErrInvalidImageReference {
+		t.Fatalf("operation ErrorCode = %q, want %q", operation.ErrorCode, chamberErrors.ErrInvalidImageReference)
+	}
+}
+
 func TestRunContainerRequiresCommand(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/v1/containers/run", strings.NewReader(`{"image":"docker.io/library/alpine:latest","command":[]}`))
@@ -100,16 +125,54 @@ func TestRunContainerRequiresCommand(t *testing.T) {
 	}
 }
 
+func TestRunContainerRecordsPreciseProvisionerErrorCode(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+
+	result, err := runContainer(
+		context.Background(),
+		store,
+		fakeRuntime{},
+		fakeProvisioner{err: fmt.Errorf("%w: bad mount", chamberErrors.ErrInvalidBundleMount)},
+		context.Background(),
+		"docker.io/library/alpine:latest",
+		[]string{"/bin/true"},
+	)
+	if err == nil {
+		t.Fatal("runContainer() error = nil, want provisioner error")
+	}
+	if result.operation.ErrorCode != chamberErrors.ErrInvalidBundleMount {
+		t.Fatalf("operation ErrorCode = %q, want %q", result.operation.ErrorCode, chamberErrors.ErrInvalidBundleMount)
+	}
+}
+
+func TestRunContainerRecordsPreciseRuntimeErrorCode(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+
+	result, err := runContainer(
+		context.Background(),
+		store,
+		fakeRuntime{err: fmt.Errorf("%w: launch canceled", chamberErrors.ErrCanceled)},
+		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
+		context.Background(),
+		"docker.io/library/alpine:latest",
+		[]string{"/bin/true"},
+	)
+	if err == nil {
+		t.Fatal("runContainer() error = nil, want runtime error")
+	}
+	if result.operation.ErrorCode != chamberErrors.ErrCanceled {
+		t.Fatalf("operation ErrorCode = %q, want %q", result.operation.ErrorCode, chamberErrors.ErrCanceled)
+	}
+	if result.container.ErrorCode != chamberErrors.ErrCanceled {
+		t.Fatalf("container ErrorCode = %q, want %q", result.container.ErrorCode, chamberErrors.ErrCanceled)
+	}
+}
+
 func TestRunContainerStoresProvisionedBundlePath(t *testing.T) {
 	store := memory.NewMemoryStore()
-	if err := store.PutImage(context.Background(), metadata.Image{
-		Reference:  "docker.io/library/alpine:latest",
-		Digest:     "sha256:image",
-		LayoutPath: "/tmp/chamber-test/images/alpine",
-		PulledAt:   time.Now().UTC(),
-	}); err != nil {
-		t.Fatalf("PutImage() error = %v", err)
-	}
+	putTestImage(t, store)
 
 	provisionedBundlePath := "/tmp/chamber-test/provisioner-owned/container"
 	recorder := httptest.NewRecorder()
@@ -144,6 +207,19 @@ func TestRunContainerStoresProvisionedBundlePath(t *testing.T) {
 	}
 	if container.Runtime != "fake" {
 		t.Fatalf("Runtime = %q, want fake runtime descriptor name", container.Runtime)
+	}
+}
+
+func putTestImage(t *testing.T, store metadata.Store) {
+	t.Helper()
+
+	if err := store.PutImage(context.Background(), metadata.Image{
+		Reference:  "docker.io/library/alpine:latest",
+		Digest:     "sha256:image",
+		LayoutPath: "/tmp/chamber-test/images/alpine",
+		PulledAt:   time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("PutImage() error = %v", err)
 	}
 }
 
@@ -206,6 +282,7 @@ func testConfig(t *testing.T) chamberDaemonConfig.Config {
 
 type fakeProvisioner struct {
 	bundlePath string
+	err        error
 }
 
 func (p fakeProvisioner) Descriptor() chamberBundleShared.Descriptor {
@@ -216,6 +293,9 @@ func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundleSha
 	if err := ctx.Err(); err != nil {
 		return chamberBundleShared.ProvisionedBundle{}, err
 	}
+	if p.err != nil {
+		return chamberBundleShared.ProvisionedBundle{}, p.err
+	}
 	return chamberBundleShared.ProvisionedBundle{
 		ContainerID: request.ContainerID,
 		BundlePath:  p.bundlePath,
@@ -223,6 +303,7 @@ func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundleSha
 }
 
 type fakeRuntime struct {
+	err error
 }
 
 func (r fakeRuntime) Descriptor() chamberRuntimeShared.Descriptor {
@@ -232,6 +313,9 @@ func (r fakeRuntime) Descriptor() chamberRuntimeShared.Descriptor {
 func (r fakeRuntime) Run(ctx context.Context, request chamberRuntimeShared.RunRequest) (chamberRuntimeShared.Container, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if r.err != nil {
+		return nil, r.err
 	}
 	return fakeContainer{
 		id:         request.Bundle.ContainerID,
@@ -247,8 +331,6 @@ type fakeContainer struct {
 }
 
 func (c fakeContainer) ID() string { return c.id }
-
-func (fakeContainer) PID() int { return 1234 }
 
 func (c fakeContainer) StdoutPath() string { return c.stdoutPath }
 
@@ -292,11 +374,16 @@ func (c fakeContainer) DeleteLog(stream chamberRuntimeShared.LogStream) error {
 	}
 }
 
-type fakePuller struct{}
+type fakePuller struct {
+	err error
+}
 
-func (fakePuller) Pull(ctx context.Context, request chamberImageShared.PullRequest) (chamberImageShared.PulledImage, error) {
+func (p fakePuller) Pull(ctx context.Context, request chamberImageShared.PullRequest) (chamberImageShared.PulledImage, error) {
 	if err := ctx.Err(); err != nil {
 		return chamberImageShared.PulledImage{}, err
+	}
+	if p.err != nil {
+		return chamberImageShared.PulledImage{}, p.err
 	}
 	return chamberImageShared.PulledImage{
 		Reference:  request.Reference,

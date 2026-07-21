@@ -97,6 +97,16 @@ func publicError(err error, daemonErr *daemonError) (int, string, string) {
 	switch {
 	case code == chamberErrors.ErrInvalidRequest, errors.Is(err, chamberErrors.ErrInvalidRequest):
 		return http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "invalid request"
+	case code == chamberErrors.ErrInvalidContainerID, errors.Is(err, chamberErrors.ErrInvalidContainerID):
+		return http.StatusBadRequest, string(chamberErrors.ErrInvalidContainerID), "invalid container id"
+	case code == chamberErrors.ErrInvalidImageReference, errors.Is(err, chamberErrors.ErrInvalidImageReference):
+		return http.StatusBadRequest, string(chamberErrors.ErrInvalidImageReference), "invalid image reference"
+	case code == chamberErrors.ErrInvalidImageLayout, errors.Is(err, chamberErrors.ErrInvalidImageLayout):
+		return http.StatusBadRequest, string(chamberErrors.ErrInvalidImageLayout), "invalid image layout"
+	case code == chamberErrors.ErrInvalidBundleMount, errors.Is(err, chamberErrors.ErrInvalidBundleMount):
+		return http.StatusBadRequest, string(chamberErrors.ErrInvalidBundleMount), "invalid bundle mount"
+	case code == chamberErrors.ErrInvalidProcessSpec, errors.Is(err, chamberErrors.ErrInvalidProcessSpec):
+		return http.StatusBadRequest, string(chamberErrors.ErrInvalidProcessSpec), "invalid process spec"
 	case code == chamberErrors.ErrImageNotFound, errors.Is(err, chamberErrors.ErrImageNotFound):
 		return http.StatusNotFound, string(chamberErrors.ErrImageNotFound), "image not found"
 	case code == chamberErrors.ErrContainerNotFound, errors.Is(err, chamberErrors.ErrContainerNotFound):
@@ -113,6 +123,37 @@ func publicError(err error, daemonErr *daemonError) (int, string, string) {
 		}
 		return http.StatusInternalServerError, "internal", "internal error"
 	}
+}
+
+func chamberCodeFromError(err error, fallback chamberErrors.Code) chamberErrors.Code {
+	for _, code := range []chamberErrors.Code{
+		chamberErrors.ErrInvalidContainerID,
+		chamberErrors.ErrInvalidImageReference,
+		chamberErrors.ErrInvalidImageLayout,
+		chamberErrors.ErrInvalidBundleMount,
+		chamberErrors.ErrInvalidProcessSpec,
+		chamberErrors.ErrInvalidRequest,
+		chamberErrors.ErrCanceled,
+		chamberErrors.ErrUnsupportedHost,
+		chamberErrors.ErrFilesystemFailed,
+		chamberErrors.ErrImageNotFound,
+		chamberErrors.ErrContainerNotFound,
+		chamberErrors.ErrLogNotFound,
+		chamberErrors.ErrStateConflict,
+		chamberErrors.ErrPullFailed,
+		chamberErrors.ErrMetadataFailed,
+		chamberErrors.ErrBundlePrepareFailed,
+		chamberErrors.ErrRuntimeInstallFailed,
+		chamberErrors.ErrRuntimeStartFailed,
+		chamberErrors.ErrRuntimeControlFailed,
+		chamberErrors.ErrRuntimeWaitFailed,
+		chamberErrors.ErrContainerExitNonzero,
+	} {
+		if errors.Is(err, code) {
+			return code
+		}
+	}
+	return fallback
 }
 
 func operationError(operationID string, code chamberErrors.Code, err error) error {

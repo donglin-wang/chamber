@@ -1,11 +1,14 @@
 package localfs
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
 func TestMkdirPrivateCreatesDirectory(t *testing.T) {
@@ -29,6 +32,17 @@ func TestMkdirPrivateCreatesDirectory(t *testing.T) {
 	assertOwnedByCurrentUser(t, info)
 }
 
+func TestMkdirPrivateRejectsEmptyPath(t *testing.T) {
+	manager := NewDirectoryManager()
+	err := manager.MkdirPrivate("")
+	if err == nil {
+		t.Fatal("MkdirPrivate(empty) error = nil, want invalid request")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("MkdirPrivate(empty) error = %v, want invalid request code", err)
+	}
+}
+
 func TestMkdirPrivateRejectsGroupOrOtherAccessibleDirectory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "unsafe")
 	if err := os.Mkdir(path, 0755); err != nil {
@@ -42,6 +56,9 @@ func TestMkdirPrivateRejectsGroupOrOtherAccessibleDirectory(t *testing.T) {
 	err := manager.MkdirPrivate(path)
 	if err == nil {
 		t.Fatal("MkdirPrivate() error = nil")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("MkdirPrivate() error = %v, want invalid request code", err)
 	}
 	if !strings.Contains(err.Error(), "must not be readable, writable, or executable by group or other users") {
 		t.Fatalf("MkdirPrivate() error = %v, want permission explanation", err)
@@ -76,6 +93,9 @@ func TestMkdirPrivateRejectsFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("MkdirPrivate() error = nil")
 	}
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("MkdirPrivate() error = %v, want invalid request code", err)
+	}
 	if !strings.Contains(err.Error(), "is not a directory") {
 		t.Fatalf("MkdirPrivate() error = %v, want file rejection", err)
 	}
@@ -95,6 +115,17 @@ func TestMkdirPrivateParentCreatesParent(t *testing.T) {
 	}
 	if !info.IsDir() {
 		t.Fatalf("%q is not a directory", filepath.Dir(path))
+	}
+}
+
+func TestMkdirPrivateParentRejectsEmptyPath(t *testing.T) {
+	manager := NewDirectoryManager()
+	err := manager.MkdirPrivateParent("")
+	if err == nil {
+		t.Fatal("MkdirPrivateParent(empty) error = nil, want invalid request")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("MkdirPrivateParent(empty) error = %v, want invalid request code", err)
 	}
 }
 

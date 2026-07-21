@@ -41,7 +41,7 @@ func NewProvisioner(config chamberBundleShared.Config, directoryManager localfs.
 		return nil, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := directoryManager.MkdirPrivate(config.Root); err != nil {
-		return nil, fmt.Errorf("create bundle root: %w", err)
+		return nil, fmt.Errorf("%w: create bundle root: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
 
 	switch config.Name {

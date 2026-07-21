@@ -17,7 +17,7 @@ func NewPuller(config chamberImageShared.Config, directoryManager localfs.Direct
 		return nil, chamberImageShared.ErrRootRequired
 	}
 	if err := directoryManager.MkdirPrivate(config.Root); err != nil {
-		return nil, fmt.Errorf("create image root: %w", err)
+		return nil, fmt.Errorf("%w: create image root: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
 	return chamberImagePuller.New(config, directoryManager)
 }

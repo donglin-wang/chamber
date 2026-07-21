@@ -47,8 +47,8 @@ func TestValidateRejectsUnsafeIDs(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Validate(%q) error = nil, want error", test)
 			}
-			if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
-				t.Fatalf("Validate(%q) error = %v, want invalid request code", test, err)
+			if !errors.Is(err, chamberErrors.ErrInvalidContainerID) {
+				t.Fatalf("Validate(%q) error = %v, want invalid container ID code", test, err)
 			}
 			if IsValid(test) {
 				t.Fatalf("IsValid(%q) = true, want false", test)

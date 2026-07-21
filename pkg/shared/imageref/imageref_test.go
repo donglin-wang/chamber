@@ -22,8 +22,8 @@ func TestValidateRejectsInvalidReferences(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() error = nil, want invalid reference error")
 	}
-	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
-		t.Fatalf("Validate() error = %v, want invalid request code", err)
+	if !errors.Is(err, chamberErrors.ErrInvalidImageReference) {
+		t.Fatalf("Validate() error = %v, want invalid image reference code", err)
 	}
 	if IsValid("not a reference !!") {
 		t.Fatal("IsValid() = true, want false")

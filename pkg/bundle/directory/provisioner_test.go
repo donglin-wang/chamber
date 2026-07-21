@@ -3,6 +3,7 @@ package directory
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -12,6 +13,7 @@ import (
 
 	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	ociumoci "github.com/opencontainers/umoci"
@@ -44,6 +46,31 @@ func TestDescriptorDeclaresDirectorySupport(t *testing.T) {
 	}
 	if !slices.Equal(descriptor.Capabilities.Privileges, []capability.Privilege{capability.Rootless}) {
 		t.Fatalf("privileges = %#v, want rootless only", descriptor.Capabilities.Privileges)
+	}
+}
+
+func TestProvisionClassifiesMissingImageLayoutAsInvalidRequest(t *testing.T) {
+	provisioner, err := New(chamberBundleShared.Config{
+		Root:      filepath.Join(privateTempDir(t), "bundles"),
+		Privilege: capability.Rootless,
+	}, localfs.NewDirectoryManager())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, err = provisioner.Provision(context.Background(), chamberBundleShared.ProvisionRequest{
+		ContainerID: "container-1",
+		ImageLayout: filepath.Join(t.TempDir(), "missing-layout"),
+		ImageRef:    "docker.io/library/golang:1.26.4-bookworm",
+	})
+	if err == nil {
+		t.Fatal("Provision() error = nil, want missing layout error")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidImageLayout) {
+		t.Fatalf("Provision() error = %v, want invalid image layout code", err)
+	}
+	if errors.Is(err, chamberErrors.ErrBundlePrepareFailed) {
+		t.Fatalf("Provision() error = %v, should not include bundle prepare code", err)
 	}
 }
 
@@ -122,8 +149,8 @@ func TestPatchRootlessSpec(t *testing.T) {
 		},
 	}
 
-	uid := uint32(1000)
-	gid := uint32(1001)
+	uid := uint32(0)
+	gid := uint32(0)
 	process := chamberBundleShared.ProcessSpec{
 		Args:     []string{"/bin/sh", "-c", "echo hi"},
 		Env:      []string{"KEY=value"},
@@ -132,7 +159,7 @@ func TestPatchRootlessSpec(t *testing.T) {
 		User: chamberBundleShared.ProcessUser{
 			UID:            &uid,
 			GID:            &gid,
-			AdditionalGIDs: []uint32{44, 55},
+			AdditionalGIDs: []uint32{0},
 		},
 	}
 	if err := patchRootlessSpec(spec, 501, 20, process, nil); err != nil {
@@ -171,10 +198,10 @@ func TestPatchRootlessSpec(t *testing.T) {
 	if !spec.Process.Terminal {
 		t.Fatal("Process.Terminal = false, want process override")
 	}
-	if spec.Process.User.UID != 1000 || spec.Process.User.GID != 1001 {
-		t.Fatalf("Process.User UID/GID = %d/%d, want 1000/1001", spec.Process.User.UID, spec.Process.User.GID)
+	if spec.Process.User.UID != 0 || spec.Process.User.GID != 0 {
+		t.Fatalf("Process.User UID/GID = %d/%d, want 0/0", spec.Process.User.UID, spec.Process.User.GID)
 	}
-	if !slices.Equal(spec.Process.User.AdditionalGids, []uint32{44, 55}) {
+	if !slices.Equal(spec.Process.User.AdditionalGids, []uint32{0}) {
 		t.Fatalf("Process.User.AdditionalGids = %#v, want copied groups", spec.Process.User.AdditionalGids)
 	}
 	for _, mount := range spec.Mounts {
@@ -277,6 +304,70 @@ func TestPatchRootlessSpecRejectsMissingProcess(t *testing.T) {
 	}
 }
 
+func TestPatchRootlessSpecRejectsUnmappedProcessUser(t *testing.T) {
+	tests := map[string]struct {
+		specUser    specs.User
+		requestUser chamberBundleShared.ProcessUser
+		want        string
+	}{
+		"image uid": {
+			specUser: specs.User{UID: 1000},
+			want:     "process UID 1000 is not mapped",
+		},
+		"image gid": {
+			specUser: specs.User{GID: 1000},
+			want:     "process GID 1000 is not mapped",
+		},
+		"image additional gid": {
+			specUser: specs.User{AdditionalGids: []uint32{1000}},
+			want:     "additional process GID 1000 is not mapped",
+		},
+		"request uid": {
+			requestUser: chamberBundleShared.ProcessUser{
+				UID: uint32Ptr(1000),
+			},
+			want: "process UID 1000 is not mapped",
+		},
+		"request gid": {
+			requestUser: chamberBundleShared.ProcessUser{
+				GID: uint32Ptr(1000),
+			},
+			want: "process GID 1000 is not mapped",
+		},
+		"request additional gid": {
+			requestUser: chamberBundleShared.ProcessUser{
+				AdditionalGIDs: []uint32{1000},
+			},
+			want: "additional process GID 1000 is not mapped",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			spec := &specs.Spec{
+				Process: &specs.Process{
+					Args: []string{"/bin/from-image"},
+					User: test.specUser,
+				},
+				Linux: &specs.Linux{},
+			}
+
+			err := patchRootlessSpec(spec, 501, 20, chamberBundleShared.ProcessSpec{
+				User: test.requestUser,
+			}, nil)
+			if err == nil {
+				t.Fatal("patchRootlessSpec() error = nil, want unmapped process user error")
+			}
+			if !errors.Is(err, chamberErrors.ErrInvalidProcessSpec) {
+				t.Fatalf("patchRootlessSpec() error = %v, want invalid process spec code", err)
+			}
+			if !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("patchRootlessSpec() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestPatchRootlessSpecAppendsBindMounts(t *testing.T) {
 	spec := &specs.Spec{
 		Process: &specs.Process{Args: []string{"/bin/from-image"}},
@@ -357,10 +448,50 @@ func TestNormalizeBindMountsRejectsInvalidRequests(t *testing.T) {
 
 	for name, mount := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := normalizeBindMounts([]chamberBundleShared.Mount{mount}); err == nil {
+			_, err := normalizeBindMounts([]chamberBundleShared.Mount{mount})
+			if err == nil {
 				t.Fatal("normalizeBindMounts() error = nil, want error")
 			}
+			if !errors.Is(err, chamberErrors.ErrInvalidBundleMount) {
+				t.Fatalf("normalizeBindMounts() error = %v, want invalid bundle mount code", err)
+			}
 		})
+	}
+}
+
+func TestValidateImageRefInLayoutRejectsMissingRef(t *testing.T) {
+	imageLayout := filepath.Join(t.TempDir(), "layout")
+	engine, err := ociumoci.CreateLayout(imageLayout)
+	if err != nil {
+		t.Fatalf("CreateLayout() error = %v", err)
+	}
+	if err := ociumoci.NewImage(engine, "present", nil); err != nil {
+		t.Fatalf("NewImage() error = %v", err)
+	}
+	if err := validateImageRefInLayout(context.Background(), engine, imageLayout, "missing"); err == nil {
+		t.Fatal("validateImageRefInLayout() error = nil, want missing ref error")
+	} else if !errors.Is(err, chamberErrors.ErrInvalidImageLayout) {
+		t.Fatalf("validateImageRefInLayout() error = %v, want invalid image layout code", err)
+	}
+	if err := engine.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+}
+
+func TestValidateImageRefInLayoutHonorsCanceledContext(t *testing.T) {
+	imageLayout := filepath.Join(t.TempDir(), "layout")
+	engine, err := ociumoci.CreateLayout(imageLayout)
+	if err != nil {
+		t.Fatalf("CreateLayout() error = %v", err)
+	}
+	defer engine.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := validateImageRefInLayout(ctx, engine, imageLayout, "present"); err == nil {
+		t.Fatal("validateImageRefInLayout() error = nil, want canceled error")
+	} else if !errors.Is(err, chamberErrors.ErrCanceled) {
+		t.Fatalf("validateImageRefInLayout() error = %v, want canceled code", err)
 	}
 }
 
@@ -402,6 +533,30 @@ func TestCreateBindMountTargetsCreatesRootfsPlaceholders(t *testing.T) {
 	}
 }
 
+func TestCreateBindMountTargetsRejectsDirectorySourceOntoFileTarget(t *testing.T) {
+	rootfs := filepath.Join(t.TempDir(), "rootfs")
+	if err := os.MkdirAll(rootfs, 0700); err != nil {
+		t.Fatalf("MkdirAll(rootfs) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(rootfs, "workspace"), []byte("file"), 0600); err != nil {
+		t.Fatalf("WriteFile(target) error = %v", err)
+	}
+	mounts, err := normalizeBindMounts([]chamberBundleShared.Mount{
+		{Source: t.TempDir(), Target: "/workspace"},
+	})
+	if err != nil {
+		t.Fatalf("normalizeBindMounts() error = %v", err)
+	}
+
+	err = createBindMountTargets(rootfs, mounts)
+	if err == nil {
+		t.Fatal("createBindMountTargets() error = nil, want invalid bundle mount")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidBundleMount) {
+		t.Fatalf("createBindMountTargets() error = %v, want invalid bundle mount code", err)
+	}
+}
+
 func TestRootfsPathRejectsEscapes(t *testing.T) {
 	rootfs := t.TempDir()
 	if _, err := rootfsPath(rootfs, "/"); err == nil {
@@ -436,5 +591,9 @@ func hasNamespace(namespaces []specs.LinuxNamespace, namespaceType specs.LinuxNa
 }
 
 func boolPtr(value bool) *bool {
+	return &value
+}
+
+func uint32Ptr(value uint32) *uint32 {
 	return &value
 }

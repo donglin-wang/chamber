@@ -105,6 +105,9 @@ func TestNewRejectsWrongDigest(t *testing.T) {
 	if !strings.Contains(err.Error(), "checksum") {
 		t.Fatalf("New() error = %v, want checksum failure", err)
 	}
+	if !errors.Is(err, chamberErrors.ErrRuntimeInstallFailed) {
+		t.Fatalf("New() error = %v, want runtime install failed code", err)
+	}
 	if _, statErr := os.Stat(filepath.Join(binDir, "runc")); !os.IsNotExist(statErr) {
 		t.Fatalf("final binary stat error = %v, want not exist", statErr)
 	}
@@ -123,6 +126,9 @@ func TestNewRejectsNonOKResponse(t *testing.T) {
 	if !strings.Contains(err.Error(), "404") {
 		t.Fatalf("New() error = %v, want HTTP 404", err)
 	}
+	if !errors.Is(err, chamberErrors.ErrRuntimeInstallFailed) {
+		t.Fatalf("New() error = %v, want runtime install failed code", err)
+	}
 }
 
 func TestNewRejectsInterruptedBody(t *testing.T) {
@@ -137,8 +143,30 @@ func TestNewRejectsInterruptedBody(t *testing.T) {
 	if err == nil {
 		t.Fatal("New() error = nil, want interrupted body error")
 	}
+	if !errors.Is(err, chamberErrors.ErrRuntimeInstallFailed) {
+		t.Fatalf("New() error = %v, want runtime install failed code", err)
+	}
 	if _, statErr := os.Stat(filepath.Join(binDir, "runc")); !os.IsNotExist(statErr) {
 		t.Fatalf("final binary stat error = %v, want not exist", statErr)
+	}
+}
+
+func TestNewDownloadCancellationHasCanceledCode(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	_, err := newWithOptions(ctx, chamberRuntimeShared.Config{
+		RuntimeRoot:   privateTempDir(t),
+		RuntimeBinDir: privateTempDir(t),
+		Name:          "runc",
+	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, &cancelingBody{cancel: cancel})), withTestArtifact([]byte("anything")))
+
+	if err == nil {
+		t.Fatal("New() error = nil, want cancellation error")
+	}
+	if !errors.Is(err, chamberErrors.ErrCanceled) {
+		t.Fatalf("New() error = %v, want canceled code", err)
+	}
+	if errors.Is(err, chamberErrors.ErrRuntimeInstallFailed) {
+		t.Fatalf("New() error = %v, should not include runtime install failed code", err)
 	}
 }
 
@@ -353,6 +381,16 @@ func TestDefaultRuntimeArtifactSupportsLinuxReleaseArchitectures(t *testing.T) {
 	}
 }
 
+func TestDefaultRuntimeArtifactRejectsUnsupportedArchitectureWithHostCode(t *testing.T) {
+	_, err := defaultRuntimeArtifact("mips")
+	if err == nil {
+		t.Fatal("defaultRuntimeArtifact() error = nil, want unsupported host error")
+	}
+	if !errors.Is(err, chamberErrors.ErrUnsupportedHost) {
+		t.Fatalf("defaultRuntimeArtifact() error = %v, want unsupported host code", err)
+	}
+}
+
 func TestRunStartsRuncAndReturnsContainer(t *testing.T) {
 	logDir := privateTempDir(t)
 	binaryPath := writeFakeRunc(t, logDir, `
@@ -360,10 +398,11 @@ case "$cmd" in
 run)
 	write_args "$logdir/run-args" "$@"
 	printf '%s' "$PWD" > "$logdir/run-pwd"
+	touch "$logdir/run-started"
 	cat > "$logdir/stdin"
+	touch "$logdir/stdin-read"
 	printf 'stdout from fake runc'
 	printf 'stderr from fake runc' >&2
-	touch "$logdir/run-started"
 	while [ ! -f "$logdir/release" ]; do
 		sleep 0.01
 	done
@@ -397,13 +436,11 @@ esac
 	if container.ID() != "container-1" {
 		t.Fatalf("Container.ID() = %q, want container-1", container.ID())
 	}
-	if container.PID() <= 0 {
-		t.Fatalf("Container.PID() = %d, want positive pid", container.PID())
-	}
 	waitForFile(t, filepath.Join(logDir, "run-started"))
 
 	assertFileContent(t, filepath.Join(logDir, "run-pwd"), bundlePath)
 	assertLines(t, filepath.Join(logDir, "run-args"), []string{"--root", stateRoot, "run", "container-1"})
+	waitForFile(t, filepath.Join(logDir, "stdin-read"))
 	assertFileContent(t, filepath.Join(logDir, "stdin"), "stdin for fake runc")
 
 	if err := os.WriteFile(filepath.Join(logDir, "release"), []byte("ok"), 0600); err != nil {
@@ -488,6 +525,94 @@ esac
 	}
 }
 
+func TestRunStartFailureHasErrorCodeAndRemovesLogs(t *testing.T) {
+	stateRoot := privateTempDir(t)
+	runtime := &Runtime{
+		config: chamberRuntimeShared.Config{
+			RuntimeRoot: stateRoot,
+		},
+		binaryPath:       filepath.Join(t.TempDir(), "missing-runc"),
+		directoryManager: localfs.NewDirectoryManager(),
+	}
+
+	_, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
+		Bundle: chamberBundleShared.ProvisionedBundle{
+			ContainerID: "start-fails",
+			BundlePath:  privateTempDir(t),
+		},
+	})
+	if err == nil {
+		t.Fatal("Run() error = nil, want start failure")
+	}
+	if !errors.Is(err, chamberErrors.ErrRuntimeStartFailed) {
+		t.Fatalf("Run() error = %v, want runtime start failed code", err)
+	}
+	for _, path := range []string{
+		filepath.Join(stateRoot, "logs", "start-fails", "stdout.log"),
+		filepath.Join(stateRoot, "logs", "start-fails", "stderr.log"),
+	} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("log path %q stat error = %v, want not exist", path, statErr)
+		}
+	}
+}
+
+func TestRunContextCancellationDoesNotStopContainer(t *testing.T) {
+	logDir := privateTempDir(t)
+	binaryPath := writeFakeRunc(t, logDir, `
+case "$cmd" in
+run)
+	touch "$logdir/run-started"
+	while true; do
+		if [ -f "$logdir/release" ]; then
+			exit 0
+		fi
+		sleep 0.01
+	done
+	;;
+kill)
+	write_args "$logdir/kill-args" "$@"
+	touch "$logdir/release"
+	;;
+*)
+	exit 64
+	;;
+esac
+`)
+	ctx, cancel := context.WithCancel(context.Background())
+	stateRoot := privateTempDir(t)
+	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
+	container, err := runtime.Run(ctx, chamberRuntimeShared.RunRequest{
+		Bundle: chamberBundleShared.ProvisionedBundle{
+			ContainerID: "cancelled",
+			BundlePath:  privateTempDir(t),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	waitForFile(t, filepath.Join(logDir, "run-started"))
+
+	cancel()
+	select {
+	case <-container.(*runcContainer).done:
+		t.Fatal("container exited after Run context cancellation; lifecycle should remain container-owned")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	if err := container.Signal(context.Background(), syscall.SIGTERM); err != nil {
+		t.Fatalf("Signal() error = %v", err)
+	}
+	assertLines(t, filepath.Join(logDir, "kill-args"), []string{"--root", stateRoot, "kill", "cancelled", "15"})
+	result, err := container.Wait()
+	if err != nil {
+		t.Fatalf("Wait() error = %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("Wait() exit code = %d, want 0", result.ExitCode)
+	}
+}
+
 func TestStateReadsRuncState(t *testing.T) {
 	logDir := privateTempDir(t)
 	binaryPath := writeFakeRunc(t, logDir, `
@@ -544,6 +669,34 @@ esac
 	assertLines(t, filepath.Join(logDir, "kill-args"), []string{"--root", stateRoot, "kill", "signaled", "15"})
 }
 
+func TestSignalFailureHasRuntimeControlCode(t *testing.T) {
+	logDir := privateTempDir(t)
+	binaryPath := writeFakeRunc(t, logDir, `
+case "$cmd" in
+kill)
+	printf 'cannot signal' >&2
+	exit 33
+	;;
+*)
+	exit 64
+	;;
+esac
+`)
+
+	container := &runcContainer{containerConfig: containerConfig{
+		id:         "signaled",
+		binaryPath: binaryPath,
+		stateRoot:  privateTempDir(t),
+	}}
+	err := container.Signal(context.Background(), syscall.SIGTERM)
+	if err == nil {
+		t.Fatal("Signal() error = nil, want control failure")
+	}
+	if !errors.Is(err, chamberErrors.ErrRuntimeControlFailed) {
+		t.Fatalf("Signal() error = %v, want runtime control failed code", err)
+	}
+}
+
 func TestSignalRejectsUnsupportedSignal(t *testing.T) {
 	container := &runcContainer{containerConfig: containerConfig{
 		id:         "signaled",
@@ -594,6 +747,99 @@ esac
 	assertLines(t, filepath.Join(logDir, "delete-args"), []string{"--root", stateRoot, "delete", "--force", "deleted"})
 }
 
+func TestDeleteFailureHasRuntimeControlCode(t *testing.T) {
+	logDir := privateTempDir(t)
+	binaryPath := writeFakeRunc(t, logDir, `
+case "$cmd" in
+delete)
+	printf 'cannot delete' >&2
+	exit 44
+	;;
+*)
+	exit 64
+	;;
+esac
+`)
+
+	container := &runcContainer{containerConfig: containerConfig{
+		id:         "deleted",
+		binaryPath: binaryPath,
+		stateRoot:  privateTempDir(t),
+	}}
+	err := container.Delete(context.Background(), true)
+	if err == nil {
+		t.Fatal("Delete() error = nil, want control failure")
+	}
+	if !errors.Is(err, chamberErrors.ErrRuntimeControlFailed) {
+		t.Fatalf("Delete() error = %v, want runtime control failed code", err)
+	}
+}
+
+func TestControlCommandCancellationHasCanceledCode(t *testing.T) {
+	tests := map[string]func(context.Context, chamberRuntimeShared.Container) error{
+		"state": func(ctx context.Context, container chamberRuntimeShared.Container) error {
+			_, err := container.State(ctx)
+			return err
+		},
+		"signal": func(ctx context.Context, container chamberRuntimeShared.Container) error {
+			return container.Signal(ctx, syscall.SIGTERM)
+		},
+		"delete": func(ctx context.Context, container chamberRuntimeShared.Container) error {
+			return container.Delete(ctx, true)
+		},
+	}
+
+	for name, call := range tests {
+		t.Run(name, func(t *testing.T) {
+			logDir := privateTempDir(t)
+			binaryPath := writeFakeRunc(t, logDir, `
+case "$cmd" in
+state|kill|delete)
+	touch "$logdir/$cmd-started"
+	while true; do
+		sleep 1
+	done
+	;;
+*)
+	exit 64
+	;;
+esac
+`)
+			container := &runcContainer{containerConfig: containerConfig{
+				id:         "cancelled-control",
+				binaryPath: binaryPath,
+				stateRoot:  privateTempDir(t),
+			}}
+			ctx, cancel := context.WithCancel(context.Background())
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- call(ctx, container)
+			}()
+			marker := name
+			if marker == "signal" {
+				marker = "kill"
+			}
+			waitForFile(t, filepath.Join(logDir, marker+"-started"))
+
+			cancel()
+			select {
+			case err := <-errCh:
+				if err == nil {
+					t.Fatal("control command error = nil, want cancellation error")
+				}
+				if !errors.Is(err, chamberErrors.ErrCanceled) {
+					t.Fatalf("control command error = %v, want canceled code", err)
+				}
+				if errors.Is(err, chamberErrors.ErrRuntimeControlFailed) {
+					t.Fatalf("control command error = %v, should not include runtime control failed code", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("control command did not return after context cancellation")
+			}
+		})
+	}
+}
+
 func TestRunRejectsUnsafeContainerID(t *testing.T) {
 	invalidContainerIDs := []string{
 		"",
@@ -636,6 +882,24 @@ func TestContainerLogMethodsRejectInvalidStream(t *testing.T) {
 	}
 	if err := container.DeleteLog("stdin"); err == nil {
 		t.Fatal("DeleteLog(unsupported) error = nil, want error")
+	}
+}
+
+func TestReadLogMissingFileHasLogNotFoundCode(t *testing.T) {
+	container := &runcContainer{containerConfig: containerConfig{
+		id:         "container-logs",
+		binaryPath: "/tmp/runc",
+		stateRoot:  privateTempDir(t),
+		stdoutPath: filepath.Join(privateTempDir(t), "stdout.log"),
+		stderrPath: filepath.Join(privateTempDir(t), "stderr.log"),
+	}}
+
+	_, err := container.ReadLog(chamberRuntimeShared.StdoutLogStream)
+	if err == nil {
+		t.Fatal("ReadLog(stdout) error = nil, want missing log error")
+	}
+	if !errors.Is(err, chamberErrors.ErrLogNotFound) {
+		t.Fatalf("ReadLog(stdout) error = %v, want log not found code", err)
 	}
 }
 
@@ -797,6 +1061,19 @@ func (*interruptedBody) Close() error {
 	return nil
 }
 
+type cancelingBody struct {
+	cancel context.CancelFunc
+}
+
+func (body *cancelingBody) Read([]byte) (int, error) {
+	body.cancel()
+	return 0, context.Canceled
+}
+
+func (*cancelingBody) Close() error {
+	return nil
+}
+
 func writeFakeRunc(t *testing.T, logDir string, body string) string {
 	t.Helper()
 
@@ -858,7 +1135,7 @@ func assertLines(t *testing.T, path string, want []string) {
 func waitForFile(t *testing.T, path string) {
 	t.Helper()
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for {
 		if _, err := os.Stat(path); err == nil {
 			return

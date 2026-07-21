@@ -10,7 +10,7 @@ import (
 func Canonical(raw string) (string, error) {
 	ref, err := name.ParseReference(raw)
 	if err != nil {
-		return "", fmt.Errorf("%w: invalid image reference %q: %w", chamberErrors.ErrInvalidRequest, raw, err)
+		return "", fmt.Errorf("%w: invalid image reference %q: %w", chamberErrors.ErrInvalidImageReference, raw, err)
 	}
 	return ref.Name(), nil
 }

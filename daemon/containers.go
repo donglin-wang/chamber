@@ -243,8 +243,9 @@ func runContainer(
 		},
 	})
 	if err != nil {
-		failedOperation, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrBundlePrepareFailed)
-		failErr := operationError(operationID, chamberErrors.ErrBundlePrepareFailed, errors.Join(err, transitionErr))
+		code := chamberCodeFromError(err, chamberErrors.ErrBundlePrepareFailed)
+		failedOperation, transitionErr := store.FailOperation(ctx, operationID, code)
+		failErr := operationError(operationID, code, errors.Join(err, transitionErr))
 		if failedOperation.ID != "" {
 			operation = failedOperation
 		}
@@ -292,8 +293,9 @@ func runContainer(
 		Bundle: provisioned,
 	})
 	if err != nil {
-		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, metadata.ContainerStarting, operationID, chamberErrors.ErrRuntimeStartFailed)
-		failErr := operationError(operationID, chamberErrors.ErrRuntimeStartFailed, errors.Join(err, transitionErr))
+		code := chamberCodeFromError(err, chamberErrors.ErrRuntimeStartFailed)
+		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, metadata.ContainerStarting, operationID, code)
+		failErr := operationError(operationID, code, errors.Join(err, transitionErr))
 		if failedOperation.ID != "" {
 			operation = failedOperation
 		}

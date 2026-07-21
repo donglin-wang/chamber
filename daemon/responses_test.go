@@ -32,6 +32,41 @@ func TestPublicErrorMapsSharedCodes(t *testing.T) {
 			message: "image not found",
 		},
 		{
+			name:    "wrapped invalid container id",
+			err:     fmt.Errorf("validate: %w", chamberErrors.ErrInvalidContainerID),
+			status:  http.StatusBadRequest,
+			code:    string(chamberErrors.ErrInvalidContainerID),
+			message: "invalid container id",
+		},
+		{
+			name:    "wrapped invalid image reference",
+			err:     fmt.Errorf("validate: %w", chamberErrors.ErrInvalidImageReference),
+			status:  http.StatusBadRequest,
+			code:    string(chamberErrors.ErrInvalidImageReference),
+			message: "invalid image reference",
+		},
+		{
+			name:    "wrapped invalid image layout",
+			err:     fmt.Errorf("validate: %w", chamberErrors.ErrInvalidImageLayout),
+			status:  http.StatusBadRequest,
+			code:    string(chamberErrors.ErrInvalidImageLayout),
+			message: "invalid image layout",
+		},
+		{
+			name:    "wrapped invalid bundle mount",
+			err:     fmt.Errorf("validate: %w", chamberErrors.ErrInvalidBundleMount),
+			status:  http.StatusBadRequest,
+			code:    string(chamberErrors.ErrInvalidBundleMount),
+			message: "invalid bundle mount",
+		},
+		{
+			name:    "wrapped invalid process spec",
+			err:     fmt.Errorf("validate: %w", chamberErrors.ErrInvalidProcessSpec),
+			status:  http.StatusBadRequest,
+			code:    string(chamberErrors.ErrInvalidProcessSpec),
+			message: "invalid process spec",
+		},
+		{
 			name: "daemon code wins",
 			err:  fmt.Errorf("pull failed"),
 			daemonErr: &daemonError{

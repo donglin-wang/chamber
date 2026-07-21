@@ -18,10 +18,13 @@ import (
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	"github.com/donglin-wang/chamber/pkg/shared/logging"
 	"github.com/google/uuid"
 )
+
+const forcedDeleteWait = 10 * time.Second
 
 type config struct {
 	root     string
@@ -291,7 +294,7 @@ func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provision
 		result.err = fmt.Errorf("run job container: %w", err)
 		return result
 	}
-	waitResult, waitErr := container.Wait()
+	waitResult, waitErr := waitForContainer(ctx, container)
 	result.exitCode = waitResult.ExitCode
 	result.err = waitErr
 
@@ -309,7 +312,49 @@ func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provision
 	if deleteErr := container.Delete(context.Background(), true); deleteErr != nil && result.err == nil && !looksAlreadyDeleted(deleteErr) {
 		result.err = fmt.Errorf("delete runtime container: %w", deleteErr)
 	}
+	if !request.keep {
+		for _, stream := range []chamberRuntimeShared.LogStream{
+			chamberRuntimeShared.StdoutLogStream,
+			chamberRuntimeShared.StderrLogStream,
+		} {
+			if deleteErr := container.DeleteLog(stream); deleteErr != nil && result.err == nil {
+				result.err = fmt.Errorf("delete %s log: %w", stream, deleteErr)
+			}
+		}
+	}
 	return result
+}
+
+type waitOutcome struct {
+	result chamberRuntimeShared.ContainerResult
+	err    error
+}
+
+func waitForContainer(ctx context.Context, container chamberRuntimeShared.Container) (chamberRuntimeShared.ContainerResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	done := make(chan waitOutcome, 1)
+	go func() {
+		result, err := container.Wait()
+		done <- waitOutcome{result: result, err: err}
+	}()
+
+	select {
+	case outcome := <-done:
+		return outcome.result, outcome.err
+	case <-ctx.Done():
+		timeoutErr := fmt.Errorf("%w: CI job timed out: %w", chamberErrors.ErrCanceled, ctx.Err())
+		if deleteErr := container.Delete(context.Background(), true); deleteErr != nil && !looksAlreadyDeleted(deleteErr) {
+			return chamberRuntimeShared.ContainerResult{ExitCode: 1}, errors.Join(timeoutErr, fmt.Errorf("force-delete timed out job container: %w", deleteErr))
+		}
+		select {
+		case outcome := <-done:
+			return outcome.result, errors.Join(timeoutErr, outcome.err)
+		case <-time.After(forcedDeleteWait):
+			return chamberRuntimeShared.ContainerResult{ExitCode: 1}, fmt.Errorf("%w: timed out waiting for forced-delete job container to exit", timeoutErr)
+		}
+	}
 }
 
 func logResult(ctx context.Context, result jobResult) {

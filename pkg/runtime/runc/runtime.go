@@ -83,6 +83,13 @@ func New(ctx context.Context, config chamberRuntimeShared.Config, directoryManag
 }
 
 func newWithOptions(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager, options ...option) (*Runtime, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: runtime construction canceled before start: %w", chamberErrors.ErrCanceled, err)
+	}
+
 	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
 	if err != nil {
 		return nil, err
@@ -155,10 +162,10 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 	binDir := filepath.Dir(binaryPath)
 
 	if ok, err := fileMatchesSHA256(binaryPath, expectedDigest); err != nil {
-		return fmt.Errorf("verify existing runtime binary: %w", err)
+		return fmt.Errorf("%w: verify existing runtime binary: %w", chamberErrors.ErrRuntimeInstallFailed, err)
 	} else if ok {
 		if err := os.Chmod(binaryPath, 0755); err != nil {
-			return fmt.Errorf("make existing runtime binary executable: %w", err)
+			return fmt.Errorf("%w: make existing runtime binary executable: %w", chamberErrors.ErrRuntimeInstallFailed, err)
 		}
 		chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
 			"runtime", runtimeName,
@@ -189,6 +196,12 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 }
 
 func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunRequest) (chamberRuntimeShared.Container, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: runtime launch canceled before start: %w", chamberErrors.ErrCanceled, err)
+	}
 	if request.Bundle.BundlePath == "" {
 		return nil, fmt.Errorf("%w: runtime bundle path is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -226,7 +239,7 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunReque
 		return nil, err
 	}
 
-	cmd := exec.CommandContext(ctx, binaryPath, "--root", stateRoot, "run", containerID)
+	cmd := exec.Command(binaryPath, "--root", stateRoot, "run", containerID)
 	cmd.Dir = request.Bundle.BundlePath
 	cmd.Stdin = request.Stdin
 	cmd.Stdout = outputWriter(stdout, request.Stdout)
@@ -235,7 +248,9 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunReque
 	if err := cmd.Start(); err != nil {
 		_ = stdout.Close()
 		_ = stderr.Close()
-		return nil, fmt.Errorf("start runc container %q: %w", containerID, err)
+		_ = os.Remove(stdoutPath)
+		_ = os.Remove(stderrPath)
+		return nil, fmt.Errorf("%w: start runc container %q: %w", chamberErrors.ErrRuntimeStartFailed, containerID, err)
 	}
 
 	chamberLogging.InfoWith(r.logger, ctx, "started runtime container",
@@ -244,7 +259,6 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunReque
 	)
 	return newRuncContainer(containerConfig{
 		id:         containerID,
-		pid:        cmd.Process.Pid,
 		binaryPath: binaryPath,
 		stateRoot:  stateRoot,
 		stdoutPath: stdoutPath,
@@ -262,7 +276,7 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 		return nil, nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := r.directoryManager.MkdirPrivate(logDir); err != nil {
-		return nil, nil, fmt.Errorf("create runc log directory: %w", err)
+		return nil, nil, fmt.Errorf("%w: create runc log directory: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
 
 	stdoutPath, err := r.logPath(containerID, chamberRuntimeShared.StdoutLogStream)
@@ -276,12 +290,12 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 
 	stdout, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open stdout log: %w", err)
+		return nil, nil, fmt.Errorf("%w: open stdout log: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
 	stderr, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		_ = stdout.Close()
-		return nil, nil, fmt.Errorf("open stderr log: %w", err)
+		return nil, nil, fmt.Errorf("%w: open stderr log: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
 	return stdout, stderr, nil
 }
@@ -327,7 +341,7 @@ func (r *Runtime) stateRoot() (string, error) {
 	}
 	runtimeRoot, err := absPath(r.config.RuntimeRoot)
 	if err != nil {
-		return "", fmt.Errorf("resolve runtime root: %w", err)
+		return "", fmt.Errorf("%w: resolve runtime root: %w", chamberErrors.ErrInvalidRequest, err)
 	}
 	return runtimeRoot, nil
 }
@@ -338,7 +352,7 @@ func configuredBinaryPath(config chamberRuntimeShared.Config) (string, error) {
 	}
 	binDir, err := absPath(config.RuntimeBinDir)
 	if err != nil {
-		return "", fmt.Errorf("resolve runtime bin dir: %w", err)
+		return "", fmt.Errorf("%w: resolve runtime bin dir: %w", chamberErrors.ErrInvalidRequest, err)
 	}
 	return filepath.Join(binDir, runtimeName), nil
 }
@@ -350,13 +364,12 @@ func defaultRuntimeArtifact(arch string) (runtimeArtifact, error) {
 	case "arm64":
 		return runtimeArtifact{version: defaultVersion, url: defaultARM64URL, sha256: defaultARM64SHA256}, nil
 	default:
-		return runtimeArtifact{}, fmt.Errorf("%w: runc runtime does not have a default artifact for architecture %q", chamberErrors.ErrInvalidRequest, arch)
+		return runtimeArtifact{}, fmt.Errorf("%w: runc runtime does not have a default artifact for architecture %q", chamberErrors.ErrUnsupportedHost, arch)
 	}
 }
 
 type containerConfig struct {
 	id         string
-	pid        int
 	binaryPath string
 	stateRoot  string
 	stdoutPath string
@@ -384,7 +397,7 @@ func newRuncContainer(config containerConfig, cmd *exec.Cmd, closers ...io.Close
 		container.result = convertWaitResult(cmd.Wait())
 		for _, closer := range closers {
 			if closeErr := closer.Close(); closeErr != nil && container.result.err == nil {
-				container.result.err = fmt.Errorf("close runtime stdio: %w", closeErr)
+				container.result.err = fmt.Errorf("%w: close runtime stdio: %w", chamberErrors.ErrRuntimeWaitFailed, closeErr)
 			}
 		}
 		close(container.done)
@@ -397,13 +410,6 @@ func (c *runcContainer) ID() string {
 		return ""
 	}
 	return c.id
-}
-
-func (c *runcContainer) PID() int {
-	if c == nil {
-		return 0
-	}
-	return c.pid
 }
 
 func (c *runcContainer) StdoutPath() string {
@@ -428,12 +434,21 @@ func (c *runcContainer) Wait() (chamberRuntimeShared.ContainerResult, error) {
 }
 
 func (c *runcContainer) State(ctx context.Context) (chamberRuntimeShared.ContainerState, error) {
+	if ctx == nil {
+		return chamberRuntimeShared.ContainerState{}, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
+	}
+	if err := ctx.Err(); err != nil {
+		return chamberRuntimeShared.ContainerState{}, fmt.Errorf("%w: runtime state canceled before start: %w", chamberErrors.ErrCanceled, err)
+	}
 	if c == nil {
 		return chamberRuntimeShared.ContainerState{}, fmt.Errorf("%w: runtime container is required", chamberErrors.ErrInvalidRequest)
 	}
 	state, err := readRuncState(ctx, c.binaryPath, c.stateRoot, c.id)
 	if err != nil {
-		return chamberRuntimeShared.ContainerState{}, err
+		if errors.Is(err, chamberErrors.ErrCanceled) {
+			return chamberRuntimeShared.ContainerState{}, err
+		}
+		return chamberRuntimeShared.ContainerState{}, fmt.Errorf("%w: read runc state: %w", chamberErrors.ErrRuntimeControlFailed, err)
 	}
 	return chamberRuntimeShared.ContainerState{
 		ContainerID: c.id,
@@ -442,6 +457,12 @@ func (c *runcContainer) State(ctx context.Context) (chamberRuntimeShared.Contain
 }
 
 func (c *runcContainer) Signal(ctx context.Context, signal os.Signal) error {
+	if ctx == nil {
+		return fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: runtime signal canceled before start: %w", chamberErrors.ErrCanceled, err)
+	}
 	if c == nil {
 		return fmt.Errorf("%w: runtime container is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -455,7 +476,10 @@ func (c *runcContainer) Signal(ctx context.Context, signal os.Signal) error {
 	)
 	cmd := exec.CommandContext(ctx, c.binaryPath, "--root", c.stateRoot, "kill", c.id, signalArg)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("signal runc container %q: %w: %s", c.id, err, strings.TrimSpace(string(output)))
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("%w: runtime signal canceled while running control command: %w", chamberErrors.ErrCanceled, ctxErr)
+		}
+		return fmt.Errorf("%w: signal runc container %q: %w: %s", chamberErrors.ErrRuntimeControlFailed, c.id, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -475,6 +499,12 @@ func signalArgument(signal os.Signal) (string, error) {
 }
 
 func (c *runcContainer) Delete(ctx context.Context, force bool) error {
+	if ctx == nil {
+		return fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: runtime delete canceled before start: %w", chamberErrors.ErrCanceled, err)
+	}
 	if c == nil {
 		return fmt.Errorf("%w: runtime container is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -489,7 +519,10 @@ func (c *runcContainer) Delete(ctx context.Context, force bool) error {
 	)
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("delete runc container %q: %w: %s", c.id, err, strings.TrimSpace(string(output)))
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("%w: runtime delete canceled while running control command: %w", chamberErrors.ErrCanceled, ctxErr)
+		}
+		return fmt.Errorf("%w: delete runc container %q: %w: %s", chamberErrors.ErrRuntimeControlFailed, c.id, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -499,7 +532,14 @@ func (c *runcContainer) ReadLog(stream chamberRuntimeShared.LogStream) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(path)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: read runtime log %q: %w", chamberErrors.ErrLogNotFound, path, err)
+		}
+		return nil, fmt.Errorf("%w: read runtime log %q: %w", chamberErrors.ErrRuntimeControlFailed, path, err)
+	}
+	return content, nil
 }
 
 func (c *runcContainer) DeleteLog(stream chamberRuntimeShared.LogStream) error {
@@ -508,7 +548,7 @@ func (c *runcContainer) DeleteLog(stream chamberRuntimeShared.LogStream) error {
 		return err
 	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("delete runtime log %q: %w", path, err)
+		return fmt.Errorf("%w: delete runtime log %q: %w", chamberErrors.ErrRuntimeControlFailed, path, err)
 	}
 	return nil
 }
@@ -540,11 +580,11 @@ func convertWaitResult(err error) waitResult {
 		}
 		return waitResult{
 			exitCode: exitCode,
-			err:      fmt.Errorf("runtime process exited without an exit code: %w", err),
+			err:      fmt.Errorf("%w: runtime process exited without an exit code: %w", chamberErrors.ErrRuntimeWaitFailed, err),
 		}
 	}
 
-	return waitResult{err: err}
+	return waitResult{err: fmt.Errorf("%w: wait for runtime process: %w", chamberErrors.ErrRuntimeWaitFailed, err)}
 }
 
 type runcState struct {
@@ -556,6 +596,9 @@ func readRuncState(ctx context.Context, binaryPath string, stateRoot string, con
 	cmd := exec.CommandContext(ctx, binaryPath, "--root", stateRoot, "state", containerID)
 	output, err := cmd.Output()
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return runcState{}, fmt.Errorf("%w: runtime state canceled while running control command: %w", chamberErrors.ErrCanceled, ctxErr)
+		}
 		return runcState{}, err
 	}
 	var state runcState
@@ -568,22 +611,25 @@ func readRuncState(ctx context.Context, binaryPath string, stateRoot string, con
 func (r *Runtime) download(ctx context.Context, url string, expectedDigest []byte, binDir string, binaryPath string) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return fmt.Errorf("create runtime download request: %w", err)
+		return fmt.Errorf("%w: create runtime download request: %w", chamberErrors.ErrRuntimeInstallFailed, err)
 	}
 
 	response, err := r.client.Do(request)
 	if err != nil {
-		return fmt.Errorf("download runtime binary: %w", err)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("%w: runtime binary download canceled while requesting: %w", chamberErrors.ErrCanceled, ctxErr)
+		}
+		return fmt.Errorf("%w: download runtime binary: %w", chamberErrors.ErrRuntimeInstallFailed, err)
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("download runtime binary: unexpected HTTP status %s", response.Status)
+		return fmt.Errorf("%w: download runtime binary: unexpected HTTP status %s", chamberErrors.ErrRuntimeInstallFailed, response.Status)
 	}
 
 	tmp, err := r.directoryManager.CreateTemp(binDir, "."+filepath.Base(binaryPath)+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("create temporary runtime binary: %w", err)
+		return fmt.Errorf("%w: create temporary runtime binary: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
 	tmpPath := tmp.Name()
 	committed := false
@@ -596,26 +642,29 @@ func (r *Runtime) download(ctx context.Context, url string, expectedDigest []byt
 	digest := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(tmp, digest), response.Body); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("download runtime binary: %w", err)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("%w: runtime binary download canceled while reading response: %w", chamberErrors.ErrCanceled, ctxErr)
+		}
+		return fmt.Errorf("%w: download runtime binary: %w", chamberErrors.ErrRuntimeInstallFailed, err)
 	}
 	actualDigest := digest.Sum(nil)
 	if !equalDigest(actualDigest, expectedDigest) {
 		_ = tmp.Close()
-		return fmt.Errorf("verify runtime binary checksum: got %s, want %s", hex.EncodeToString(actualDigest), hex.EncodeToString(expectedDigest))
+		return fmt.Errorf("%w: verify runtime binary checksum: got %s, want %s", chamberErrors.ErrRuntimeInstallFailed, hex.EncodeToString(actualDigest), hex.EncodeToString(expectedDigest))
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("sync runtime binary: %w", err)
+		return fmt.Errorf("%w: sync runtime binary: %w", chamberErrors.ErrRuntimeInstallFailed, err)
 	}
 	if err := tmp.Chmod(0755); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("set runtime binary mode: %w", err)
+		return fmt.Errorf("%w: set runtime binary mode: %w", chamberErrors.ErrRuntimeInstallFailed, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close runtime binary: %w", err)
+		return fmt.Errorf("%w: close runtime binary: %w", chamberErrors.ErrRuntimeInstallFailed, err)
 	}
 	if err := os.Rename(tmpPath, binaryPath); err != nil {
-		return fmt.Errorf("commit runtime binary: %w", err)
+		return fmt.Errorf("%w: commit runtime binary: %w", chamberErrors.ErrRuntimeInstallFailed, err)
 	}
 	committed = true
 

@@ -38,6 +38,36 @@ func TestNewRequiresDirectoryManager(t *testing.T) {
 	}
 }
 
+func TestNewWrapsImageRootSetupFailuresWithFilesystemCode(t *testing.T) {
+	_, err := NewPuller(chamberImageShared.Config{Root: filepath.Join(t.TempDir(), "images")}, failingDirectoryManager{err: errors.New("disk full")})
+	if err == nil {
+		t.Fatal("New() error = nil, want filesystem error")
+	}
+	if !errors.Is(err, chamberErrors.ErrFilesystemFailed) {
+		t.Fatalf("New() error = %v, want filesystem failed code", err)
+	}
+}
+
+type failingDirectoryManager struct {
+	err error
+}
+
+func (manager failingDirectoryManager) MkdirPrivate(string) error {
+	return manager.err
+}
+
+func (manager failingDirectoryManager) MkdirPrivateParent(string) error {
+	return manager.err
+}
+
+func (manager failingDirectoryManager) MkdirTemp(string, string) (string, error) {
+	return "", manager.err
+}
+
+func (manager failingDirectoryManager) CreateTemp(string, string) (*os.File, error) {
+	return nil, manager.err
+}
+
 func assertPrivateDir(t *testing.T, path string) {
 	t.Helper()
 

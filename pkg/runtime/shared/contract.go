@@ -57,7 +57,6 @@ type ContainerResult struct {
 
 type Container interface {
 	ID() string
-	PID() int
 	StdoutPath() string
 	StderrPath() string
 	Wait() (ContainerResult, error)
@@ -71,6 +70,9 @@ type Container interface {
 type Runtime interface {
 	Descriptor() Descriptor
 
+	// Run starts the container and returns a Container that owns subsequent
+	// lifecycle operations. The context controls launch work only; after Run
+	// succeeds, callers stop or clean up the container through Container methods.
 	Run(ctx context.Context, request RunRequest) (Container, error)
 }
 

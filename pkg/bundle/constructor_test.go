@@ -73,3 +73,37 @@ func TestNewProvisionerRejectsUnsupportedName(t *testing.T) {
 		t.Fatalf("bundle root stat error = %v, want not exist", statErr)
 	}
 }
+
+func TestNewProvisionerWrapsBundleRootSetupFailuresWithFilesystemCode(t *testing.T) {
+	_, err := NewProvisioner(chamberBundleShared.Config{
+		Root:      filepath.Join(t.TempDir(), "bundles"),
+		Name:      chamberBundleShared.ProvisionerNameDirectory,
+		Privilege: capability.Rootless,
+	}, failingDirectoryManager{err: errors.New("disk full")})
+	if err == nil {
+		t.Fatal("NewProvisioner() error = nil, want filesystem error")
+	}
+	if !errors.Is(err, chamberErrors.ErrFilesystemFailed) {
+		t.Fatalf("NewProvisioner() error = %v, want filesystem failed code", err)
+	}
+}
+
+type failingDirectoryManager struct {
+	err error
+}
+
+func (manager failingDirectoryManager) MkdirPrivate(string) error {
+	return manager.err
+}
+
+func (manager failingDirectoryManager) MkdirPrivateParent(string) error {
+	return manager.err
+}
+
+func (manager failingDirectoryManager) MkdirTemp(string, string) (string, error) {
+	return "", manager.err
+}
+
+func (manager failingDirectoryManager) CreateTemp(string, string) (*os.File, error) {
+	return nil, manager.err
+}

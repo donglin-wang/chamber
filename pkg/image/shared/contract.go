@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -96,69 +95,100 @@ func LayoutExists(path string) bool {
 }
 
 func ValidateLayout(path string) error {
+	return ValidateLayoutContext(context.Background(), path)
+}
+
+func ValidateLayoutContext(ctx context.Context, path string) error {
+	if ctx == nil {
+		return fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: validate OCI image layout canceled before start: %w", chamberErrors.ErrCanceled, err)
+	}
 	if strings.TrimSpace(path) == "" {
-		return ErrRootRequired
+		return fmt.Errorf("%w: image layout path is required", chamberErrors.ErrInvalidImageLayout)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return err
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: OCI image layout path does not exist: %q", chamberErrors.ErrInvalidImageLayout, path)
+		}
+		return fmt.Errorf("%w: stat OCI image layout path %q: %w", chamberErrors.ErrFilesystemFailed, path, err)
 	}
 	if !info.IsDir() {
-		return errors.New("OCI image layout path is not a directory")
+		return fmt.Errorf("%w: OCI image layout path is not a directory", chamberErrors.ErrInvalidImageLayout)
 	}
 
 	layoutFile, err := os.ReadFile(filepath.Join(path, "oci-layout"))
 	if err != nil {
-		return err
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: OCI image layout metadata is missing", chamberErrors.ErrInvalidImageLayout)
+		}
+		return fmt.Errorf("%w: read OCI image layout metadata: %w", chamberErrors.ErrFilesystemFailed, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: validate OCI image layout canceled after reading metadata: %w", chamberErrors.ErrCanceled, err)
 	}
 	var layoutVersion struct {
 		ImageLayoutVersion string `json:"imageLayoutVersion"`
 	}
 	if err := json.Unmarshal(layoutFile, &layoutVersion); err != nil {
-		return err
+		return fmt.Errorf("%w: decode OCI image layout metadata: %w", chamberErrors.ErrInvalidImageLayout, err)
 	}
 	if layoutVersion.ImageLayoutVersion == "" {
-		return errors.New("OCI image layout version is missing")
+		return fmt.Errorf("%w: OCI image layout version is missing", chamberErrors.ErrInvalidImageLayout)
 	}
 
 	indexFile, err := os.ReadFile(filepath.Join(path, "index.json"))
 	if err != nil {
-		return err
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: OCI image layout index is missing", chamberErrors.ErrInvalidImageLayout)
+		}
+		return fmt.Errorf("%w: read OCI image layout index: %w", chamberErrors.ErrFilesystemFailed, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: validate OCI image layout canceled after reading index: %w", chamberErrors.ErrCanceled, err)
 	}
 	var index imagespec.Index
 	if err := json.Unmarshal(indexFile, &index); err != nil {
-		return err
+		return fmt.Errorf("%w: decode OCI image layout index: %w", chamberErrors.ErrInvalidImageLayout, err)
 	}
 	if len(index.Manifests) == 0 {
-		return errors.New("OCI image layout index has no manifests")
+		return fmt.Errorf("%w: OCI image layout index has no manifests", chamberErrors.ErrInvalidImageLayout)
 	}
 	for _, descriptor := range index.Manifests {
-		if err := validateLayoutDescriptor(path, descriptor, true); err != nil {
+		if err := validateLayoutDescriptor(ctx, path, descriptor, true); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateLayoutDescriptor(root string, descriptor imagespec.Descriptor, expand bool) error {
+func validateLayoutDescriptor(ctx context.Context, root string, descriptor imagespec.Descriptor, expand bool) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: validate OCI image layout descriptor canceled: %w", chamberErrors.ErrCanceled, err)
+	}
 	if descriptor.Digest == "" {
-		return errors.New("OCI image layout descriptor is missing digest")
+		return fmt.Errorf("%w: OCI image layout descriptor is missing digest", chamberErrors.ErrInvalidImageLayout)
 	}
 	if err := descriptor.Digest.Validate(); err != nil {
-		return fmt.Errorf("validate OCI image layout descriptor digest: %w", err)
+		return fmt.Errorf("%w: validate OCI image layout descriptor digest: %w", chamberErrors.ErrInvalidImageLayout, err)
 	}
 	blobPath := filepath.Join(root, "blobs", descriptor.Digest.Algorithm().String(), descriptor.Digest.Encoded())
 	info, err := os.Stat(blobPath)
 	if err != nil {
-		return fmt.Errorf("stat OCI image layout blob %s: %w", descriptor.Digest, err)
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: OCI image layout blob %s is missing", chamberErrors.ErrInvalidImageLayout, descriptor.Digest)
+		}
+		return fmt.Errorf("%w: stat OCI image layout blob %s: %w", chamberErrors.ErrFilesystemFailed, descriptor.Digest, err)
 	}
 	if info.IsDir() {
-		return fmt.Errorf("OCI image layout blob %s is a directory", descriptor.Digest)
+		return fmt.Errorf("%w: OCI image layout blob %s is a directory", chamberErrors.ErrInvalidImageLayout, descriptor.Digest)
 	}
 	if info.Size() != descriptor.Size {
-		return fmt.Errorf("OCI image layout blob %s size = %d, want %d", descriptor.Digest, info.Size(), descriptor.Size)
+		return fmt.Errorf("%w: OCI image layout blob %s size = %d, want %d", chamberErrors.ErrInvalidImageLayout, descriptor.Digest, info.Size(), descriptor.Size)
 	}
-	if err := validateBlobDigest(blobPath, descriptor); err != nil {
+	if err := validateBlobDigest(ctx, blobPath, descriptor); err != nil {
 		return err
 	}
 	if !expand {
@@ -167,67 +197,92 @@ func validateLayoutDescriptor(root string, descriptor imagespec.Descriptor, expa
 
 	switch descriptor.MediaType {
 	case imagespec.MediaTypeImageIndex, "application/vnd.docker.distribution.manifest.list.v2+json":
-		return validateLayoutIndexBlob(root, blobPath)
+		return validateLayoutIndexBlob(ctx, root, blobPath)
 	case imagespec.MediaTypeImageManifest, "application/vnd.docker.distribution.manifest.v2+json":
-		return validateLayoutManifestBlob(root, blobPath)
+		return validateLayoutManifestBlob(ctx, root, blobPath)
 	default:
 		return nil
 	}
 }
 
-func validateBlobDigest(path string, descriptor imagespec.Descriptor) error {
+func validateBlobDigest(ctx context.Context, path string, descriptor imagespec.Descriptor) error {
 	file, err := os.Open(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: open OCI image layout blob: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
 	defer file.Close()
 
 	verifier := descriptor.Digest.Verifier()
-	if _, err := io.Copy(verifier, file); err != nil {
-		return err
+	if _, err := io.Copy(verifier, contextReader{ctx: ctx, reader: file}); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("%w: validate OCI image layout blob canceled: %w", chamberErrors.ErrCanceled, ctxErr)
+		}
+		return fmt.Errorf("%w: read OCI image layout blob: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
 	if !verifier.Verified() {
-		return fmt.Errorf("OCI image layout blob %s content does not match digest", descriptor.Digest)
+		return fmt.Errorf("%w: OCI image layout blob %s content does not match digest", chamberErrors.ErrInvalidImageLayout, descriptor.Digest)
 	}
 	return nil
 }
 
-func validateLayoutIndexBlob(root string, path string) error {
+func validateLayoutIndexBlob(ctx context.Context, root string, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: read OCI image layout nested index: %w", chamberErrors.ErrFilesystemFailed, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: validate OCI image layout nested index canceled: %w", chamberErrors.ErrCanceled, err)
 	}
 	var index imagespec.Index
 	if err := json.Unmarshal(data, &index); err != nil {
-		return err
+		return fmt.Errorf("%w: decode OCI image layout nested index: %w", chamberErrors.ErrInvalidImageLayout, err)
 	}
 	if len(index.Manifests) == 0 {
-		return errors.New("OCI image layout nested index has no manifests")
+		return fmt.Errorf("%w: OCI image layout nested index has no manifests", chamberErrors.ErrInvalidImageLayout)
 	}
 	for _, descriptor := range index.Manifests {
-		if err := validateLayoutDescriptor(root, descriptor, true); err != nil {
+		if err := validateLayoutDescriptor(ctx, root, descriptor, true); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateLayoutManifestBlob(root string, path string) error {
+func validateLayoutManifestBlob(ctx context.Context, root string, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: read OCI image layout manifest: %w", chamberErrors.ErrFilesystemFailed, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: validate OCI image layout manifest canceled: %w", chamberErrors.ErrCanceled, err)
 	}
 	var manifest imagespec.Manifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return err
+		return fmt.Errorf("%w: decode OCI image layout manifest: %w", chamberErrors.ErrInvalidImageLayout, err)
 	}
-	if err := validateLayoutDescriptor(root, manifest.Config, false); err != nil {
+	if err := validateLayoutDescriptor(ctx, root, manifest.Config, false); err != nil {
 		return err
 	}
 	for _, descriptor := range manifest.Layers {
-		if err := validateLayoutDescriptor(root, descriptor, false); err != nil {
+		if err := validateLayoutDescriptor(ctx, root, descriptor, false); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := r.reader.Read(p)
+	if ctxErr := r.ctx.Err(); ctxErr != nil {
+		return n, ctxErr
+	}
+	return n, err
 }

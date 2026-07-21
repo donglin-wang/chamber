@@ -106,8 +106,9 @@ func pullImage(ctx context.Context, store metadata.Store, puller chamberImageSha
 		Reference: reference,
 	})
 	if err != nil {
-		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrPullFailed)
-		failErr := operationError(operationID, chamberErrors.ErrPullFailed, errors.Join(err, transitionErr))
+		code := chamberCodeFromError(err, chamberErrors.ErrPullFailed)
+		_, transitionErr := store.FailOperation(ctx, operationID, code)
+		failErr := operationError(operationID, code, errors.Join(err, transitionErr))
 		return pullImageResult{operation: operation}, failErr
 	}
 

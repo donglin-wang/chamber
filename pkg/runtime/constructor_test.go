@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -75,4 +76,54 @@ func TestNewRequiresFinalRuntimeConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewRejectsUnsupportedHostWithErrorCode(t *testing.T) {
+	_, err := newRuntimeForOS(context.Background(), chamberRuntimeShared.Config{
+		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
+		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
+		Name:          chamberRuntimeShared.RuntimeNameRunc,
+		Privilege:     capability.Rootless,
+	}, localfs.NewDirectoryManager(), "darwin")
+	if err == nil {
+		t.Fatal("New() error = nil, want unsupported host error")
+	}
+	if !errors.Is(err, chamberErrors.ErrUnsupportedHost) {
+		t.Fatalf("New() error = %v, want unsupported host code", err)
+	}
+}
+
+func TestNewWrapsRuntimeRootSetupFailuresWithFilesystemCode(t *testing.T) {
+	_, err := newRuntimeForOS(context.Background(), chamberRuntimeShared.Config{
+		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
+		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
+		Name:          chamberRuntimeShared.RuntimeNameRunc,
+		Privilege:     capability.Rootless,
+	}, failingDirectoryManager{err: errors.New("disk full")}, "linux")
+	if err == nil {
+		t.Fatal("New() error = nil, want filesystem error")
+	}
+	if !errors.Is(err, chamberErrors.ErrFilesystemFailed) {
+		t.Fatalf("New() error = %v, want filesystem failed code", err)
+	}
+}
+
+type failingDirectoryManager struct {
+	err error
+}
+
+func (manager failingDirectoryManager) MkdirPrivate(string) error {
+	return manager.err
+}
+
+func (manager failingDirectoryManager) MkdirPrivateParent(string) error {
+	return manager.err
+}
+
+func (manager failingDirectoryManager) MkdirTemp(string, string) (string, error) {
+	return "", manager.err
+}
+
+func (manager failingDirectoryManager) CreateTemp(string, string) (*os.File, error) {
+	return nil, manager.err
 }

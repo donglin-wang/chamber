@@ -33,6 +33,9 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntimeShared.Config, di
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: runtime construction canceled before start: %w", chamberErrors.ErrCanceled, err)
+	}
 	if directoryManager == nil {
 		return nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -50,7 +53,7 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntimeShared.Config, di
 		return nil, fmt.Errorf("%w: %s runtime does not support %q privilege", chamberErrors.ErrInvalidRequest, config.Name, config.Privilege)
 	}
 	if osName != "linux" {
-		return nil, fmt.Errorf("Chamber runtime requires a Linux host or Linux VM; current GOOS is %q", osName)
+		return nil, fmt.Errorf("%w: Chamber runtime requires a Linux host or Linux VM; current GOOS is %q", chamberErrors.ErrUnsupportedHost, osName)
 	}
 	if config.RuntimeRoot == "" {
 		return nil, fmt.Errorf("%w: runtime root is required", chamberErrors.ErrInvalidRequest)
@@ -59,10 +62,10 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntimeShared.Config, di
 		return nil, fmt.Errorf("%w: runtime bin dir is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := directoryManager.MkdirPrivate(config.RuntimeRoot); err != nil {
-		return nil, fmt.Errorf("create runtime root: %w", err)
+		return nil, fmt.Errorf("%w: create runtime root: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
 	if err := directoryManager.MkdirPrivate(config.RuntimeBinDir); err != nil {
-		return nil, fmt.Errorf("create runtime bin dir: %w", err)
+		return nil, fmt.Errorf("%w: create runtime bin dir: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
 
 	switch config.Name {

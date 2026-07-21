@@ -47,12 +47,20 @@ If a process crashes or a caller skips these steps, per-container runtime state,
 bundle directories, logs, or temporary files may remain in the caller-provided
 roots.
 
+The context passed to `Runtime.Run` controls launch work only. After `Run`
+returns a `Container`, that container owns lifecycle operations; use
+`Container.Signal`, `Container.Delete`, and `Container.Wait` to stop, remove, and
+observe it.
+
 ## Requirements
 
 - Go 1.26.4 or newer compatible with this module.
 - A Linux host or Linux VM for runtime execution.
 - Rootless container support for the current `directory` bundle provisioner and
   `runc` runtime.
+- The current rootless bundle provisioner maps only container UID/GID `0` to the
+  current host user and group. Images or `ProcessUser` overrides that require
+  unmapped UIDs or GIDs are rejected during bundle provisioning.
 - Network access when pulling images or when the pinned `runc` binary is not
   already present in the configured runtime binary directory.
 
@@ -133,6 +141,12 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer func() {
+		_ = container.Delete(context.Background(), true)
+		_ = container.DeleteLog(chamberRuntimeShared.StdoutLogStream)
+		_ = container.DeleteLog(chamberRuntimeShared.StderrLogStream)
+		_ = os.RemoveAll(provisioned.BundlePath)
+	}()
 	result, err := container.Wait()
 	if err != nil {
 		panic(err)

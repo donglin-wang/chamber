@@ -3,6 +3,7 @@ package puller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -37,6 +38,48 @@ func TestPullRejectsUnsupportedPolicy(t *testing.T) {
 	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
 		t.Fatalf("Pull() error = %v, want invalid request code", err)
 	}
+}
+
+func TestPullReturnsFilesystemCodeForDestinationParentSetup(t *testing.T) {
+	puller, err := New(chamberImageShared.Config{Root: filepath.Join(privateTempDir(t), "images")}, failingDirectoryManager{
+		err: fmt.Errorf("%w: root is not private", chamberErrors.ErrInvalidRequest),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, err = puller.Pull(context.Background(), chamberImageShared.PullRequest{
+		Reference: "example.com/library/busybox:latest",
+	})
+	if err == nil {
+		t.Fatal("Pull() error = nil, want destination parent setup error")
+	}
+	if !errors.Is(err, chamberErrors.ErrFilesystemFailed) {
+		t.Fatalf("Pull() error = %v, want filesystem failed code", err)
+	}
+	if errors.Is(err, chamberErrors.ErrPullFailed) {
+		t.Fatalf("Pull() error = %v, should not include pull failed code", err)
+	}
+}
+
+type failingDirectoryManager struct {
+	err error
+}
+
+func (manager failingDirectoryManager) MkdirPrivate(string) error {
+	return manager.err
+}
+
+func (manager failingDirectoryManager) MkdirPrivateParent(string) error {
+	return manager.err
+}
+
+func (manager failingDirectoryManager) MkdirTemp(string, string) (string, error) {
+	return "", manager.err
+}
+
+func (manager failingDirectoryManager) CreateTemp(string, string) (*os.File, error) {
+	return nil, manager.err
 }
 
 func TestResolvePlatformDefaultsToLinuxHostArchitecture(t *testing.T) {
@@ -139,6 +182,9 @@ func TestPullFetchFailureLeavesNoFinalLayout(t *testing.T) {
 	if err == nil {
 		t.Fatal("Pull() error = nil, want registry failure")
 	}
+	if !errors.Is(err, chamberErrors.ErrPullFailed) {
+		t.Fatalf("Pull() error = %v, want pull failed code", err)
+	}
 	if _, statErr := os.Stat(destination); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("final layout stat error = %v, want %v", statErr, os.ErrNotExist)
 	}
@@ -165,6 +211,9 @@ func TestPullInvalidExistingLayoutIsReturned(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("Pull() error = nil, want invalid existing layout error")
+	}
+	if !errors.Is(err, chamberErrors.ErrPullFailed) {
+		t.Fatalf("Pull() error = %v, want pull failed code", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(destination, "existing")); statErr != nil {
 		t.Fatalf("existing final path changed after rename failure: %v", statErr)
