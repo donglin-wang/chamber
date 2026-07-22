@@ -173,3 +173,10 @@ Use an explicit Go cache in restricted macOS environments:
 GOCACHE=/tmp/chamber-go-cache go test ./...
 GOCACHE=/tmp/chamber-go-cache go vet ./...
 ```
+
+The default test suite avoids real registry pulls. To include registry
+integration coverage, opt in explicitly:
+
+```sh
+CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/image/puller -run TestImagePullerRealWorldBusybox
+```

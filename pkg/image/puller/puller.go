@@ -85,7 +85,7 @@ func (p *Puller) Pull(ctx context.Context, request chamberImageShared.PullReques
 	if err := p.directoryManager.MkdirPrivate(parent); err != nil {
 		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: create image destination parent: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
-	if policy == chamberImageShared.PullIfMissing && chamberImageShared.LayoutExists(destination) {
+	if policy == chamberImageShared.PullIfMissing && chamberImageShared.LayoutExistsContext(ctx, destination) {
 		pulled, err := existingPulledImage(canonicalReference, platform, destination)
 		if err != nil {
 			return chamberImageShared.PulledImage{}, fmt.Errorf("%w: read existing OCI image layout: %w", chamberErrors.ErrPullFailed, err)
@@ -178,7 +178,7 @@ func (p *Puller) Pull(ctx context.Context, request chamberImageShared.PullReques
 				return chamberImageShared.PulledImage{}, fmt.Errorf("%w: commit OCI image layout: %w; restore previous layout: %v", chamberErrors.ErrPullFailed, err, restoreErr)
 			}
 		}
-		if policy == chamberImageShared.PullIfMissing && chamberImageShared.LayoutExists(destination) {
+		if policy == chamberImageShared.PullIfMissing && chamberImageShared.LayoutExistsContext(ctx, destination) {
 			pulled, existingErr := existingPulledImage(canonicalReference, platform, destination)
 			if existingErr != nil {
 				return chamberImageShared.PulledImage{}, fmt.Errorf("%w: read existing OCI image layout: %w", chamberErrors.ErrPullFailed, existingErr)

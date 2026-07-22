@@ -163,10 +163,20 @@ func TestExistingPulledImageRequiresMatchingReferenceAnnotation(t *testing.T) {
 }
 
 func TestImagePullerRealWorldBusybox(t *testing.T) {
+	requireIntegrationTest(t)
+
 	puller, root := newTestPuller(t)
 	assertPullSuccessReturnsDigestSizeAndUTCTime(t, puller, root, imageFixture{
 		reference: busyboxReference,
 	})
+}
+
+func requireIntegrationTest(t *testing.T) {
+	t.Helper()
+
+	if os.Getenv("CHAMBER_INTEGRATION") != "1" {
+		t.Skip("set CHAMBER_INTEGRATION=1 to run registry integration tests")
+	}
 }
 
 func TestPullInvalidReference(t *testing.T) {

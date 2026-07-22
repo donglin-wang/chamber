@@ -413,7 +413,7 @@ run)
 	;;
 esac
 `)
-	bundlePath := privateTempDir(t)
+	bundlePath := runtimeBundlePath(t)
 	stateRoot := filepath.Join(privateTempDir(t), "state")
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
 	var streamedStdout strings.Builder
@@ -500,7 +500,7 @@ esac
 	container, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
 		Bundle: chamberBundleShared.ProvisionedBundle{
 			ContainerID: "short.job",
-			BundlePath:  privateTempDir(t),
+			BundlePath:  runtimeBundlePath(t),
 		},
 	})
 	if err != nil {
@@ -538,7 +538,7 @@ func TestRunStartFailureHasErrorCodeAndRemovesLogs(t *testing.T) {
 	_, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
 		Bundle: chamberBundleShared.ProvisionedBundle{
 			ContainerID: "start-fails",
-			BundlePath:  privateTempDir(t),
+			BundlePath:  runtimeBundlePath(t),
 		},
 	})
 	if err == nil {
@@ -597,6 +597,42 @@ esac
 	}
 }
 
+func TestRunRejectsMissingBundleSpecBeforeStartingRunc(t *testing.T) {
+	logDir := privateTempDir(t)
+	binaryPath := writeFakeRunc(t, logDir, `
+case "$cmd" in
+run)
+	touch "$logdir/run-started"
+	exit 0
+	;;
+*)
+	exit 64
+	;;
+esac
+`)
+	stateRoot := privateTempDir(t)
+	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
+
+	_, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
+		Bundle: chamberBundleShared.ProvisionedBundle{
+			ContainerID: "missing-spec",
+			BundlePath:  privateTempDir(t),
+		},
+	})
+	if err == nil {
+		t.Fatal("Run() error = nil, want missing runtime spec error")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidProcessSpec) {
+		t.Fatalf("Run() error = %v, want invalid process spec code", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(logDir, "run-started")); !os.IsNotExist(statErr) {
+		t.Fatalf("run-started stat error = %v, want runc not started", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(stateRoot, "logs", "missing-spec")); !os.IsNotExist(statErr) {
+		t.Fatalf("log dir stat error = %v, want logs not created", statErr)
+	}
+}
+
 func TestRunContextCancellationDoesNotStopContainer(t *testing.T) {
 	logDir := privateTempDir(t)
 	binaryPath := writeFakeRunc(t, logDir, `
@@ -625,7 +661,7 @@ esac
 	container, err := runtime.Run(ctx, chamberRuntimeShared.RunRequest{
 		Bundle: chamberBundleShared.ProvisionedBundle{
 			ContainerID: "cancelled",
-			BundlePath:  privateTempDir(t),
+			BundlePath:  runtimeBundlePath(t),
 		},
 	})
 	if err != nil {
@@ -1003,6 +1039,16 @@ func privateTempDir(t *testing.T) string {
 	path := t.TempDir()
 	if err := os.Chmod(path, 0700); err != nil {
 		t.Fatalf("Chmod(%q) error = %v", path, err)
+	}
+	return path
+}
+
+func runtimeBundlePath(t *testing.T) string {
+	t.Helper()
+
+	path := privateTempDir(t)
+	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"process":{"terminal":false}}`), 0600); err != nil {
+		t.Fatalf("WriteFile(config.json) error = %v", err)
 	}
 	return path
 }

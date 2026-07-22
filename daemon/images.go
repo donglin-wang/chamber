@@ -86,7 +86,7 @@ func pullImage(ctx context.Context, store metadata.Store, puller chamberImageSha
 	}
 
 	existing, err := store.GetImage(ctx, reference)
-	if err == nil && chamberImageShared.LayoutExists(existing.LayoutPath) {
+	if err == nil && chamberImageShared.LayoutExistsContext(ctx, existing.LayoutPath) {
 		completed, err := store.SucceedOperation(ctx, operationID)
 		if err != nil {
 			return pullImageResult{operation: operation, image: existing}, operationError(operationID, chamberErrors.ErrMetadataFailed, err)

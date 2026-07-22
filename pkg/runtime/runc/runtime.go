@@ -254,7 +254,7 @@ func validateSupportedBundleSpec(bundlePath string) error {
 	file, err := os.Open(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return fmt.Errorf("%w: runtime bundle spec is missing: %q", chamberErrors.ErrInvalidProcessSpec, configPath)
 		}
 		return fmt.Errorf("%w: open runtime bundle spec: %w", chamberErrors.ErrFilesystemFailed, err)
 	}

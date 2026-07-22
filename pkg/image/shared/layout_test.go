@@ -41,6 +41,9 @@ func TestValidateLayoutContextHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
+	if chamberImageShared.LayoutExistsContext(ctx, fixture.path) {
+		t.Fatal("LayoutExistsContext(canceled) = true, want false")
+	}
 	if err := chamberImageShared.ValidateLayoutContext(ctx, fixture.path); err == nil {
 		t.Fatal("ValidateLayoutContext(canceled) error = nil, want canceled error")
 	} else if !errors.Is(err, chamberErrors.ErrCanceled) {

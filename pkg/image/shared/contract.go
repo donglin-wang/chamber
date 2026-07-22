@@ -91,7 +91,11 @@ func normalizePlatform(platform Platform) string {
 }
 
 func LayoutExists(path string) bool {
-	return ValidateLayout(path) == nil
+	return LayoutExistsContext(context.Background(), path)
+}
+
+func LayoutExistsContext(ctx context.Context, path string) bool {
+	return ValidateLayoutContext(ctx, path) == nil
 }
 
 func ValidateLayout(path string) error {
