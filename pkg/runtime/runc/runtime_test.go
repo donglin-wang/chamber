@@ -557,6 +557,46 @@ func TestRunStartFailureHasErrorCodeAndRemovesLogs(t *testing.T) {
 	}
 }
 
+func TestRunRejectsTerminalBundleBeforeStartingRunc(t *testing.T) {
+	logDir := privateTempDir(t)
+	binaryPath := writeFakeRunc(t, logDir, `
+case "$cmd" in
+run)
+	touch "$logdir/run-started"
+	exit 0
+	;;
+*)
+	exit 64
+	;;
+esac
+`)
+	bundlePath := privateTempDir(t)
+	if err := os.WriteFile(filepath.Join(bundlePath, "config.json"), []byte(`{"process":{"terminal":true}}`), 0600); err != nil {
+		t.Fatalf("WriteFile(config.json) error = %v", err)
+	}
+	stateRoot := privateTempDir(t)
+	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
+
+	_, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
+		Bundle: chamberBundleShared.ProvisionedBundle{
+			ContainerID: "terminal-bundle",
+			BundlePath:  bundlePath,
+		},
+	})
+	if err == nil {
+		t.Fatal("Run() error = nil, want terminal rejection")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidProcessSpec) {
+		t.Fatalf("Run() error = %v, want invalid process spec code", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(logDir, "run-started")); !os.IsNotExist(statErr) {
+		t.Fatalf("run-started stat error = %v, want runc not started", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(stateRoot, "logs", "terminal-bundle")); !os.IsNotExist(statErr) {
+		t.Fatalf("log dir stat error = %v, want logs not created", statErr)
+	}
+}
+
 func TestRunContextCancellationDoesNotStopContainer(t *testing.T) {
 	logDir := privateTempDir(t)
 	binaryPath := writeFakeRunc(t, logDir, `

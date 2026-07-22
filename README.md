@@ -58,6 +58,10 @@ observe it.
 - A Linux host or Linux VM for runtime execution.
 - Rootless container support for the current `directory` bundle provisioner and
   `runc` runtime.
+- Non-interactive processes. The current `runc` runtime does not allocate PTYs,
+  so bundles with `process.terminal=true` are rejected. Set
+  `ProcessSpec.Terminal` to `false` when running images that default to a
+  terminal process.
 - The current rootless bundle provisioner maps only container UID/GID `0` to the
   current host user and group. Images or `ProcessUser` overrides that require
   unmapped UIDs or GIDs are rejected during bundle provisioning.
@@ -112,12 +116,14 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	terminal := false
 	provisioned, err := provisioner.Provision(ctx, chamberBundleShared.ProvisionRequest{
 		ContainerID: "demo",
 		ImageLayout: pulled.LayoutPath,
 		ImageRef:    pulled.Reference,
 		Process: chamberBundleShared.ProcessSpec{
-			Args: []string{"/bin/sh", "-c", "echo hello from chamber"},
+			Args:     []string{"/bin/sh", "-c", "echo hello from chamber"},
+			Terminal: &terminal,
 		},
 	})
 	if err != nil {

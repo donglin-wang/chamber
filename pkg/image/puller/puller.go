@@ -5,6 +5,7 @@ package puller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -160,7 +161,7 @@ func (p *Puller) Pull(ctx context.Context, request chamberImageShared.PullReques
 		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: write OCI image layout: %w", chamberErrors.ErrPullFailed, err)
 	}
 	if err := chamberImageShared.ValidateLayoutContext(ctx, tmp); err != nil {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: verify generated OCI image layout: %v", chamberErrors.ErrPullFailed, err)
+		return chamberImageShared.PulledImage{}, generatedLayoutValidationError(err)
 	}
 
 	backup := ""
@@ -210,6 +211,13 @@ func (p *Puller) Pull(ctx context.Context, request chamberImageShared.PullReques
 		"size_bytes", pulled.SizeBytes,
 	)
 	return pulled, nil
+}
+
+func generatedLayoutValidationError(err error) error {
+	if errors.Is(err, chamberErrors.ErrCanceled) {
+		return fmt.Errorf("%w: image pull canceled while verifying generated OCI image layout: %w", chamberErrors.ErrCanceled, err)
+	}
+	return fmt.Errorf("%w: verify generated OCI image layout: %w", chamberErrors.ErrPullFailed, err)
 }
 
 func resolvePlatform(platform chamberImageShared.Platform) v1.Platform {

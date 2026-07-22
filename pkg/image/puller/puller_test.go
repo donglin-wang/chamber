@@ -62,6 +62,16 @@ func TestPullReturnsFilesystemCodeForDestinationParentSetup(t *testing.T) {
 	}
 }
 
+func TestGeneratedLayoutValidationErrorPreservesCancellationCode(t *testing.T) {
+	err := generatedLayoutValidationError(fmt.Errorf("%w: context canceled", chamberErrors.ErrCanceled))
+	if !errors.Is(err, chamberErrors.ErrCanceled) {
+		t.Fatalf("generatedLayoutValidationError() error = %v, want canceled code", err)
+	}
+	if errors.Is(err, chamberErrors.ErrPullFailed) {
+		t.Fatalf("generatedLayoutValidationError() error = %v, should not include pull failed code", err)
+	}
+}
+
 type failingDirectoryManager struct {
 	err error
 }

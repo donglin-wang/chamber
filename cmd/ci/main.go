@@ -254,6 +254,7 @@ type jobRequest struct {
 func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provisioner chamberBundleShared.Provisioner, request jobRequest) jobResult {
 	containerID := "chamber-ci-" + request.job.name + "-" + uuid.NewString()
 	result := jobResult{name: request.job.name, exitCode: 1}
+	terminal := false
 
 	logging.Info(ctx, "CI job started", "job", request.job.name, "args", request.job.args)
 	provisioned, err := provisioner.Provision(ctx, chamberBundleShared.ProvisionRequest{
@@ -269,7 +270,8 @@ func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provision
 				"GOMODCACHE=/gomodcache",
 				"CGO_ENABLED=0",
 			},
-			Cwd: "/workspace",
+			Cwd:      "/workspace",
+			Terminal: &terminal,
 		},
 		Mounts: []chamberBundleShared.Mount{
 			{Source: request.workspace, Target: "/workspace"},

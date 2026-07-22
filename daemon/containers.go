@@ -233,13 +233,15 @@ func runContainer(
 	}
 
 	runtimeName := runtime.Descriptor().Name
+	terminal := false
 
 	provisioned, err := provisioner.Provision(ctx, chamberBundleShared.ProvisionRequest{
 		ContainerID: containerID,
 		ImageLayout: image.LayoutPath,
 		ImageRef:    image.Reference,
 		Process: chamberBundleShared.ProcessSpec{
-			Args: command,
+			Args:     command,
+			Terminal: &terminal,
 		},
 	})
 	if err != nil {

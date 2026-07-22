@@ -210,6 +210,34 @@ func TestRunContainerStoresProvisionedBundlePath(t *testing.T) {
 	}
 }
 
+func TestRunContainerRequestsNonTerminalProcess(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+	var provisionRequest chamberBundleShared.ProvisionRequest
+
+	_, err := runContainer(
+		context.Background(),
+		store,
+		fakeRuntime{},
+		fakeProvisioner{
+			bundlePath: "/tmp/chamber-test/provisioner-owned/container",
+			request:    &provisionRequest,
+		},
+		context.Background(),
+		"docker.io/library/alpine:latest",
+		[]string{"/bin/true"},
+	)
+	if err != nil {
+		t.Fatalf("runContainer() error = %v", err)
+	}
+	if provisionRequest.Process.Terminal == nil {
+		t.Fatal("Process.Terminal = nil, want explicit false")
+	}
+	if *provisionRequest.Process.Terminal {
+		t.Fatal("Process.Terminal = true, want false for non-interactive daemon run")
+	}
+}
+
 func putTestImage(t *testing.T, store metadata.Store) {
 	t.Helper()
 
@@ -283,6 +311,7 @@ func testConfig(t *testing.T) chamberDaemonConfig.Config {
 type fakeProvisioner struct {
 	bundlePath string
 	err        error
+	request    *chamberBundleShared.ProvisionRequest
 }
 
 func (p fakeProvisioner) Descriptor() chamberBundleShared.Descriptor {
@@ -295,6 +324,9 @@ func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundleSha
 	}
 	if p.err != nil {
 		return chamberBundleShared.ProvisionedBundle{}, p.err
+	}
+	if p.request != nil {
+		*p.request = request
 	}
 	return chamberBundleShared.ProvisionedBundle{
 		ContainerID: request.ContainerID,

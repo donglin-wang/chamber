@@ -192,6 +192,9 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunReque
 	if binaryPath == "" {
 		return nil, fmt.Errorf("%w: runtime binary is required", chamberErrors.ErrInvalidRequest)
 	}
+	if err := validateSupportedBundleSpec(request.Bundle.BundlePath); err != nil {
+		return nil, err
+	}
 	stateRoot, err := r.stateRoot()
 	if err != nil {
 		return nil, err
@@ -244,6 +247,31 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntimeShared.RunReque
 		stderrPath: stderrPath,
 		logger:     r.logger,
 	}, cmd, stdout, stderr), nil
+}
+
+func validateSupportedBundleSpec(bundlePath string) error {
+	configPath := filepath.Join(bundlePath, "config.json")
+	file, err := os.Open(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("%w: open runtime bundle spec: %w", chamberErrors.ErrFilesystemFailed, err)
+	}
+	defer file.Close()
+
+	var spec struct {
+		Process *struct {
+			Terminal bool `json:"terminal"`
+		} `json:"process"`
+	}
+	if err := json.NewDecoder(file).Decode(&spec); err != nil {
+		return fmt.Errorf("%w: decode runtime bundle spec: %w", chamberErrors.ErrInvalidProcessSpec, err)
+	}
+	if spec.Process != nil && spec.Process.Terminal {
+		return fmt.Errorf("%w: runc runtime does not support terminal processes yet; set ProcessSpec.Terminal to false", chamberErrors.ErrInvalidProcessSpec)
+	}
+	return nil
 }
 
 func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
