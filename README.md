@@ -10,12 +10,14 @@ The daemon code in this repository is still experimental and is not part of the
 
 ## SDK Beta Scope
 
-- `pkg/image`: creates image pullers and stores pulled images as OCI image
-  layouts under a caller-provided root.
-- `pkg/bundle`: creates bundle provisioners. The current implementation,
-  `directory`, unpacks an OCI layout into a rootless OCI runtime bundle.
-- `pkg/runtime`: creates runtimes. The current implementation, `runc`, downloads
-  or reuses a pinned `runc` binary and runs provisioned bundles.
+- `pkg/image`: creates image pullers with `image.NewPuller` and stores pulled
+  images as OCI image layouts under a caller-provided root.
+- `pkg/bundle`: creates bundle provisioners with `bundle.NewProvisioner`. The
+  current internal implementation, `directory`, unpacks an OCI layout into a
+  rootless OCI runtime bundle.
+- `pkg/runtime`: creates runtimes with `runtime.NewRuntime`. The current
+  internal implementation, `runc`, downloads or reuses a pinned `runc` binary
+  and runs provisioned bundles.
 - `pkg/shared`: common error codes, filesystem policy, logging, image reference
   validation, container ID validation, and capability vocabulary.
 
@@ -178,5 +180,5 @@ The default test suite avoids real registry pulls. To include registry
 integration coverage, opt in explicitly:
 
 ```sh
-CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/image/puller -run TestImagePullerRealWorldBusybox
+CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/image/internal/puller -run TestImagePullerRealWorldBusybox
 ```

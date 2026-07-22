@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	chamberRunc "github.com/donglin-wang/chamber/pkg/runtime/runc"
+	chamberRunc "github.com/donglin-wang/chamber/pkg/runtime/internal/runc"
 	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"

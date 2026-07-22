@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/directory"
+	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/internal/directory"
 	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"

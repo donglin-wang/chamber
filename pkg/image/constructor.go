@@ -3,7 +3,7 @@ package image
 import (
 	"fmt"
 
-	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/puller"
+	chamberImagePuller "github.com/donglin-wang/chamber/pkg/image/internal/puller"
 	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"

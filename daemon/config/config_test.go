@@ -66,8 +66,9 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 	for _, importSpec := range file.Imports {
 		importPath := strings.Trim(importSpec.Path.Value, `"`)
 		switch importPath {
-		case "github.com/donglin-wang/chamber/pkg/image/puller",
-			"github.com/donglin-wang/chamber/pkg/bundle/directory",
+		case "github.com/donglin-wang/chamber/pkg/image/internal/puller",
+			"github.com/donglin-wang/chamber/pkg/bundle/internal/directory",
+			"github.com/donglin-wang/chamber/pkg/runtime/internal/runc",
 			"github.com/donglin-wang/chamber/daemon/metadata/etcd",
 			"github.com/donglin-wang/chamber/pkg/shared/localfs":
 			t.Fatalf("config package must import generic package boundaries and not filesystem setup %q", importPath)
