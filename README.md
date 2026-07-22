@@ -1,14 +1,15 @@
 # Chamber
 
 Chamber is an early Go SDK for point-and-shoot OCI container execution. The
-0.1.0 beta scope is the SDK under `pkg/`: pull an image into a caller-owned
-root, provision an OCI runtime bundle, run that bundle with `runc`, and read
-runtime logs.
+SDK under `pkg/` can pull an image into a caller-owned root, provision an OCI
+runtime bundle, run that bundle with `runc`, and read runtime logs.
+
+**The current repo is experimental and interfaces are volatile.**
 
 The daemon code in this repository is still experimental and is not part of the
-0.1.0 beta contract.
+SDK contract.
 
-## SDK Beta Scope
+## SDK Scope
 
 - `pkg/image`: creates image pullers with `image.NewPuller` and stores pulled
   images as OCI image layouts under a caller-provided root.
@@ -27,9 +28,8 @@ public setup phase.
 
 ## Cleanup Contract
 
-The SDK does not provide all-in-one container cleanup in the 0.1.0 beta.
-Callers are responsible for cleaning up the storage they asked each package to
-create.
+The SDK does not provide all-in-one container cleanup. Callers are responsible
+for cleaning up the storage they asked each package to create.
 
 For one container run, callers should:
 

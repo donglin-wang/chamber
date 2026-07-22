@@ -14,16 +14,27 @@ import (
 )
 
 const (
-	DefaultLevel  = "info"
+	// DefaultLevel is the default minimum host-log level.
+	DefaultLevel = "info"
+	// DefaultFormat is the default host-log encoding.
 	DefaultFormat = "json"
 )
 
+// Config controls Chamber SDK host-side logging.
 type Config struct {
-	Level  string       `json:"level,omitempty"`
-	Format string       `json:"format,omitempty"`
+	// Level is the minimum log level: debug, info, warn, or error.
+	Level string `json:"level,omitempty"`
+
+	// Format is the log encoding: json or text.
+	Format string `json:"format,omitempty"`
+
+	// Logger, when non-nil, is used directly instead of constructing one from
+	// Level and Format.
 	Logger *slog.Logger `json:"-"`
 }
 
+// SlogLogger is an alias for slog.Logger for callers that want to refer to the
+// concrete logger type through Chamber's logging package.
 type SlogLogger = slog.Logger
 
 var (

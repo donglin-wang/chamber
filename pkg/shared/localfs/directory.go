@@ -10,19 +10,34 @@ import (
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
+// DirectoryManager provides the filesystem policy operations Chamber SDK
+// components need for private roots and temporary files.
 type DirectoryManager interface {
+	// MkdirPrivate creates or validates a private directory owned by the current
+	// user.
 	MkdirPrivate(path string) error
+
+	// MkdirPrivateParent creates or validates the private parent directory for
+	// path.
 	MkdirPrivateParent(path string) error
+
+	// MkdirTemp creates a temporary directory below a private parent directory.
 	MkdirTemp(parent string, pattern string) (string, error)
+
+	// CreateTemp creates a temporary file below a private parent directory.
 	CreateTemp(parent string, pattern string) (*os.File, error)
 }
 
+// OSDirectoryManager implements DirectoryManager with the host filesystem.
 type OSDirectoryManager struct{}
 
+// NewDirectoryManager returns a DirectoryManager backed by the host filesystem.
 func NewDirectoryManager() OSDirectoryManager {
 	return OSDirectoryManager{}
 }
 
+// MkdirPrivate creates or validates a directory that is owned by the current
+// user and has no group or other permissions.
 func (OSDirectoryManager) MkdirPrivate(path string) error {
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("%w: private directory path is required", chamberErrors.ErrInvalidRequest)
@@ -64,6 +79,8 @@ func privateDirMetadata(path string, info os.FileInfo) error {
 	return nil
 }
 
+// MkdirPrivateParent creates or validates the parent directory for path using
+// the same ownership and permission checks as MkdirPrivate.
 func (manager OSDirectoryManager) MkdirPrivateParent(path string) error {
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("%w: private child path is required", chamberErrors.ErrInvalidRequest)
@@ -71,6 +88,8 @@ func (manager OSDirectoryManager) MkdirPrivateParent(path string) error {
 	return manager.MkdirPrivate(filepath.Dir(path))
 }
 
+// MkdirTemp creates a temporary directory below parent after ensuring parent is
+// private.
 func (manager OSDirectoryManager) MkdirTemp(parent string, pattern string) (string, error) {
 	if err := manager.MkdirPrivate(parent); err != nil {
 		return "", err
@@ -82,6 +101,8 @@ func (manager OSDirectoryManager) MkdirTemp(parent string, pattern string) (stri
 	return path, nil
 }
 
+// CreateTemp creates a temporary file below parent after ensuring parent is
+// private.
 func (manager OSDirectoryManager) CreateTemp(parent string, pattern string) (*os.File, error) {
 	if err := manager.MkdirPrivate(parent); err != nil {
 		return nil, err

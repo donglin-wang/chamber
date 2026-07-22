@@ -20,6 +20,10 @@ var provisionerCapabilities = map[string]chamberBundleShared.Capabilities{
 	},
 }
 
+// NewProvisioner validates config, creates the configured private bundle root,
+// checks the selected implementation capabilities, and returns a ready bundle
+// provisioner. Callers own bundle-root placement, cleanup, cancellation policy,
+// and recovery.
 func NewProvisioner(config chamberBundleShared.Config, directoryManager localfs.DirectoryManager) (chamberBundleShared.Provisioner, error) {
 	if directoryManager == nil {
 		return nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
@@ -52,6 +56,8 @@ func NewProvisioner(config chamberBundleShared.Config, directoryManager localfs.
 	}
 }
 
+// SupportedProvisionerNames returns the sorted list of provisioner
+// implementation names accepted by NewProvisioner.
 func SupportedProvisionerNames() []string {
 	names := make([]string, 0, len(provisionerCapabilities))
 	for name := range provisionerCapabilities {
@@ -61,11 +67,15 @@ func SupportedProvisionerNames() []string {
 	return names
 }
 
+// IsSupportedProvisionerName reports whether name selects a provisioner
+// implementation known to this package.
 func IsSupportedProvisionerName(name string) bool {
 	_, ok := provisionerCapabilities[name]
 	return ok
 }
 
+// SupportedProvisionerCapabilities returns a copy of the static capabilities
+// for name. The boolean is false when name is not a supported provisioner.
 func SupportedProvisionerCapabilities(name string) (chamberBundleShared.Capabilities, bool) {
 	capabilities, ok := provisionerCapabilities[name]
 	if !ok {

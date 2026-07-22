@@ -9,6 +9,10 @@ import (
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
+// NewPuller validates config, creates the configured private image root, and
+// returns a ready image puller. The returned puller stores OCI image layouts
+// below config.Root; callers remain responsible for root placement, locking,
+// cleanup, cancellation policy, and recovery.
 func NewPuller(config chamberImageShared.Config, directoryManager localfs.DirectoryManager) (chamberImageShared.Puller, error) {
 	if directoryManager == nil {
 		return nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)

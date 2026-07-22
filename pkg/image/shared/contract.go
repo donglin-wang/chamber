@@ -17,8 +17,11 @@ import (
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+// ErrRootRequired is returned when image operations receive an empty image root.
 var ErrRootRequired = fmt.Errorf("%w: image root is required", chamberErrors.ErrInvalidRequest)
 
+// PullPolicy controls whether a puller may reuse an existing local image
+// layout.
 type PullPolicy string
 
 const (
@@ -32,34 +35,72 @@ const (
 	PullAlways PullPolicy = "always"
 )
 
+// PullRequest describes one image pull into the puller's configured image root.
 type PullRequest struct {
+	// Reference is the image reference to pull. It may be familiar shorthand such
+	// as "alpine:latest"; pullers canonicalize it before deriving storage paths.
 	Reference string
-	Platform  Platform
-	Auth      *Auth
-	Policy    PullPolicy // empty means PullIfMissing
+
+	// Platform selects the image platform. Empty OS defaults to linux, empty
+	// Architecture defaults to the host Go architecture, and Variant is optional.
+	Platform Platform
+
+	// Auth supplies optional registry credentials for this pull.
+	Auth *Auth
+
+	// Policy controls reuse of an existing layout. Empty means PullIfMissing.
+	Policy PullPolicy
 }
 
+// Platform identifies an OCI image platform.
 type Platform struct {
-	OS           string
+	// OS is the target operating system. Empty means linux for Chamber runtime
+	// execution.
+	OS string
+
+	// Architecture is the target CPU architecture. Empty means runtime.GOARCH.
 	Architecture string
-	Variant      string
+
+	// Variant is the optional architecture variant, such as "v7" for arm.
+	Variant string
 }
 
+// Auth contains registry authentication material for one pull request.
 type Auth struct {
+	// Username is used with Password for basic registry authentication.
 	Username string
+
+	// Password is used with Username for basic registry authentication.
 	Password string
-	Token    string
+
+	// Token is used for bearer-token registry authentication.
+	Token string
 }
 
+// PulledImage describes the OCI image layout produced or reused by a pull.
 type PulledImage struct {
-	Reference  string
-	Digest     string
+	// Reference is the canonical image reference stored in the layout metadata.
+	Reference string
+
+	// Digest is the digest returned by the registry for the pulled reference.
+	Digest string
+
+	// LayoutPath is the absolute path to the OCI image layout on disk.
 	LayoutPath string
-	SizeBytes  int64
-	PulledAt   time.Time
+
+	// SizeBytes is the number of bytes reported for the pulled image content
+	// when that information is available.
+	SizeBytes int64
+
+	// PulledAt records when the puller produced this result.
+	PulledAt time.Time
 }
 
+// Puller pulls OCI images into a caller-owned image root.
 type Puller interface {
+	// Pull fetches or reuses the requested image and returns the local OCI image
+	// layout. The context controls pull work only; callers own cleanup and
+	// coordination for shared roots.
 	Pull(ctx context.Context, request PullRequest) (PulledImage, error)
 }
 
@@ -90,18 +131,26 @@ func normalizePlatform(platform Platform) string {
 	return os + "/" + architecture + "/" + variant
 }
 
+// LayoutExists reports whether path is a valid OCI image layout.
 func LayoutExists(path string) bool {
 	return LayoutExistsContext(context.Background(), path)
 }
 
+// LayoutExistsContext reports whether path is a valid OCI image layout,
+// returning false when validation fails or ctx is canceled.
 func LayoutExistsContext(ctx context.Context, path string) bool {
 	return ValidateLayoutContext(ctx, path) == nil
 }
 
+// ValidateLayout validates the OCI image layout at path using a background
+// context.
 func ValidateLayout(path string) error {
 	return ValidateLayoutContext(context.Background(), path)
 }
 
+// ValidateLayoutContext validates the OCI image layout at path, including
+// layout metadata, index descriptors, child manifests, blob presence, blob
+// sizes, and blob digests.
 func ValidateLayoutContext(ctx context.Context, path string) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)

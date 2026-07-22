@@ -1,3 +1,4 @@
+// Package testutil provides helpers for Chamber package tests.
 package testutil
 
 import (
@@ -16,10 +17,12 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
+// FakeRegistry is an in-process OCI registry for tests.
 type FakeRegistry struct {
 	server *httptest.Server
 }
 
+// NewFakeRegistry starts a registry that accepts image pushes and pulls.
 func NewFakeRegistry(t testing.TB) *FakeRegistry {
 	t.Helper()
 
@@ -27,6 +30,7 @@ func NewFakeRegistry(t testing.TB) *FakeRegistry {
 	return newFakeRegistry(t, registry)
 }
 
+// NewFailingRegistry starts a registry that returns 404 for every request.
 func NewFailingRegistry(t testing.TB) *FakeRegistry {
 	t.Helper()
 
@@ -43,6 +47,7 @@ func newFakeRegistry(t testing.TB, handler http.Handler) *FakeRegistry {
 	}
 }
 
+// Reference returns an image reference hosted by the fake registry.
 func (r *FakeRegistry) Reference(t testing.TB, repo, tag string) string {
 	t.Helper()
 
@@ -53,6 +58,8 @@ func (r *FakeRegistry) Reference(t testing.TB, repo, tag string) string {
 	return fmt.Sprintf("%s/%s:%s", u.Host, repo, tag)
 }
 
+// PushRandomImage pushes a small random image and returns its reference and
+// digest.
 func (r *FakeRegistry) PushRandomImage(t testing.TB, repo, tag string) (string, v1.Hash) {
 	t.Helper()
 

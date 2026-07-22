@@ -25,6 +25,10 @@ var runtimeCapabilities = map[string]chamberRuntimeShared.Capabilities{
 	},
 }
 
+// NewRuntime validates config, checks host and implementation support, creates
+// private runtime directories, installs or reuses runtime artifacts as needed,
+// and returns a ready runtime. The supplied context controls construction work
+// only; container lifecycle is owned by Container values returned from Run.
 func NewRuntime(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager) (chamberRuntimeShared.Runtime, error) {
 	return newRuntimeForOS(ctx, config, directoryManager, goruntime.GOOS)
 }
@@ -76,6 +80,8 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntimeShared.Config, di
 	}
 }
 
+// SupportedNames returns the sorted list of runtime implementation names
+// accepted by NewRuntime.
 func SupportedNames() []string {
 	names := make([]string, 0, len(runtimeCapabilities))
 	for name := range runtimeCapabilities {
@@ -85,11 +91,15 @@ func SupportedNames() []string {
 	return names
 }
 
+// IsSupportedName reports whether name selects a runtime implementation known
+// to this package.
 func IsSupportedName(name string) bool {
 	_, ok := runtimeCapabilities[name]
 	return ok
 }
 
+// SupportedCapabilities returns a copy of the static capabilities for name. The
+// boolean is false when name is not a supported runtime.
 func SupportedCapabilities(name string) (chamberRuntimeShared.Capabilities, bool) {
 	capabilities, ok := runtimeCapabilities[name]
 	if !ok {

@@ -7,6 +7,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 )
 
+// Canonical parses raw as an OCI image reference and returns its canonical
+// string form.
 func Canonical(raw string) (string, error) {
 	ref, err := name.ParseReference(raw)
 	if err != nil {
@@ -15,11 +17,13 @@ func Canonical(raw string) (string, error) {
 	return ref.Name(), nil
 }
 
+// Validate checks that raw is an acceptable OCI image reference.
 func Validate(raw string) error {
 	_, err := Canonical(raw)
 	return err
 }
 
+// IsValid reports whether raw is an acceptable OCI image reference.
 func IsValid(raw string) bool {
 	return Validate(raw) == nil
 }
