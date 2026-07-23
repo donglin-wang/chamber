@@ -41,7 +41,7 @@ paths, cleanup, and cancellation decisions.
 
 ## Experimental Daemon
 
-The `daemon/` package contains the current `chamberd` prototype. It is the first
+The `daemon/` package contains the current daemon prototype. It is the first
 in-repo composition layer built from the public SDK packages rather than a
 separate container engine.
 
@@ -53,8 +53,9 @@ Today the daemon:
 - exposes an HTTP API for health checks, OpenAPI docs, image pull, container
   run, container list, and stored container logs;
 - records image, operation, and container metadata under daemon-owned storage;
-- provides `chamberd storage remove --yes` for deleting the derived Chamber
-  storage root.
+- runs with `go run ./daemon -http-addr 127.0.0.1:8080`;
+- provides `go run ./daemon storage remove --yes` for deleting the derived
+  Chamber storage root.
 
 The daemon is still a prototype. It shows how a local authority can own
 metadata, operation state, runtime composition, and API responses, but it should
