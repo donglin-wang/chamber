@@ -1,8 +1,10 @@
 # Chamber
 
-Chamber is an early Go SDK for point-and-shoot OCI container execution. The
+Chamber is a Go SDK for point-and-shoot OCI container execution. The
 SDK under `pkg/` can pull an image into a caller-owned root, provision an OCI
 runtime bundle, run that bundle with `runc`, and read runtime logs.
+These primitives are intended to be a foundation for derived products such as a
+container daemon, workflow orchestration, and container orchestration layers.
 
 **The current repo is experimental and interfaces are volatile.**
 
@@ -25,6 +27,39 @@ SDK contract.
 SDK callers own storage placement, concurrency, cleanup, cancellation policy,
 and recovery. Constructors return ready objects or errors; there is no separate
 public setup phase.
+
+## Concurrency Warning
+
+The SDK is not currently focused on thread-safe shared use. It does not provide
+automatic locking, operation records, leases, or cross-process coordination for
+shared roots and container IDs.
+
+Callers that use Chamber from multiple goroutines or processes must provide
+their own concurrency management. In practice, that means serializing or locking
+access to shared image roots, bundle roots, runtime roots, container IDs, log
+paths, cleanup, and cancellation decisions.
+
+## Experimental Daemon
+
+The `daemon/` package contains the current `chamberd` prototype. It is the first
+in-repo composition layer built from the public SDK packages rather than a
+separate container engine.
+
+Today the daemon:
+
+- loads daemon config from defaults, a JSON config file, and command-line
+  overrides;
+- composes the image puller, bundle provisioner, runtime, and metadata store;
+- exposes an HTTP API for health checks, OpenAPI docs, image pull, container
+  run, container list, and stored container logs;
+- records image, operation, and container metadata under daemon-owned storage;
+- provides `chamberd storage remove --yes` for deleting the derived Chamber
+  storage root.
+
+The daemon is still a prototype. It shows how a local authority can own
+metadata, operation state, runtime composition, and API responses, but it should
+not yet be treated as a stable production daemon with complete recovery,
+lease-aware garbage collection, cancellation, or multi-client coordination.
 
 ## Cleanup Contract
 
