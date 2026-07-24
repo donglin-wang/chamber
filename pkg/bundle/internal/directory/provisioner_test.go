@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -20,7 +20,7 @@ import (
 )
 
 func TestNewUsesCurrentUserIDMap(t *testing.T) {
-	provisioner, err := New(chamberBundleShared.Config{
+	provisioner, err := New(chamberBundle.Config{
 		Root:      filepath.Join(privateTempDir(t), "bundles"),
 		Privilege: capability.Rootless,
 	}, localfs.NewDirectoryManager())
@@ -49,7 +49,7 @@ func TestDescriptorDeclaresDirectorySupport(t *testing.T) {
 }
 
 func TestProvisionClassifiesMissingImageLayoutAsInvalidRequest(t *testing.T) {
-	provisioner, err := New(chamberBundleShared.Config{
+	provisioner, err := New(chamberBundle.Config{
 		Root:      filepath.Join(privateTempDir(t), "bundles"),
 		Privilege: capability.Rootless,
 	}, localfs.NewDirectoryManager())
@@ -57,7 +57,7 @@ func TestProvisionClassifiesMissingImageLayoutAsInvalidRequest(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	_, err = provisioner.Provision(context.Background(), chamberBundleShared.ProvisionRequest{
+	_, err = provisioner.Provision(context.Background(), chamberBundle.ProvisionRequest{
 		ContainerID: "container-1",
 		ImageLayout: filepath.Join(t.TempDir(), "missing-layout"),
 		ImageRef:    "docker.io/library/golang:1.26.4-bookworm",
@@ -86,7 +86,7 @@ func TestProvisionCanonicalizesImageRefBeforeUnpack(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 
-	provisioner, err := New(chamberBundleShared.Config{
+	provisioner, err := New(chamberBundle.Config{
 		Root:      filepath.Join(privateTempDir(t), "bundles"),
 		Privilege: capability.Rootless,
 	}, localfs.NewDirectoryManager())
@@ -94,7 +94,7 @@ func TestProvisionCanonicalizesImageRefBeforeUnpack(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	provisioned, err := provisioner.Provision(context.Background(), chamberBundleShared.ProvisionRequest{
+	provisioned, err := provisioner.Provision(context.Background(), chamberBundle.ProvisionRequest{
 		ContainerID: "container-1",
 		ImageLayout: imageLayout,
 		ImageRef:    "docker.io/library/golang:1.26.4-bookworm",
@@ -150,12 +150,12 @@ func TestSetupRootlessRuntimeSpec(t *testing.T) {
 
 	uid := uint32(0)
 	gid := uint32(0)
-	process := chamberBundleShared.ProcessSpec{
+	process := chamberBundle.ProcessSpec{
 		Args:     []string{"/bin/sh", "-c", "echo hi"},
 		Env:      []string{"KEY=value"},
 		Cwd:      "/work",
 		Terminal: boolPtr(true),
-		User: chamberBundleShared.ProcessUser{
+		User: chamberBundle.ProcessUser{
 			UID:            &uid,
 			GID:            &gid,
 			AdditionalGIDs: []uint32{0},
@@ -242,7 +242,7 @@ func TestWriteRootlessRuntimeSpecWritesPrivateConfig(t *testing.T) {
 
 	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}}
 	gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 20, Size: 1}}
-	if err := writeRootlessRuntimeSpec(bundlePath, uidMappings, gidMappings, chamberBundleShared.ProcessSpec{
+	if err := writeRootlessRuntimeSpec(bundlePath, uidMappings, gidMappings, chamberBundle.ProcessSpec{
 		Args: []string{"/bin/sh"},
 	}, nil); err != nil {
 		t.Fatalf("writeRootlessRuntimeSpec() error = %v", err)
@@ -286,7 +286,7 @@ func TestSetupRootlessRuntimeSpecKeepsExistingProcessFieldsWhenRequestFieldsAreE
 
 	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}}
 	gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 20, Size: 1}}
-	if err := setupRootlessRuntimeSpec(spec, uidMappings, gidMappings, chamberBundleShared.ProcessSpec{}, nil); err != nil {
+	if err := setupRootlessRuntimeSpec(spec, uidMappings, gidMappings, chamberBundle.ProcessSpec{}, nil); err != nil {
 		t.Fatalf("setupRootlessRuntimeSpec() error = %v", err)
 	}
 	if !slices.Equal(spec.Process.Args, []string{"/bin/from-image"}) {
@@ -306,7 +306,7 @@ func TestSetupRootlessRuntimeSpecKeepsExistingProcessFieldsWhenRequestFieldsAreE
 func TestSetupRootlessRuntimeSpecRejectsMissingProcess(t *testing.T) {
 	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}}
 	gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 20, Size: 1}}
-	if err := setupRootlessRuntimeSpec(&specs.Spec{Linux: &specs.Linux{}}, uidMappings, gidMappings, chamberBundleShared.ProcessSpec{}, nil); err == nil {
+	if err := setupRootlessRuntimeSpec(&specs.Spec{Linux: &specs.Linux{}}, uidMappings, gidMappings, chamberBundle.ProcessSpec{}, nil); err == nil {
 		t.Fatal("setupRootlessRuntimeSpec() error = nil, want missing process error")
 	}
 }
@@ -314,7 +314,7 @@ func TestSetupRootlessRuntimeSpecRejectsMissingProcess(t *testing.T) {
 func TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser(t *testing.T) {
 	tests := map[string]struct {
 		specUser    specs.User
-		requestUser chamberBundleShared.ProcessUser
+		requestUser chamberBundle.ProcessUser
 		want        string
 	}{
 		"image uid": {
@@ -330,19 +330,19 @@ func TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser(t *testing.T) {
 			want:     "additional process GID 1000 is not mapped",
 		},
 		"request uid": {
-			requestUser: chamberBundleShared.ProcessUser{
+			requestUser: chamberBundle.ProcessUser{
 				UID: uint32Ptr(1000),
 			},
 			want: "process UID 1000 is not mapped",
 		},
 		"request gid": {
-			requestUser: chamberBundleShared.ProcessUser{
+			requestUser: chamberBundle.ProcessUser{
 				GID: uint32Ptr(1000),
 			},
 			want: "process GID 1000 is not mapped",
 		},
 		"request additional gid": {
-			requestUser: chamberBundleShared.ProcessUser{
+			requestUser: chamberBundle.ProcessUser{
 				AdditionalGIDs: []uint32{1000},
 			},
 			want: "additional process GID 1000 is not mapped",
@@ -361,7 +361,7 @@ func TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser(t *testing.T) {
 
 			uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}}
 			gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 20, Size: 1}}
-			err := setupRootlessRuntimeSpec(spec, uidMappings, gidMappings, chamberBundleShared.ProcessSpec{
+			err := setupRootlessRuntimeSpec(spec, uidMappings, gidMappings, chamberBundle.ProcessSpec{
 				User: test.requestUser,
 			}, nil)
 			if err == nil {
@@ -392,7 +392,7 @@ func TestSetupRootlessRuntimeSpecAppendsBindMounts(t *testing.T) {
 
 	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}}
 	gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 20, Size: 1}}
-	if err := setupRootlessRuntimeSpec(spec, uidMappings, gidMappings, chamberBundleShared.ProcessSpec{}, mounts); err != nil {
+	if err := setupRootlessRuntimeSpec(spec, uidMappings, gidMappings, chamberBundle.ProcessSpec{}, mounts); err != nil {
 		t.Fatalf("setupRootlessRuntimeSpec() error = %v", err)
 	}
 	mounts[0].Options[0] = "mutated"
@@ -419,7 +419,7 @@ func TestTranslateToOCIBindMountsDefaultsAndExplicitOptions(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	mounts, err := translateToOCIBindMounts([]chamberBundleShared.Mount{
+	mounts, err := translateToOCIBindMounts([]chamberBundle.Mount{
 		{Source: sourceDir, Target: "/workspace"},
 		{Type: "bind", Source: sourceFile, Target: "/input/go.sum", Options: []string{"rbind", "ro"}},
 	})
@@ -439,7 +439,7 @@ func TestTranslateToOCIBindMountsDefaultsAndExplicitOptions(t *testing.T) {
 
 func TestTranslateToOCIBindMountsRejectsInvalidRequests(t *testing.T) {
 	sourceDir := t.TempDir()
-	tests := map[string]chamberBundleShared.Mount{
+	tests := map[string]chamberBundle.Mount{
 		"missing source": {Source: filepath.Join(sourceDir, "missing"), Target: "/workspace"},
 		"empty source":   {Target: "/workspace"},
 		"relative target": {
@@ -459,7 +459,7 @@ func TestTranslateToOCIBindMountsRejectsInvalidRequests(t *testing.T) {
 
 	for name, mount := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := translateToOCIBindMounts([]chamberBundleShared.Mount{mount})
+			_, err := translateToOCIBindMounts([]chamberBundle.Mount{mount})
 			if err == nil {
 				t.Fatal("translateToOCIBindMounts() error = nil, want error")
 			}
@@ -517,7 +517,7 @@ func TestCreateBindMountTargetPathsCreatesRootfsPlaceholders(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	mounts, err := translateToOCIBindMounts([]chamberBundleShared.Mount{
+	mounts, err := translateToOCIBindMounts([]chamberBundle.Mount{
 		{Source: sourceDir, Target: "/workspace"},
 		{Source: sourceFile, Target: "/inputs/go.mod"},
 	})
@@ -552,7 +552,7 @@ func TestCreateBindMountTargetPathsRejectsDirectorySourceOntoFileTarget(t *testi
 	if err := os.WriteFile(filepath.Join(rootfs, "workspace"), []byte("file"), 0600); err != nil {
 		t.Fatalf("WriteFile(target) error = %v", err)
 	}
-	mounts, err := translateToOCIBindMounts([]chamberBundleShared.Mount{
+	mounts, err := translateToOCIBindMounts([]chamberBundle.Mount{
 		{Source: t.TempDir(), Target: "/workspace"},
 	})
 	if err != nil {

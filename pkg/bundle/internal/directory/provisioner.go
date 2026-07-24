@@ -14,8 +14,8 @@ import (
 	"strings"
 
 	securejoin "github.com/cyphar/filepath-securejoin"
-	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
-	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
@@ -28,17 +28,17 @@ import (
 	"github.com/opencontainers/umoci/oci/layer"
 )
 
-var _ chamberBundleShared.Provisioner = (*Provisioner)(nil)
+var _ chamberBundle.Provisioner = (*Provisioner)(nil)
 
 type Provisioner struct {
-	config           chamberBundleShared.Config
+	config           chamberBundle.Config
 	uid              uint32
 	gid              uint32
 	directoryManager localfs.DirectoryManager
 	logger           *chamberLogging.SlogLogger
 }
 
-func New(config chamberBundleShared.Config, directoryManager localfs.DirectoryManager) (*Provisioner, error) {
+func New(config chamberBundle.Config, directoryManager localfs.DirectoryManager) (*Provisioner, error) {
 	installApexBridge()
 
 	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
@@ -56,10 +56,10 @@ func New(config chamberBundleShared.Config, directoryManager localfs.DirectoryMa
 	return provisioner, nil
 }
 
-func (p *Provisioner) Descriptor() chamberBundleShared.Descriptor {
-	return chamberBundleShared.Descriptor{
-		Name: chamberBundleShared.ProvisionerNameDirectory,
-		Capabilities: chamberBundleShared.Capabilities{
+func (p *Provisioner) Descriptor() chamberBundle.Descriptor {
+	return chamberBundle.Descriptor{
+		Name: chamberBundle.ProvisionerNameDirectory,
+		Capabilities: chamberBundle.Capabilities{
 			Privileges: []capability.Privilege{
 				capability.Rootless,
 			},
@@ -69,32 +69,32 @@ func (p *Provisioner) Descriptor() chamberBundleShared.Descriptor {
 
 func (p *Provisioner) Provision(
 	ctx context.Context,
-	request chamberBundleShared.ProvisionRequest,
-) (chamberBundleShared.ProvisionedBundle, error) {
+	request chamberBundle.ProvisionRequest,
+) (chamberBundle.ProvisionedBundle, error) {
 	if ctx == nil {
-		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := ctx.Err(); err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: bundle provisioning canceled before start: %w", chamberErrors.ErrCanceled, err)
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: bundle provisioning canceled before start: %w", chamberErrors.ErrCanceled, err)
 	}
 	if p == nil || p.directoryManager == nil {
-		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
 	if p.config.Root == "" {
-		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := containerid.Validate(request.ContainerID); err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, err
+		return chamberBundle.ProvisionedBundle{}, err
 	}
 	if request.ImageLayout == "" {
-		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: image layout is required", chamberErrors.ErrInvalidImageLayout)
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: image layout is required", chamberErrors.ErrInvalidImageLayout)
 	}
 	if request.ImageRef == "" {
-		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: image ref is required", chamberErrors.ErrInvalidImageReference)
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: image ref is required", chamberErrors.ErrInvalidImageReference)
 	}
 	imageRef, err := imageref.Canonical(request.ImageRef)
 	if err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, err
+		return chamberBundle.ProvisionedBundle{}, err
 	}
 
 	bundleRoot := p.config.Root
@@ -107,7 +107,7 @@ func (p *Provisioner) Provision(
 	)
 	tmpBundle, err := p.directoryManager.MkdirTemp(bundleRoot, "."+request.ContainerID+".tmp-*")
 	if err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: create temporary bundle: %v", chamberErrors.ErrFilesystemFailed, err)
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: create temporary bundle: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
 	committed := false
 	defer func() {
@@ -116,17 +116,17 @@ func (p *Provisioner) Provision(
 		}
 	}()
 
-	if err := chamberImageShared.ValidateLayoutContext(ctx, request.ImageLayout); err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, err
+	if err := chamberImage.ValidateLayoutContext(ctx, request.ImageLayout); err != nil {
+		return chamberBundle.ProvisionedBundle{}, err
 	}
 
 	engine, err := ociumoci.OpenLayout(request.ImageLayout)
 	if err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: open OCI image layout %q: %w", chamberErrors.ErrInvalidImageLayout, request.ImageLayout, err)
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: open OCI image layout %q: %w", chamberErrors.ErrInvalidImageLayout, request.ImageLayout, err)
 	}
 	defer engine.Close()
 	if err := validateImageRefInLayout(ctx, engine, request.ImageLayout, imageRef); err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, err
+		return chamberBundle.ProvisionedBundle{}, err
 	}
 
 	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.uid, Size: 1}}
@@ -139,29 +139,29 @@ func (p *Provisioner) Provision(
 	if err := ociumoci.Unpack(engine, imageRef, tmpBundle, layer.UnpackOptions{
 		OnDiskFormat: layer.DirRootfs{MapOptions: mapOptions},
 	}); err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: unpack OCI image into runtime bundle: %w", chamberErrors.ErrBundlePrepareFailed, err)
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: unpack OCI image into runtime bundle: %w", chamberErrors.ErrBundlePrepareFailed, err)
 	}
 	if err := ctx.Err(); err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: bundle provisioning canceled after unpack: %w", chamberErrors.ErrCanceled, err)
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: bundle provisioning canceled after unpack: %w", chamberErrors.ErrCanceled, err)
 	}
 
 	mounts, err := translateToOCIBindMounts(request.Mounts)
 	if err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, err
+		return chamberBundle.ProvisionedBundle{}, err
 	}
 	if err := createBindMountTargetPaths(filepath.Join(tmpBundle, "rootfs"), mounts); err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, err
+		return chamberBundle.ProvisionedBundle{}, err
 	}
 	if err := writeRootlessRuntimeSpec(tmpBundle, uidMappings, gidMappings, request.Process, mounts); err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, err
+		return chamberBundle.ProvisionedBundle{}, err
 	}
 
 	if err := os.Rename(tmpBundle, finalBundle); err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, fmt.Errorf("%w: commit runtime bundle: %w", chamberErrors.ErrBundlePrepareFailed, err)
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: commit runtime bundle: %w", chamberErrors.ErrBundlePrepareFailed, err)
 	}
 	committed = true
 
-	provisioned := chamberBundleShared.ProvisionedBundle{
+	provisioned := chamberBundle.ProvisionedBundle{
 		ContainerID: request.ContainerID,
 		BundlePath:  finalBundle,
 	}
@@ -196,7 +196,7 @@ func writeRootlessRuntimeSpec(
 	bundlePath string,
 	uidMappings []specs.LinuxIDMapping,
 	gidMappings []specs.LinuxIDMapping,
-	process chamberBundleShared.ProcessSpec,
+	process chamberBundle.ProcessSpec,
 	mounts []specs.Mount,
 ) error {
 	configPath := filepath.Join(bundlePath, "config.json")
@@ -238,7 +238,7 @@ func setupRootlessRuntimeSpec(
 	spec *specs.Spec,
 	uidMappings []specs.LinuxIDMapping,
 	gidMappings []specs.LinuxIDMapping,
-	process chamberBundleShared.ProcessSpec,
+	process chamberBundle.ProcessSpec,
 	mounts []specs.Mount,
 ) error {
 	if spec == nil {
@@ -287,7 +287,7 @@ func setupRootlessRuntimeSpec(
 	return nil
 }
 
-func translateToOCIBindMounts(mounts []chamberBundleShared.Mount) ([]specs.Mount, error) {
+func translateToOCIBindMounts(mounts []chamberBundle.Mount) ([]specs.Mount, error) {
 	normalized := make([]specs.Mount, 0, len(mounts))
 	for _, mount := range mounts {
 		mountType := strings.TrimSpace(mount.Type)

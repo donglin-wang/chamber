@@ -1,11 +1,11 @@
-package shared
+package runtime
 
 import (
 	"context"
 	"io"
 	"os"
 
-	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 )
 
@@ -86,7 +86,7 @@ const (
 // RunRequest describes one container launch from a provisioned bundle.
 type RunRequest struct {
 	// Bundle is the provisioned OCI runtime bundle to run.
-	Bundle chamberBundleShared.ProvisionedBundle
+	Bundle chamberBundle.ProvisionedBundle
 
 	// Stdin is connected to the container's standard input when non-nil.
 	Stdin io.Reader

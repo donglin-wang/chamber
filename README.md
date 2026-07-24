@@ -13,14 +13,14 @@ SDK contract.
 
 ## SDK Scope
 
-- `pkg/image`: creates image pullers with `image.NewPuller` and stores pulled
-  images as OCI image layouts under a caller-provided root.
-- `pkg/bundle`: creates bundle provisioners with `bundle.NewProvisioner`. The
-  current internal implementation, `directory`, unpacks an OCI layout into a
-  rootless OCI runtime bundle.
-- `pkg/runtime`: creates runtimes with `runtime.NewRuntime`. The current
-  internal implementation, `runc`, downloads or reuses a pinned `runc` binary
-  and runs provisioned bundles.
+- `pkg/image`: public image contracts and config; `pkg/image/factory` creates
+  image pullers that store OCI image layouts under a caller-provided root.
+- `pkg/bundle`: public bundle contracts and config; `pkg/bundle/factory`
+  creates bundle provisioners. The current internal implementation, `directory`,
+  unpacks an OCI layout into a rootless OCI runtime bundle.
+- `pkg/runtime`: public runtime contracts and config; `pkg/runtime/factory`
+  creates runtimes. The current internal implementation, `runc`, downloads or
+  reuses a pinned `runc` binary and runs provisioned bundles.
 - `pkg/shared`: common error codes, filesystem policy, logging, image reference
   validation, container ID validation, and capability vocabulary.
 
@@ -118,12 +118,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/donglin-wang/chamber/pkg/bundle"
-	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
-	"github.com/donglin-wang/chamber/pkg/image"
-	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
-	"github.com/donglin-wang/chamber/pkg/runtime"
-	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
@@ -133,33 +133,33 @@ func main() {
 	root := "/tmp/chamber-sdk-demo"
 	directoryManager := localfs.NewDirectoryManager()
 
-	puller, err := image.NewPuller(chamberImageShared.Config{
+	puller, err := chamberImageFactory.NewPuller(chamberImage.Config{
 		Root: filepath.Join(root, "images"),
 	}, directoryManager)
 	if err != nil {
 		panic(err)
 	}
-	pulled, err := puller.Pull(ctx, chamberImageShared.PullRequest{
+	pulled, err := puller.Pull(ctx, chamberImage.PullRequest{
 		Reference: "docker.io/library/alpine:latest",
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	provisioner, err := bundle.NewProvisioner(chamberBundleShared.Config{
+	provisioner, err := chamberBundleFactory.NewProvisioner(chamberBundle.Config{
 		Root:      filepath.Join(root, "bundles"),
-		Name:      chamberBundleShared.ProvisionerNameDirectory,
+		Name:      chamberBundle.ProvisionerNameDirectory,
 		Privilege: capability.Rootless,
 	}, directoryManager)
 	if err != nil {
 		panic(err)
 	}
 	terminal := false
-	provisioned, err := provisioner.Provision(ctx, chamberBundleShared.ProvisionRequest{
+	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
 		ContainerID: "demo",
 		ImageLayout: pulled.LayoutPath,
 		ImageRef:    pulled.Reference,
-		Process: chamberBundleShared.ProcessSpec{
+		Process: chamberBundle.ProcessSpec{
 			Args:     []string{"/bin/sh", "-c", "echo hello from chamber"},
 			Terminal: &terminal,
 		},
@@ -168,16 +168,16 @@ func main() {
 		panic(err)
 	}
 
-	runc, err := runtime.NewRuntime(ctx, chamberRuntimeShared.Config{
+	runc, err := chamberRuntimeFactory.NewRuntime(ctx, chamberRuntime.Config{
 		RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 		RuntimeBinDir: filepath.Join(root, "bin"),
-		Name:          chamberRuntimeShared.RuntimeNameRunc,
+		Name:          chamberRuntime.RuntimeNameRunc,
 		Privilege:     capability.Rootless,
 	}, directoryManager)
 	if err != nil {
 		panic(err)
 	}
-	container, err := runc.Run(ctx, chamberRuntimeShared.RunRequest{
+	container, err := runc.Run(ctx, chamberRuntime.RunRequest{
 		Bundle: provisioned,
 		Stdout: []io.Writer{os.Stdout},
 		Stderr: []io.Writer{os.Stderr},
@@ -187,15 +187,15 @@ func main() {
 	}
 	defer func() {
 		_ = container.Delete(context.Background(), true)
-		_ = container.DeleteLog(chamberRuntimeShared.StdoutLogStream)
-		_ = container.DeleteLog(chamberRuntimeShared.StderrLogStream)
+		_ = container.DeleteLog(chamberRuntime.StdoutLogStream)
+		_ = container.DeleteLog(chamberRuntime.StderrLogStream)
 		_ = os.RemoveAll(provisioned.BundlePath)
 	}()
 	result, err := container.Wait()
 	if err != nil {
 		panic(err)
 	}
-	stdout, err := container.ReadLog(chamberRuntimeShared.StdoutLogStream)
+	stdout, err := container.ReadLog(chamberRuntime.StdoutLogStream)
 	if err != nil {
 		panic(err)
 	}

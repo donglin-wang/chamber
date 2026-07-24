@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
-	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
-	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
-	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
@@ -66,12 +66,15 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 	for _, importSpec := range file.Imports {
 		importPath := strings.Trim(importSpec.Path.Value, `"`)
 		switch importPath {
-		case "github.com/donglin-wang/chamber/pkg/image/internal/puller",
+		case "github.com/donglin-wang/chamber/pkg/image/factory",
+			"github.com/donglin-wang/chamber/pkg/bundle/factory",
+			"github.com/donglin-wang/chamber/pkg/runtime/factory",
+			"github.com/donglin-wang/chamber/pkg/image/internal/puller",
 			"github.com/donglin-wang/chamber/pkg/bundle/internal/directory",
 			"github.com/donglin-wang/chamber/pkg/runtime/internal/runc",
 			"github.com/donglin-wang/chamber/daemon/metadata/etcd",
 			"github.com/donglin-wang/chamber/pkg/shared/localfs":
-			t.Fatalf("config package must import generic package boundaries and not filesystem setup %q", importPath)
+			t.Fatalf("config package must import generic package boundaries and not composition or filesystem setup %q", importPath)
 		}
 	}
 }
@@ -144,20 +147,20 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 		SocketPath: filepath.Join(root, "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "run", "tmp"),
 		Privilege:  capability.Rootless,
-		Bundle: chamberBundleShared.Config{
+		Bundle: chamberBundle.Config{
 			Root:      filepath.Join(root, "bundles"),
-			Name:      chamberBundleShared.ProvisionerNameDirectory,
+			Name:      chamberBundle.ProvisionerNameDirectory,
 			Privilege: capability.Rootless,
 			Logging:   defaultLogging,
 		},
-		Image: chamberImageShared.Config{
+		Image: chamberImage.Config{
 			Root:    filepath.Join(root, "images"),
 			Logging: defaultLogging,
 		},
-		Runtime: chamberRuntimeShared.Config{
+		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "bin"),
-			Name:          chamberRuntimeShared.RuntimeNameRunc,
+			Name:          chamberRuntime.RuntimeNameRunc,
 			Privilege:     capability.Rootless,
 			Logging:       defaultLogging,
 		},
@@ -223,18 +226,18 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		SocketPath: "default/run/chamber.sock",
 		TmpRoot:    "default/tmp",
 		Privilege:  capability.Rootless,
-		Bundle: chamberBundleShared.Config{
+		Bundle: chamberBundle.Config{
 			Root:      "default/bundles",
-			Name:      chamberBundleShared.ProvisionerNameDirectory,
+			Name:      chamberBundle.ProvisionerNameDirectory,
 			Privilege: capability.Rootless,
 		},
-		Image: chamberImageShared.Config{
+		Image: chamberImage.Config{
 			Root: "default/images",
 		},
-		Runtime: chamberRuntimeShared.Config{
+		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   "default/runtime",
 			RuntimeBinDir: "default/bin",
-			Name:          chamberRuntimeShared.RuntimeNameRunc,
+			Name:          chamberRuntime.RuntimeNameRunc,
 			Privilege:     capability.Rootless,
 		},
 		Metadata: metadata.Config{
@@ -265,7 +268,7 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		Runtime: runtimeInput{
 			RuntimeRoot:   ptr("input/runtime"),
 			RuntimeBinDir: ptr("input/bin"),
-			Name:          ptr(chamberRuntimeShared.RuntimeNameRunc),
+			Name:          ptr(chamberRuntime.RuntimeNameRunc),
 		},
 		Metadata: metadataInput{
 			Root: ptr("input/metadata"),
@@ -292,26 +295,26 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		SocketPath: mustAbs(t, "input/run/chamber.sock"),
 		TmpRoot:    mustAbs(t, "input/tmp"),
 		Privilege:  capability.Rootful,
-		Bundle: chamberBundleShared.Config{
+		Bundle: chamberBundle.Config{
 			Root:      mustAbs(t, "input/bundles"),
-			Name:      chamberBundleShared.ProvisionerNameDirectory,
+			Name:      chamberBundle.ProvisionerNameDirectory,
 			Privilege: capability.Rootful,
 			Logging: chamberLogging.Config{
 				Level:  "debug",
 				Format: "text",
 			},
 		},
-		Image: chamberImageShared.Config{
+		Image: chamberImage.Config{
 			Root: mustAbs(t, "input/images"),
 			Logging: chamberLogging.Config{
 				Level:  "debug",
 				Format: "text",
 			},
 		},
-		Runtime: chamberRuntimeShared.Config{
+		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   mustAbs(t, "input/runtime"),
 			RuntimeBinDir: mustAbs(t, "input/bin"),
-			Name:          chamberRuntimeShared.RuntimeNameRunc,
+			Name:          chamberRuntime.RuntimeNameRunc,
 			Privilege:     capability.Rootful,
 			Logging: chamberLogging.Config{
 				Level:  "debug",
@@ -344,26 +347,26 @@ func TestApplyInputLeavesDefaultsWhenInputFieldsAreNil(t *testing.T) {
 		SocketPath: filepath.Join(root, "default", "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "default", "tmp"),
 		Privilege:  capability.Rootless,
-		Bundle: chamberBundleShared.Config{
+		Bundle: chamberBundle.Config{
 			Root:      filepath.Join(root, "default", "bundles"),
-			Name:      chamberBundleShared.ProvisionerNameDirectory,
+			Name:      chamberBundle.ProvisionerNameDirectory,
 			Privilege: capability.Rootless,
 			Logging: chamberLogging.Config{
 				Level:  "warn",
 				Format: "text",
 			},
 		},
-		Image: chamberImageShared.Config{
+		Image: chamberImage.Config{
 			Root: filepath.Join(root, "default", "images"),
 			Logging: chamberLogging.Config{
 				Level:  "warn",
 				Format: "text",
 			},
 		},
-		Runtime: chamberRuntimeShared.Config{
+		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "default", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "default", "bin"),
-			Name:          chamberRuntimeShared.RuntimeNameRunc,
+			Name:          chamberRuntime.RuntimeNameRunc,
 			Privilege:     capability.Rootless,
 			Logging: chamberLogging.Config{
 				Level:  "warn",
@@ -397,11 +400,11 @@ func TestApplyInputLeavesDefaultsWhenInputFieldsAreNil(t *testing.T) {
 
 func TestApplyInputProjectsTopLevelPrivilegeToSDKConfigs(t *testing.T) {
 	cfg, err := ApplyInput(Config{
-		Bundle: chamberBundleShared.Config{
-			Name:      chamberBundleShared.ProvisionerNameDirectory,
+		Bundle: chamberBundle.Config{
+			Name:      chamberBundle.ProvisionerNameDirectory,
 			Privilege: capability.Rootless,
 		},
-		Runtime: chamberRuntimeShared.Config{
+		Runtime: chamberRuntime.Config{
 			Privilege: capability.Rootless,
 		},
 	}, Input{
@@ -449,22 +452,25 @@ func TestApplyInputRejectsNestedSDKPrivilegeInputs(t *testing.T) {
 	}
 }
 
-func TestApplyInputRejectsUnsupportedBundleProvisionerName(t *testing.T) {
-	_, err := ApplyInput(Config{
-		Bundle: chamberBundleShared.Config{
+func TestApplyInputPreservesImplementationNamesForComposition(t *testing.T) {
+	cfg, err := ApplyInput(Config{
+		Bundle: chamberBundle.Config{
 			Name:      "overlay",
 			Privilege: capability.Rootless,
 		},
-		Runtime: chamberRuntimeShared.Config{
-			Name:      chamberRuntimeShared.RuntimeNameRunc,
+		Runtime: chamberRuntime.Config{
+			Name:      "crun",
 			Privilege: capability.Rootless,
 		},
 	}, Input{})
-	if err == nil {
-		t.Fatal("ApplyInput() error = nil, want unsupported bundle provisioner name error")
+	if err != nil {
+		t.Fatalf("ApplyInput() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "unsupported bundle provisioner name") {
-		t.Fatalf("ApplyInput() error = %v, want unsupported bundle provisioner name", err)
+	if cfg.Bundle.Name != "overlay" {
+		t.Fatalf("Bundle.Name = %q, want overlay", cfg.Bundle.Name)
+	}
+	if cfg.Runtime.Name != "crun" {
+		t.Fatalf("Runtime.Name = %q, want crun", cfg.Runtime.Name)
 	}
 }
 
@@ -514,7 +520,7 @@ func TestLoadFileAppliesConfigFileThenCommandLineInput(t *testing.T) {
 	if cfg.Image.Root != mustAbs(t, "file/images") {
 		t.Fatalf("Image.Root = %q, want config file value", cfg.Image.Root)
 	}
-	if cfg.Runtime.Name != chamberRuntimeShared.RuntimeNameRunc {
+	if cfg.Runtime.Name != chamberRuntime.RuntimeNameRunc {
 		t.Fatalf("Runtime.Name = %q, want runc", cfg.Runtime.Name)
 	}
 	if cfg.Runtime.Privilege != capability.Rootful {

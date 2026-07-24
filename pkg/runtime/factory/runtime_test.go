@@ -1,4 +1,4 @@
-package runtime
+package factory
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
@@ -19,18 +19,18 @@ type runtimeImplementation struct {
 	name       string
 	privilege  capability.Privilege
 	privileges []capability.Privilege
-	isolation  []chamberRuntimeShared.Isolation
+	isolation  []chamberRuntime.Isolation
 }
 
 var runtimeImplementations = []runtimeImplementation{
 	{
-		name:      chamberRuntimeShared.RuntimeNameRunc,
+		name:      chamberRuntime.RuntimeNameRunc,
 		privilege: capability.Rootless,
 		privileges: []capability.Privilege{
 			capability.Rootless,
 		},
-		isolation: []chamberRuntimeShared.Isolation{
-			chamberRuntimeShared.ProcessIsolation,
+		isolation: []chamberRuntime.Isolation{
+			chamberRuntime.ProcessIsolation,
 		},
 	},
 }
@@ -70,7 +70,7 @@ func TestRuntimeImplementationsRejectUnsupportedPrivilegeBeforeFilesystemMutatio
 			runtimeRoot := filepath.Join(t.TempDir(), "runtime")
 			binDir := filepath.Join(t.TempDir(), "bin")
 
-			_, err := NewRuntime(context.Background(), chamberRuntimeShared.Config{
+			_, err := NewRuntime(context.Background(), chamberRuntime.Config{
 				RuntimeRoot:   runtimeRoot,
 				RuntimeBinDir: binDir,
 				Name:          implementation.name,
@@ -102,7 +102,7 @@ func TestRuntimeImplementationsRejectNonLinuxHostBeforeFilesystemMutation(t *tes
 			runtimeRoot := filepath.Join(t.TempDir(), "runtime")
 			binDir := filepath.Join(t.TempDir(), "bin")
 
-			_, err := NewRuntime(context.Background(), chamberRuntimeShared.Config{
+			_, err := NewRuntime(context.Background(), chamberRuntime.Config{
 				RuntimeRoot:   runtimeRoot,
 				RuntimeBinDir: binDir,
 				Name:          implementation.name,

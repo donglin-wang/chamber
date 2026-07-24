@@ -1,4 +1,4 @@
-package runtime
+package factory
 
 import (
 	"context"
@@ -7,20 +7,20 @@ import (
 	"sort"
 	"strings"
 
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRunc "github.com/donglin-wang/chamber/pkg/runtime/internal/runc"
-	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
-var runtimeCapabilities = map[string]chamberRuntimeShared.Capabilities{
-	chamberRuntimeShared.RuntimeNameRunc: {
+var runtimeCapabilities = map[string]chamberRuntime.Capabilities{
+	chamberRuntime.RuntimeNameRunc: {
 		Privileges: []capability.Privilege{
 			capability.Rootless,
 		},
-		Isolation: []chamberRuntimeShared.Isolation{
-			chamberRuntimeShared.ProcessIsolation,
+		Isolation: []chamberRuntime.Isolation{
+			chamberRuntime.ProcessIsolation,
 		},
 	},
 }
@@ -29,11 +29,11 @@ var runtimeCapabilities = map[string]chamberRuntimeShared.Capabilities{
 // private runtime directories, installs or reuses runtime artifacts as needed,
 // and returns a ready runtime. The supplied context controls construction work
 // only; container lifecycle is owned by Container values returned from Run.
-func NewRuntime(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager) (chamberRuntimeShared.Runtime, error) {
+func NewRuntime(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager) (chamberRuntime.Runtime, error) {
 	return newRuntimeForOS(ctx, config, directoryManager, goruntime.GOOS)
 }
 
-func newRuntimeForOS(ctx context.Context, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager, osName string) (chamberRuntimeShared.Runtime, error) {
+func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, osName string) (chamberRuntime.Runtime, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -73,7 +73,7 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntimeShared.Config, di
 	}
 
 	switch config.Name {
-	case chamberRuntimeShared.RuntimeNameRunc:
+	case chamberRuntime.RuntimeNameRunc:
 		return chamberRunc.New(ctx, config, directoryManager)
 	default:
 		return nil, fmt.Errorf("%w: unsupported runtime name %q (supported: %s)", chamberErrors.ErrInvalidRequest, config.Name, strings.Join(SupportedNames(), ", "))
@@ -100,15 +100,15 @@ func IsSupportedName(name string) bool {
 
 // SupportedCapabilities returns a copy of the static capabilities for name. The
 // boolean is false when name is not a supported runtime.
-func SupportedCapabilities(name string) (chamberRuntimeShared.Capabilities, bool) {
+func SupportedCapabilities(name string) (chamberRuntime.Capabilities, bool) {
 	capabilities, ok := runtimeCapabilities[name]
 	if !ok {
-		return chamberRuntimeShared.Capabilities{}, false
+		return chamberRuntime.Capabilities{}, false
 	}
-	return chamberRuntimeShared.CloneCapabilities(capabilities), true
+	return chamberRuntime.CloneCapabilities(capabilities), true
 }
 
-func supportsPrivilege(capabilities chamberRuntimeShared.Capabilities, privilege capability.Privilege) bool {
+func supportsPrivilege(capabilities chamberRuntime.Capabilities, privilege capability.Privilege) bool {
 	for _, supported := range capabilities.Privileges {
 		if supported == privilege {
 			return true

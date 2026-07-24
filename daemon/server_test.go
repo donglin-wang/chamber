@@ -15,9 +15,9 @@ import (
 	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	"github.com/donglin-wang/chamber/daemon/metadata/memory"
-	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
-	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
-	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/google/uuid"
 )
@@ -213,7 +213,7 @@ func TestRunContainerStoresProvisionedBundlePath(t *testing.T) {
 func TestRunContainerRequestsNonTerminalProcess(t *testing.T) {
 	store := memory.NewMemoryStore()
 	putTestImage(t, store)
-	var provisionRequest chamberBundleShared.ProvisionRequest
+	var provisionRequest chamberBundle.ProvisionRequest
 
 	_, err := runContainer(
 		context.Background(),
@@ -295,14 +295,14 @@ func testConfig(t *testing.T) chamberDaemonConfig.Config {
 	root := t.TempDir()
 	return chamberDaemonConfig.Config{
 		HTTPAddr: "127.0.0.1:0",
-		Bundle: chamberBundleShared.Config{
+		Bundle: chamberBundle.Config{
 			Root: root + "/bundles",
-			Name: chamberBundleShared.ProvisionerNameDirectory,
+			Name: chamberBundle.ProvisionerNameDirectory,
 		},
-		Image: chamberImageShared.Config{
+		Image: chamberImage.Config{
 			Root: root + "/images",
 		},
-		Runtime: chamberRuntimeShared.Config{
+		Runtime: chamberRuntime.Config{
 			RuntimeRoot: root + "/runtime",
 		},
 	}
@@ -311,24 +311,24 @@ func testConfig(t *testing.T) chamberDaemonConfig.Config {
 type fakeProvisioner struct {
 	bundlePath string
 	err        error
-	request    *chamberBundleShared.ProvisionRequest
+	request    *chamberBundle.ProvisionRequest
 }
 
-func (p fakeProvisioner) Descriptor() chamberBundleShared.Descriptor {
-	return chamberBundleShared.Descriptor{Name: "fake"}
+func (p fakeProvisioner) Descriptor() chamberBundle.Descriptor {
+	return chamberBundle.Descriptor{Name: "fake"}
 }
 
-func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundleShared.ProvisionRequest) (chamberBundleShared.ProvisionedBundle, error) {
+func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundle.ProvisionRequest) (chamberBundle.ProvisionedBundle, error) {
 	if err := ctx.Err(); err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, err
+		return chamberBundle.ProvisionedBundle{}, err
 	}
 	if p.err != nil {
-		return chamberBundleShared.ProvisionedBundle{}, p.err
+		return chamberBundle.ProvisionedBundle{}, p.err
 	}
 	if p.request != nil {
 		*p.request = request
 	}
-	return chamberBundleShared.ProvisionedBundle{
+	return chamberBundle.ProvisionedBundle{
 		ContainerID: request.ContainerID,
 		BundlePath:  p.bundlePath,
 	}, nil
@@ -338,11 +338,11 @@ type fakeRuntime struct {
 	err error
 }
 
-func (r fakeRuntime) Descriptor() chamberRuntimeShared.Descriptor {
-	return chamberRuntimeShared.Descriptor{Name: "fake"}
+func (r fakeRuntime) Descriptor() chamberRuntime.Descriptor {
+	return chamberRuntime.Descriptor{Name: "fake"}
 }
 
-func (r fakeRuntime) Run(ctx context.Context, request chamberRuntimeShared.RunRequest) (chamberRuntimeShared.Container, error) {
+func (r fakeRuntime) Run(ctx context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Container, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -368,12 +368,12 @@ func (c fakeContainer) StdoutPath() string { return c.stdoutPath }
 
 func (c fakeContainer) StderrPath() string { return c.stderrPath }
 
-func (fakeContainer) Wait() (chamberRuntimeShared.ContainerResult, error) {
-	return chamberRuntimeShared.ContainerResult{}, nil
+func (fakeContainer) Wait() (chamberRuntime.ContainerResult, error) {
+	return chamberRuntime.ContainerResult{}, nil
 }
 
-func (c fakeContainer) State(ctx context.Context) (chamberRuntimeShared.ContainerState, error) {
-	return chamberRuntimeShared.ContainerState{ContainerID: c.id}, ctx.Err()
+func (c fakeContainer) State(ctx context.Context) (chamberRuntime.ContainerState, error) {
+	return chamberRuntime.ContainerState{ContainerID: c.id}, ctx.Err()
 }
 
 func (fakeContainer) Signal(ctx context.Context, signal os.Signal) error {
@@ -384,22 +384,22 @@ func (fakeContainer) Delete(ctx context.Context, force bool) error {
 	return ctx.Err()
 }
 
-func (c fakeContainer) ReadLog(stream chamberRuntimeShared.LogStream) ([]byte, error) {
+func (c fakeContainer) ReadLog(stream chamberRuntime.LogStream) ([]byte, error) {
 	switch stream {
-	case chamberRuntimeShared.StdoutLogStream:
+	case chamberRuntime.StdoutLogStream:
 		return os.ReadFile(c.stdoutPath)
-	case chamberRuntimeShared.StderrLogStream:
+	case chamberRuntime.StderrLogStream:
 		return os.ReadFile(c.stderrPath)
 	default:
 		return nil, chamberErrors.ErrInvalidRequest
 	}
 }
 
-func (c fakeContainer) DeleteLog(stream chamberRuntimeShared.LogStream) error {
+func (c fakeContainer) DeleteLog(stream chamberRuntime.LogStream) error {
 	switch stream {
-	case chamberRuntimeShared.StdoutLogStream:
+	case chamberRuntime.StdoutLogStream:
 		return os.Remove(c.stdoutPath)
-	case chamberRuntimeShared.StderrLogStream:
+	case chamberRuntime.StderrLogStream:
 		return os.Remove(c.stderrPath)
 	default:
 		return chamberErrors.ErrInvalidRequest
@@ -410,14 +410,14 @@ type fakePuller struct {
 	err error
 }
 
-func (p fakePuller) Pull(ctx context.Context, request chamberImageShared.PullRequest) (chamberImageShared.PulledImage, error) {
+func (p fakePuller) Pull(ctx context.Context, request chamberImage.PullRequest) (chamberImage.PulledImage, error) {
 	if err := ctx.Err(); err != nil {
-		return chamberImageShared.PulledImage{}, err
+		return chamberImage.PulledImage{}, err
 	}
 	if p.err != nil {
-		return chamberImageShared.PulledImage{}, p.err
+		return chamberImage.PulledImage{}, p.err
 	}
-	return chamberImageShared.PulledImage{
+	return chamberImage.PulledImage{
 		Reference:  request.Reference,
 		Digest:     "sha256:abc123",
 		LayoutPath: "/tmp/chamber-test/images/fake-layout",

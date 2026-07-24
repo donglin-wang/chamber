@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
-	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -27,7 +27,7 @@ func TestNewPreparesRuntimeDirectories(t *testing.T) {
 	binDir := filepath.Join(privateTempDir(t), "bin")
 	content := []byte("binary")
 
-	runtime := mustNew(t, chamberRuntimeShared.Config{
+	runtime := mustNew(t, chamberRuntime.Config{
 		RuntimeRoot:   root,
 		RuntimeBinDir: binDir,
 		Name:          "runc",
@@ -41,7 +41,7 @@ func TestNewPreparesRuntimeDirectories(t *testing.T) {
 }
 
 func TestNewRequiresDirectoryManager(t *testing.T) {
-	_, err := New(context.Background(), chamberRuntimeShared.Config{
+	_, err := New(context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
@@ -54,7 +54,7 @@ func TestNewRequiresDirectoryManager(t *testing.T) {
 func TestNewDownloadsValidRuntimeBinary(t *testing.T) {
 	content := []byte("valid runc")
 	binDir := privateTempDir(t)
-	runtime := mustNew(t, chamberRuntimeShared.Config{
+	runtime := mustNew(t, chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
@@ -76,7 +76,7 @@ func TestNewDownloadsValidRuntimeBinary(t *testing.T) {
 func TestNewDefaultsToRuncAdapterName(t *testing.T) {
 	content := []byte("valid runc")
 	binDir := privateTempDir(t)
-	runtime := mustNew(t, chamberRuntimeShared.Config{
+	runtime := mustNew(t, chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
@@ -93,7 +93,7 @@ func TestNewDefaultsToRuncAdapterName(t *testing.T) {
 func TestNewRejectsWrongDigest(t *testing.T) {
 	content := []byte("not the pinned binary")
 	binDir := privateTempDir(t)
-	_, err := newWithOptions(context.Background(), chamberRuntimeShared.Config{
+	_, err := newWithOptions(context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
@@ -114,7 +114,7 @@ func TestNewRejectsWrongDigest(t *testing.T) {
 }
 
 func TestNewRejectsNonOKResponse(t *testing.T) {
-	_, err := newWithOptions(context.Background(), chamberRuntimeShared.Config{
+	_, err := newWithOptions(context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
@@ -134,7 +134,7 @@ func TestNewRejectsNonOKResponse(t *testing.T) {
 func TestNewRejectsInterruptedBody(t *testing.T) {
 	content := []byte("partial")
 	binDir := privateTempDir(t)
-	_, err := newWithOptions(context.Background(), chamberRuntimeShared.Config{
+	_, err := newWithOptions(context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
@@ -153,7 +153,7 @@ func TestNewRejectsInterruptedBody(t *testing.T) {
 
 func TestNewDownloadCancellationHasCanceledCode(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	_, err := newWithOptions(ctx, chamberRuntimeShared.Config{
+	_, err := newWithOptions(ctx, chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
@@ -184,7 +184,7 @@ func TestNewUsesExistingValidBinary(t *testing.T) {
 		return response(http.StatusOK, io.NopCloser(strings.NewReader(""))), nil
 	})}
 
-	runtime := mustNew(t, chamberRuntimeShared.Config{
+	runtime := mustNew(t, chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
@@ -214,7 +214,7 @@ func TestNewMakesExistingValidBinaryExecutable(t *testing.T) {
 		return response(http.StatusOK, io.NopCloser(strings.NewReader(""))), nil
 	})}
 
-	runtime := mustNew(t, chamberRuntimeShared.Config{
+	runtime := mustNew(t, chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
@@ -240,7 +240,7 @@ func TestNewReplacesExistingInvalidBinary(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	runtime := mustNew(t, chamberRuntimeShared.Config{
+	runtime := mustNew(t, chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
@@ -275,7 +275,7 @@ func TestDescriptorDeclaresRuncSupport(t *testing.T) {
 	if !slices.Equal(descriptor.Capabilities.Privileges, []capability.Privilege{capability.Rootless}) {
 		t.Fatalf("privileges = %#v, want rootless only", descriptor.Capabilities.Privileges)
 	}
-	if !slices.Equal(descriptor.Capabilities.Isolation, []chamberRuntimeShared.Isolation{chamberRuntimeShared.ProcessIsolation}) {
+	if !slices.Equal(descriptor.Capabilities.Isolation, []chamberRuntime.Isolation{chamberRuntime.ProcessIsolation}) {
 		t.Fatalf("isolation = %#v, want process isolation", descriptor.Capabilities.Isolation)
 	}
 }
@@ -321,7 +321,7 @@ func TestNewReturnsAbsoluteBinaryPath(t *testing.T) {
 		_ = os.RemoveAll(relativeRuntimeRoot)
 	})
 
-	runtime := mustNew(t, chamberRuntimeShared.Config{
+	runtime := mustNew(t, chamberRuntime.Config{
 		RuntimeRoot:   relativeRuntimeRoot,
 		RuntimeBinDir: relativeBinDir,
 		Name:          "runc",
@@ -334,7 +334,7 @@ func TestNewReturnsAbsoluteBinaryPath(t *testing.T) {
 }
 
 func TestNewRequiresCompleteRuntimeBinaryConfiguration(t *testing.T) {
-	_, err := newWithOptions(context.Background(), chamberRuntimeShared.Config{
+	_, err := newWithOptions(context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
@@ -418,8 +418,8 @@ esac
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
 	var streamedStdout strings.Builder
 	var streamedStderr strings.Builder
-	container, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
-		Bundle: chamberBundleShared.ProvisionedBundle{
+	container, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
+		Bundle: chamberBundle.ProvisionedBundle{
 			ContainerID: "container-1",
 			BundlePath:  bundlePath,
 		},
@@ -453,14 +453,14 @@ esac
 	if result.ExitCode != 0 {
 		t.Fatalf("Container.Wait() exit code = %d, want 0", result.ExitCode)
 	}
-	stdoutContent, err := container.ReadLog(chamberRuntimeShared.StdoutLogStream)
+	stdoutContent, err := container.ReadLog(chamberRuntime.StdoutLogStream)
 	if err != nil {
 		t.Fatalf("ReadLog(stdout) error = %v", err)
 	}
 	if string(stdoutContent) != "stdout from fake runc" {
 		t.Fatalf("ReadLog(stdout) = %q, want fake runc stdout", string(stdoutContent))
 	}
-	stderrContent, err := container.ReadLog(chamberRuntimeShared.StderrLogStream)
+	stderrContent, err := container.ReadLog(chamberRuntime.StderrLogStream)
 	if err != nil {
 		t.Fatalf("ReadLog(stderr) error = %v", err)
 	}
@@ -497,8 +497,8 @@ esac
 `)
 
 	runtime := runtimeWithBinary(t, binaryPath, privateTempDir(t))
-	container, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
-		Bundle: chamberBundleShared.ProvisionedBundle{
+	container, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
+		Bundle: chamberBundle.ProvisionedBundle{
 			ContainerID: "short.job",
 			BundlePath:  runtimeBundlePath(t),
 		},
@@ -528,15 +528,15 @@ esac
 func TestRunStartFailureHasErrorCodeAndRemovesLogs(t *testing.T) {
 	stateRoot := privateTempDir(t)
 	runtime := &Runtime{
-		config: chamberRuntimeShared.Config{
+		config: chamberRuntime.Config{
 			RuntimeRoot: stateRoot,
 		},
 		binaryPath:       filepath.Join(t.TempDir(), "missing-runc"),
 		directoryManager: localfs.NewDirectoryManager(),
 	}
 
-	_, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
-		Bundle: chamberBundleShared.ProvisionedBundle{
+	_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
+		Bundle: chamberBundle.ProvisionedBundle{
 			ContainerID: "start-fails",
 			BundlePath:  runtimeBundlePath(t),
 		},
@@ -577,8 +577,8 @@ esac
 	stateRoot := privateTempDir(t)
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
 
-	_, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
-		Bundle: chamberBundleShared.ProvisionedBundle{
+	_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
+		Bundle: chamberBundle.ProvisionedBundle{
 			ContainerID: "terminal-bundle",
 			BundlePath:  bundlePath,
 		},
@@ -613,8 +613,8 @@ esac
 	stateRoot := privateTempDir(t)
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
 
-	_, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
-		Bundle: chamberBundleShared.ProvisionedBundle{
+	_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
+		Bundle: chamberBundle.ProvisionedBundle{
 			ContainerID: "missing-spec",
 			BundlePath:  privateTempDir(t),
 		},
@@ -658,8 +658,8 @@ esac
 	ctx, cancel := context.WithCancel(context.Background())
 	stateRoot := privateTempDir(t)
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
-	container, err := runtime.Run(ctx, chamberRuntimeShared.RunRequest{
-		Bundle: chamberBundleShared.ProvisionedBundle{
+	container, err := runtime.Run(ctx, chamberRuntime.RunRequest{
+		Bundle: chamberBundle.ProvisionedBundle{
 			ContainerID: "cancelled",
 			BundlePath:  runtimeBundlePath(t),
 		},
@@ -713,7 +713,7 @@ esac
 	if err != nil {
 		t.Fatalf("State() error = %v", err)
 	}
-	if state.ContainerID != "stateful" || state.Status != chamberRuntimeShared.ContainerStatusRunning {
+	if state.ContainerID != "stateful" || state.Status != chamberRuntime.ContainerStatusRunning {
 		t.Fatalf("State() = %#v, want stateful/running", state)
 	}
 	assertLines(t, filepath.Join(logDir, "state-args"), []string{"--root", stateRoot, "state", "stateful"})
@@ -852,15 +852,15 @@ esac
 }
 
 func TestControlCommandCancellationHasCanceledCode(t *testing.T) {
-	tests := map[string]func(context.Context, chamberRuntimeShared.Container) error{
-		"state": func(ctx context.Context, container chamberRuntimeShared.Container) error {
+	tests := map[string]func(context.Context, chamberRuntime.Container) error{
+		"state": func(ctx context.Context, container chamberRuntime.Container) error {
 			_, err := container.State(ctx)
 			return err
 		},
-		"signal": func(ctx context.Context, container chamberRuntimeShared.Container) error {
+		"signal": func(ctx context.Context, container chamberRuntime.Container) error {
 			return container.Signal(ctx, syscall.SIGTERM)
 		},
-		"delete": func(ctx context.Context, container chamberRuntimeShared.Container) error {
+		"delete": func(ctx context.Context, container chamberRuntime.Container) error {
 			return container.Delete(ctx, true)
 		},
 	}
@@ -928,8 +928,8 @@ func TestRunRejectsUnsafeContainerID(t *testing.T) {
 	for _, containerID := range invalidContainerIDs {
 		t.Run(containerID, func(t *testing.T) {
 			runtime := runtimeWithConfigOnly(t)
-			_, err := runtime.Run(context.Background(), chamberRuntimeShared.RunRequest{
-				Bundle: chamberBundleShared.ProvisionedBundle{
+			_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
+				Bundle: chamberBundle.ProvisionedBundle{
 					ContainerID: containerID,
 					BundlePath:  privateTempDir(t),
 				},
@@ -970,7 +970,7 @@ func TestReadLogMissingFileHasLogNotFoundCode(t *testing.T) {
 		stderrPath: filepath.Join(privateTempDir(t), "stderr.log"),
 	}}
 
-	_, err := container.ReadLog(chamberRuntimeShared.StdoutLogStream)
+	_, err := container.ReadLog(chamberRuntime.StdoutLogStream)
 	if err == nil {
 		t.Fatal("ReadLog(stdout) error = nil, want missing log error")
 	}
@@ -997,7 +997,7 @@ func TestDeleteLogRemovesSelectedStream(t *testing.T) {
 		stderrPath: stderrPath,
 	}}
 
-	if err := container.DeleteLog(chamberRuntimeShared.StdoutLogStream); err != nil {
+	if err := container.DeleteLog(chamberRuntime.StdoutLogStream); err != nil {
 		t.Fatalf("DeleteLog(stdout) error = %v", err)
 	}
 	if _, err := os.Stat(stdoutPath); !os.IsNotExist(err) {
@@ -1075,7 +1075,7 @@ func runtimeWithBinary(t *testing.T, binaryPath string, stateRoot string) *Runti
 	if err != nil {
 		t.Fatalf("ReadFile(%q) error = %v", binaryPath, err)
 	}
-	return mustNew(t, chamberRuntimeShared.Config{
+	return mustNew(t, chamberRuntime.Config{
 		RuntimeBinDir: filepath.Dir(binaryPath),
 		RuntimeRoot:   stateRoot,
 		Name:          "runc",
@@ -1086,14 +1086,14 @@ func runtimeWithConfigOnly(t *testing.T) *Runtime {
 	t.Helper()
 
 	content := []byte("binary")
-	return mustNew(t, chamberRuntimeShared.Config{
+	return mustNew(t, chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
 	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
 }
 
-func mustNew(t testing.TB, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager, options ...option) *Runtime {
+func mustNew(t testing.TB, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...option) *Runtime {
 	t.Helper()
 
 	config = prepareRuntimeConfig(t, config, directoryManager)
@@ -1104,11 +1104,11 @@ func mustNew(t testing.TB, config chamberRuntimeShared.Config, directoryManager 
 	return runtime
 }
 
-func prepareRuntimeConfig(t testing.TB, config chamberRuntimeShared.Config, directoryManager localfs.DirectoryManager) chamberRuntimeShared.Config {
+func prepareRuntimeConfig(t testing.TB, config chamberRuntime.Config, directoryManager localfs.DirectoryManager) chamberRuntime.Config {
 	t.Helper()
 
 	if config.Name == "" {
-		config.Name = chamberRuntimeShared.RuntimeNameRunc
+		config.Name = chamberRuntime.RuntimeNameRunc
 	}
 	if config.Privilege == "" {
 		config.Privilege = capability.Rootless

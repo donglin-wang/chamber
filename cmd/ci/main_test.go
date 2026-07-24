@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
@@ -134,14 +134,14 @@ func (c *blockingContainer) StdoutPath() string { return "" }
 
 func (c *blockingContainer) StderrPath() string { return "" }
 
-func (c *blockingContainer) Wait() (chamberRuntimeShared.ContainerResult, error) {
+func (c *blockingContainer) Wait() (chamberRuntime.ContainerResult, error) {
 	close(c.waitStarted)
 	<-c.deleted
-	return chamberRuntimeShared.ContainerResult{ExitCode: 137}, nil
+	return chamberRuntime.ContainerResult{ExitCode: 137}, nil
 }
 
-func (c *blockingContainer) State(ctx context.Context) (chamberRuntimeShared.ContainerState, error) {
-	return chamberRuntimeShared.ContainerState{ContainerID: c.ID()}, ctx.Err()
+func (c *blockingContainer) State(ctx context.Context) (chamberRuntime.ContainerState, error) {
+	return chamberRuntime.ContainerState{ContainerID: c.ID()}, ctx.Err()
 }
 
 func (c *blockingContainer) Signal(ctx context.Context, signal os.Signal) error {
@@ -159,11 +159,11 @@ func (c *blockingContainer) Delete(ctx context.Context, force bool) error {
 	return nil
 }
 
-func (c *blockingContainer) ReadLog(chamberRuntimeShared.LogStream) ([]byte, error) {
+func (c *blockingContainer) ReadLog(chamberRuntime.LogStream) ([]byte, error) {
 	return nil, nil
 }
 
-func (c *blockingContainer) DeleteLog(chamberRuntimeShared.LogStream) error {
+func (c *blockingContainer) DeleteLog(chamberRuntime.LogStream) error {
 	return nil
 }
 

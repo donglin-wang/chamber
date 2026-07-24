@@ -12,7 +12,7 @@ import (
 	goruntime "runtime"
 	"time"
 
-	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/imageref"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -26,15 +26,15 @@ import (
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-var _ chamberImageShared.Puller = (*Puller)(nil)
+var _ chamberImage.Puller = (*Puller)(nil)
 
 type Puller struct {
-	config           chamberImageShared.Config
+	config           chamberImage.Config
 	directoryManager localfs.DirectoryManager
 	logger           *chamberLogging.SlogLogger
 }
 
-func New(config chamberImageShared.Config, directoryManager localfs.DirectoryManager) (*Puller, error) {
+func New(config chamberImage.Config, directoryManager localfs.DirectoryManager) (*Puller, error) {
 	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
 	if err != nil {
 		return nil, err
@@ -47,48 +47,48 @@ func New(config chamberImageShared.Config, directoryManager localfs.DirectoryMan
 	}, nil
 }
 
-func (p *Puller) Pull(ctx context.Context, request chamberImageShared.PullRequest) (chamberImageShared.PulledImage, error) {
+func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (chamberImage.PulledImage, error) {
 	if ctx == nil {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := ctx.Err(); err != nil {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: image pull canceled before start: %w", chamberErrors.ErrCanceled, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: image pull canceled before start: %w", chamberErrors.ErrCanceled, err)
 	}
 	if p == nil || p.directoryManager == nil {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
 
 	canonicalReference, err := imageref.Canonical(request.Reference)
 	if err != nil {
-		return chamberImageShared.PulledImage{}, err
+		return chamberImage.PulledImage{}, err
 	}
 	ref, err := name.ParseReference(canonicalReference)
 	if err != nil {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: parse canonical image reference: %w", chamberErrors.ErrInvalidImageReference, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: parse canonical image reference: %w", chamberErrors.ErrInvalidImageReference, err)
 	}
 
 	platform := resolvePlatform(request.Platform)
 	policy := request.Policy
 	switch policy {
-	case "", chamberImageShared.PullIfMissing:
-		policy = chamberImageShared.PullIfMissing
-	case chamberImageShared.PullAlways:
+	case "", chamberImage.PullIfMissing:
+		policy = chamberImage.PullIfMissing
+	case chamberImage.PullAlways:
 	default:
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: unsupported pull policy %q", chamberErrors.ErrInvalidRequest, request.Policy)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: unsupported pull policy %q", chamberErrors.ErrInvalidRequest, request.Policy)
 	}
 
-	destination, err := chamberImageShared.DestinationForCanonicalImage(p.config.Root, canonicalReference, request.Platform)
+	destination, err := chamberImage.DestinationForCanonicalImage(p.config.Root, canonicalReference, request.Platform)
 	if err != nil {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: resolve image destination: %w", chamberErrors.ErrInvalidRequest, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: resolve image destination: %w", chamberErrors.ErrInvalidRequest, err)
 	}
 	parent := filepath.Dir(destination)
 	if err := p.directoryManager.MkdirPrivate(parent); err != nil {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: create image destination parent: %v", chamberErrors.ErrFilesystemFailed, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: create image destination parent: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
-	if policy == chamberImageShared.PullIfMissing && chamberImageShared.LayoutExistsContext(ctx, destination) {
+	if policy == chamberImage.PullIfMissing && chamberImage.LayoutExistsContext(ctx, destination) {
 		pulled, err := existingPulledImage(canonicalReference, platform, destination)
 		if err != nil {
-			return chamberImageShared.PulledImage{}, fmt.Errorf("%w: read existing OCI image layout: %w", chamberErrors.ErrPullFailed, err)
+			return chamberImage.PulledImage{}, fmt.Errorf("%w: read existing OCI image layout: %w", chamberErrors.ErrPullFailed, err)
 		}
 		chamberLogging.InfoWith(p.logger, ctx, "reused image layout",
 			"image_ref", pulled.Reference,
@@ -120,22 +120,22 @@ func (p *Puller) Pull(ctx context.Context, request chamberImageShared.PullReques
 	img, err := remote.Image(ref, options...)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return chamberImageShared.PulledImage{}, fmt.Errorf("%w: image pull canceled while fetching image: %w", chamberErrors.ErrCanceled, ctxErr)
+			return chamberImage.PulledImage{}, fmt.Errorf("%w: image pull canceled while fetching image: %w", chamberErrors.ErrCanceled, ctxErr)
 		}
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: fetch image: %w", chamberErrors.ErrPullFailed, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: fetch image: %w", chamberErrors.ErrPullFailed, err)
 	}
 
 	digest, err := img.Digest()
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return chamberImageShared.PulledImage{}, fmt.Errorf("%w: image pull canceled while resolving digest: %w", chamberErrors.ErrCanceled, ctxErr)
+			return chamberImage.PulledImage{}, fmt.Errorf("%w: image pull canceled while resolving digest: %w", chamberErrors.ErrCanceled, ctxErr)
 		}
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: resolve image digest: %w", chamberErrors.ErrPullFailed, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: resolve image digest: %w", chamberErrors.ErrPullFailed, err)
 	}
 
 	tmp, err := p.directoryManager.MkdirTemp(parent, "."+filepath.Base(destination)+".tmp-*")
 	if err != nil {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: create temporary image layout: %v", chamberErrors.ErrFilesystemFailed, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: create temporary image layout: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
 	renamed := false
 	defer func() {
@@ -146,7 +146,7 @@ func (p *Puller) Pull(ctx context.Context, request chamberImageShared.PullReques
 
 	layoutPath, err := layout.Write(tmp, empty.Index)
 	if err != nil {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: write OCI image layout: %w", chamberErrors.ErrPullFailed, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: write OCI image layout: %w", chamberErrors.ErrPullFailed, err)
 	}
 	if err := layoutPath.AppendImage(
 		img,
@@ -156,36 +156,36 @@ func (p *Puller) Pull(ctx context.Context, request chamberImageShared.PullReques
 		}),
 	); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return chamberImageShared.PulledImage{}, fmt.Errorf("%w: image pull canceled while writing image layout: %w", chamberErrors.ErrCanceled, ctxErr)
+			return chamberImage.PulledImage{}, fmt.Errorf("%w: image pull canceled while writing image layout: %w", chamberErrors.ErrCanceled, ctxErr)
 		}
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: write OCI image layout: %w", chamberErrors.ErrPullFailed, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: write OCI image layout: %w", chamberErrors.ErrPullFailed, err)
 	}
-	if err := chamberImageShared.ValidateLayoutContext(ctx, tmp); err != nil {
-		return chamberImageShared.PulledImage{}, generatedLayoutValidationError(err)
+	if err := chamberImage.ValidateLayoutContext(ctx, tmp); err != nil {
+		return chamberImage.PulledImage{}, generatedLayoutValidationError(err)
 	}
 
 	backup := ""
-	if policy == chamberImageShared.PullAlways {
+	if policy == chamberImage.PullAlways {
 		existing, err := moveExistingLayout(parent, filepath.Base(destination), destination)
 		if err != nil {
-			return chamberImageShared.PulledImage{}, err
+			return chamberImage.PulledImage{}, err
 		}
 		backup = existing
 	}
 	if err := os.Rename(tmp, destination); err != nil {
 		if backup != "" {
 			if restoreErr := os.Rename(backup, destination); restoreErr != nil {
-				return chamberImageShared.PulledImage{}, fmt.Errorf("%w: commit OCI image layout: %w; restore previous layout: %v", chamberErrors.ErrPullFailed, err, restoreErr)
+				return chamberImage.PulledImage{}, fmt.Errorf("%w: commit OCI image layout: %w; restore previous layout: %v", chamberErrors.ErrPullFailed, err, restoreErr)
 			}
 		}
-		if policy == chamberImageShared.PullIfMissing && chamberImageShared.LayoutExistsContext(ctx, destination) {
+		if policy == chamberImage.PullIfMissing && chamberImage.LayoutExistsContext(ctx, destination) {
 			pulled, existingErr := existingPulledImage(canonicalReference, platform, destination)
 			if existingErr != nil {
-				return chamberImageShared.PulledImage{}, fmt.Errorf("%w: read existing OCI image layout: %w", chamberErrors.ErrPullFailed, existingErr)
+				return chamberImage.PulledImage{}, fmt.Errorf("%w: read existing OCI image layout: %w", chamberErrors.ErrPullFailed, existingErr)
 			}
 			return pulled, nil
 		}
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: commit OCI image layout: %w", chamberErrors.ErrPullFailed, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: commit OCI image layout: %w", chamberErrors.ErrPullFailed, err)
 	}
 	renamed = true
 	if backup != "" {
@@ -194,10 +194,10 @@ func (p *Puller) Pull(ctx context.Context, request chamberImageShared.PullReques
 
 	sizeBytes, err := dirSize(destination)
 	if err != nil {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: measure OCI image layout: %w", chamberErrors.ErrPullFailed, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: measure OCI image layout: %w", chamberErrors.ErrPullFailed, err)
 	}
 
-	pulled := chamberImageShared.PulledImage{
+	pulled := chamberImage.PulledImage{
 		Reference:  canonicalReference,
 		Digest:     digest.String(),
 		LayoutPath: destination,
@@ -220,7 +220,7 @@ func generatedLayoutValidationError(err error) error {
 	return fmt.Errorf("%w: verify generated OCI image layout: %w", chamberErrors.ErrPullFailed, err)
 }
 
-func resolvePlatform(platform chamberImageShared.Platform) v1.Platform {
+func resolvePlatform(platform chamberImage.Platform) v1.Platform {
 	resolved := v1.Platform{
 		OS:           "linux",
 		Architecture: goruntime.GOARCH,
@@ -237,7 +237,7 @@ func resolvePlatform(platform chamberImageShared.Platform) v1.Platform {
 	return resolved
 }
 
-func authenticator(auth *chamberImageShared.Auth) authn.Authenticator {
+func authenticator(auth *chamberImage.Auth) authn.Authenticator {
 	config := authn.AuthConfig{
 		Username: auth.Username,
 		Password: auth.Password,
@@ -268,21 +268,21 @@ func moveExistingLayout(parent string, base string, destination string) (string,
 	return backup, nil
 }
 
-func existingPulledImage(reference string, platform v1.Platform, path string) (chamberImageShared.PulledImage, error) {
+func existingPulledImage(reference string, platform v1.Platform, path string) (chamberImage.PulledImage, error) {
 	layoutPath, err := layout.FromPath(path)
 	if err != nil {
-		return chamberImageShared.PulledImage{}, err
+		return chamberImage.PulledImage{}, err
 	}
 	index, err := layoutPath.ImageIndex()
 	if err != nil {
-		return chamberImageShared.PulledImage{}, err
+		return chamberImage.PulledImage{}, err
 	}
 	manifest, err := index.IndexManifest()
 	if err != nil {
-		return chamberImageShared.PulledImage{}, err
+		return chamberImage.PulledImage{}, err
 	}
 	if len(manifest.Manifests) == 0 {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: OCI image layout index has no manifests", chamberErrors.ErrPullFailed)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: OCI image layout index has no manifests", chamberErrors.ErrPullFailed)
 	}
 	var descriptor v1.Descriptor
 	found := false
@@ -294,13 +294,13 @@ func existingPulledImage(reference string, platform v1.Platform, path string) (c
 		}
 	}
 	if !found {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: OCI image layout has no manifest for reference %q and platform %s/%s", chamberErrors.ErrPullFailed, reference, platform.OS, platform.Architecture)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: OCI image layout has no manifest for reference %q and platform %s/%s", chamberErrors.ErrPullFailed, reference, platform.OS, platform.Architecture)
 	}
 	sizeBytes, err := dirSize(path)
 	if err != nil {
-		return chamberImageShared.PulledImage{}, fmt.Errorf("%w: measure OCI image layout: %w", chamberErrors.ErrPullFailed, err)
+		return chamberImage.PulledImage{}, fmt.Errorf("%w: measure OCI image layout: %w", chamberErrors.ErrPullFailed, err)
 	}
-	return chamberImageShared.PulledImage{
+	return chamberImage.PulledImage{
 		Reference:  reference,
 		Digest:     descriptor.Digest.String(),
 		LayoutPath: path,

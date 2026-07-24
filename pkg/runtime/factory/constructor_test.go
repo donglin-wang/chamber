@@ -1,4 +1,4 @@
-package runtime
+package factory
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -17,12 +17,12 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	root := t.TempDir()
 
-	cfg := chamberRuntimeShared.DefaultConfig(root)
+	cfg := chamberRuntime.DefaultConfig(root)
 
 	if cfg.RuntimeRoot != filepath.Join(root, "run", "runtime") {
 		t.Fatalf("RuntimeRoot = %q, want default runtime root", cfg.RuntimeRoot)
 	}
-	if cfg.Name != chamberRuntimeShared.RuntimeNameRunc {
+	if cfg.Name != chamberRuntime.RuntimeNameRunc {
 		t.Fatalf("Name = %q, want runc", cfg.Name)
 	}
 	if cfg.Privilege != capability.Rootless {
@@ -31,7 +31,7 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestNewRejectsUnsupportedRuntimeName(t *testing.T) {
-	_, err := newRuntimeForOS(context.Background(), chamberRuntimeShared.Config{
+	_, err := newRuntimeForOS(context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
 		Name:          "crun",
@@ -49,7 +49,7 @@ func TestNewRejectsUnsupportedRuntimeName(t *testing.T) {
 }
 
 func TestNewRequiresFinalRuntimeConfig(t *testing.T) {
-	tests := map[string]chamberRuntimeShared.Config{
+	tests := map[string]chamberRuntime.Config{
 		"name": {
 			RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 			RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
@@ -58,7 +58,7 @@ func TestNewRequiresFinalRuntimeConfig(t *testing.T) {
 		"privilege": {
 			RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 			RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
-			Name:          chamberRuntimeShared.RuntimeNameRunc,
+			Name:          chamberRuntime.RuntimeNameRunc,
 		},
 	}
 
@@ -79,10 +79,10 @@ func TestNewRequiresFinalRuntimeConfig(t *testing.T) {
 }
 
 func TestNewRejectsUnsupportedHostWithErrorCode(t *testing.T) {
-	_, err := newRuntimeForOS(context.Background(), chamberRuntimeShared.Config{
+	_, err := newRuntimeForOS(context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
-		Name:          chamberRuntimeShared.RuntimeNameRunc,
+		Name:          chamberRuntime.RuntimeNameRunc,
 		Privilege:     capability.Rootless,
 	}, localfs.NewDirectoryManager(), "darwin")
 	if err == nil {
@@ -94,10 +94,10 @@ func TestNewRejectsUnsupportedHostWithErrorCode(t *testing.T) {
 }
 
 func TestNewWrapsRuntimeRootSetupFailuresWithFilesystemCode(t *testing.T) {
-	_, err := newRuntimeForOS(context.Background(), chamberRuntimeShared.Config{
+	_, err := newRuntimeForOS(context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
-		Name:          chamberRuntimeShared.RuntimeNameRunc,
+		Name:          chamberRuntime.RuntimeNameRunc,
 		Privilege:     capability.Rootless,
 	}, failingDirectoryManager{err: errors.New("disk full")}, "linux")
 	if err == nil {

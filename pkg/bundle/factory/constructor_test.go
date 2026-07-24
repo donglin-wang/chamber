@@ -1,4 +1,4 @@
-package bundle
+package factory
 
 import (
 	"errors"
@@ -7,28 +7,28 @@ import (
 	"strings"
 	"testing"
 
-	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
 func TestNewProvisionerRequiresDirectoryManager(t *testing.T) {
-	if _, err := NewProvisioner(chamberBundleShared.Config{Root: t.TempDir()}, nil); err == nil {
+	if _, err := NewProvisioner(chamberBundle.Config{Root: t.TempDir()}, nil); err == nil {
 		t.Fatal("NewProvisioner() error = nil, want directory manager error")
 	}
 }
 
 func TestNewProvisionerRequiresFinalConfig(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "bundles")
-	tests := map[string]chamberBundleShared.Config{
+	tests := map[string]chamberBundle.Config{
 		"name": {
 			Root:      root,
 			Privilege: capability.Rootless,
 		},
 		"privilege": {
 			Root: root,
-			Name: chamberBundleShared.ProvisionerNameDirectory,
+			Name: chamberBundle.ProvisionerNameDirectory,
 		},
 	}
 
@@ -54,7 +54,7 @@ func TestNewProvisionerRequiresFinalConfig(t *testing.T) {
 func TestNewProvisionerRejectsUnsupportedName(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "bundles")
 
-	_, err := NewProvisioner(chamberBundleShared.Config{
+	_, err := NewProvisioner(chamberBundle.Config{
 		Root:      root,
 		Name:      "overlay",
 		Privilege: capability.Rootless,
@@ -75,9 +75,9 @@ func TestNewProvisionerRejectsUnsupportedName(t *testing.T) {
 }
 
 func TestNewProvisionerWrapsBundleRootSetupFailuresWithFilesystemCode(t *testing.T) {
-	_, err := NewProvisioner(chamberBundleShared.Config{
+	_, err := NewProvisioner(chamberBundle.Config{
 		Root:      filepath.Join(t.TempDir(), "bundles"),
-		Name:      chamberBundleShared.ProvisionerNameDirectory,
+		Name:      chamberBundle.ProvisionerNameDirectory,
 		Privilege: capability.Rootless,
 	}, failingDirectoryManager{err: errors.New("disk full")})
 	if err == nil {

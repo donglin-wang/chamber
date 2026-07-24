@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	"github.com/donglin-wang/chamber/pkg/shared/testutil"
@@ -23,14 +23,14 @@ import (
 const busyboxReference = "index.docker.io/library/busybox:latest"
 
 func TestPullRejectsUnsupportedPolicy(t *testing.T) {
-	puller, err := New(chamberImageShared.Config{Root: filepath.Join(privateTempDir(t), "images")}, localfs.NewDirectoryManager())
+	puller, err := New(chamberImage.Config{Root: filepath.Join(privateTempDir(t), "images")}, localfs.NewDirectoryManager())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	_, err = puller.Pull(context.Background(), chamberImageShared.PullRequest{
+	_, err = puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference: "example.com/library/busybox:latest",
-		Policy:    chamberImageShared.PullPolicy("eventually"),
+		Policy:    chamberImage.PullPolicy("eventually"),
 	})
 	if err == nil {
 		t.Fatal("Pull() error = nil, want unsupported policy error")
@@ -41,14 +41,14 @@ func TestPullRejectsUnsupportedPolicy(t *testing.T) {
 }
 
 func TestPullReturnsFilesystemCodeForDestinationParentSetup(t *testing.T) {
-	puller, err := New(chamberImageShared.Config{Root: filepath.Join(privateTempDir(t), "images")}, failingDirectoryManager{
+	puller, err := New(chamberImage.Config{Root: filepath.Join(privateTempDir(t), "images")}, failingDirectoryManager{
 		err: fmt.Errorf("%w: root is not private", chamberErrors.ErrInvalidRequest),
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	_, err = puller.Pull(context.Background(), chamberImageShared.PullRequest{
+	_, err = puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference: "example.com/library/busybox:latest",
 	})
 	if err == nil {
@@ -93,7 +93,7 @@ func (manager failingDirectoryManager) CreateTemp(string, string) (*os.File, err
 }
 
 func TestResolvePlatformDefaultsToLinuxHostArchitecture(t *testing.T) {
-	platform := resolvePlatform(chamberImageShared.Platform{})
+	platform := resolvePlatform(chamberImage.Platform{})
 
 	if platform.OS != "linux" {
 		t.Fatalf("OS = %q, want linux", platform.OS)
@@ -117,7 +117,7 @@ func privateTempDir(t *testing.T) string {
 }
 
 func TestResolvePlatformAppliesRequestFields(t *testing.T) {
-	platform := resolvePlatform(chamberImageShared.Platform{
+	platform := resolvePlatform(chamberImage.Platform{
 		OS:           "linux",
 		Architecture: "arm64",
 		Variant:      "v8",
@@ -129,7 +129,7 @@ func TestResolvePlatformAppliesRequestFields(t *testing.T) {
 }
 
 func TestAuthenticatorAppliesBasicAndTokenAuth(t *testing.T) {
-	auth, err := authenticator(&chamberImageShared.Auth{
+	auth, err := authenticator(&chamberImage.Auth{
 		Username: "user",
 		Password: "pass",
 		Token:    "registry-token",
@@ -153,7 +153,7 @@ func TestExistingPulledImageRequiresMatchingReferenceAnnotation(t *testing.T) {
 		t.Fatalf("AppendImage() error = %v", err)
 	}
 
-	_, err = existingPulledImage("example.com/library/busybox:latest", resolvePlatform(chamberImageShared.Platform{}), path)
+	_, err = existingPulledImage("example.com/library/busybox:latest", resolvePlatform(chamberImage.Platform{}), path)
 	if err == nil {
 		t.Fatal("existingPulledImage() error = nil, want missing reference error")
 	}
@@ -182,7 +182,7 @@ func requireIntegrationTest(t *testing.T) {
 func TestPullInvalidReference(t *testing.T) {
 	puller, _ := newTestPuller(t)
 
-	_, err := puller.Pull(context.Background(), chamberImageShared.PullRequest{
+	_, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference: "not a reference !!",
 	})
 	if err == nil {
@@ -196,7 +196,7 @@ func TestPullFetchFailureLeavesNoFinalLayout(t *testing.T) {
 	puller, root := newTestPuller(t)
 	destination := imageDestination(t, root, reference)
 
-	_, err := puller.Pull(context.Background(), chamberImageShared.PullRequest{
+	_, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference: reference,
 	})
 	if err == nil {
@@ -221,12 +221,12 @@ func TestPullInvalidExistingLayoutIsReturned(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	puller, err := New(chamberImageShared.Config{Root: root}, localfs.NewDirectoryManager())
+	puller, err := New(chamberImage.Config{Root: root}, localfs.NewDirectoryManager())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	_, err = puller.Pull(context.Background(), chamberImageShared.PullRequest{
+	_, err = puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference: image.reference,
 	})
 	if err == nil {
@@ -245,13 +245,13 @@ func TestPullSuccessReturnsDigestSizeAndUTCTime(t *testing.T) {
 	assertPullSuccessReturnsDigestSizeAndUTCTime(t, puller, root, localImageReference(t))
 }
 
-func assertPullSuccessReturnsDigestSizeAndUTCTime(t *testing.T, puller chamberImageShared.Puller, root string, image imageFixture) {
+func assertPullSuccessReturnsDigestSizeAndUTCTime(t *testing.T, puller chamberImage.Puller, root string, image imageFixture) {
 	t.Helper()
 
 	destination := imageDestination(t, root, image.reference)
 	before := time.Now().UTC()
 
-	pulled, err := puller.Pull(context.Background(), chamberImageShared.PullRequest{
+	pulled, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference: image.reference,
 	})
 	if err != nil {
@@ -292,13 +292,13 @@ func TestPullSuccessWithExplicitPlatformAndAuth(t *testing.T) {
 	puller, root := newTestPuller(t)
 	destination := imageDestination(t, root, image.reference)
 
-	pulled, err := puller.Pull(context.Background(), chamberImageShared.PullRequest{
+	pulled, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference: image.reference,
-		Platform: chamberImageShared.Platform{
+		Platform: chamberImage.Platform{
 			OS:           "linux",
 			Architecture: runtime.GOARCH,
 		},
-		Auth: &chamberImageShared.Auth{
+		Auth: &chamberImage.Auth{
 			Username: "user",
 			Password: "pass",
 		},
@@ -316,7 +316,7 @@ func TestPullAlwaysRefreshesMutableTag(t *testing.T) {
 	registry := testutil.NewFakeRegistry(t)
 	reference, digest := registry.PushRandomImage(t, "library/mutable", "latest")
 	puller, _ := newTestPuller(t)
-	first, err := puller.Pull(context.Background(), chamberImageShared.PullRequest{
+	first, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference: reference,
 	})
 	if err != nil {
@@ -330,7 +330,7 @@ func TestPullAlwaysRefreshesMutableTag(t *testing.T) {
 	if refreshedDigest.String() == first.Digest {
 		t.Fatalf("test registry generated same digest twice: %s", refreshedDigest)
 	}
-	cached, err := puller.Pull(context.Background(), chamberImageShared.PullRequest{
+	cached, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference: reference,
 	})
 	if err != nil {
@@ -340,9 +340,9 @@ func TestPullAlwaysRefreshesMutableTag(t *testing.T) {
 		t.Fatalf("cached Digest = %q, want original %q", cached.Digest, first.Digest)
 	}
 
-	refreshed, err := puller.Pull(context.Background(), chamberImageShared.PullRequest{
+	refreshed, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference: reference,
-		Policy:    chamberImageShared.PullAlways,
+		Policy:    chamberImage.PullAlways,
 	})
 	if err != nil {
 		t.Fatalf("Pull(always) error = %v", err)
@@ -357,11 +357,11 @@ type imageFixture struct {
 	digest    string
 }
 
-func newTestPuller(t *testing.T) (chamberImageShared.Puller, string) {
+func newTestPuller(t *testing.T) (chamberImage.Puller, string) {
 	t.Helper()
 
 	root := filepath.Join(privateTempDir(t), "images")
-	puller, err := New(chamberImageShared.Config{Root: root}, localfs.NewDirectoryManager())
+	puller, err := New(chamberImage.Config{Root: root}, localfs.NewDirectoryManager())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -382,7 +382,7 @@ func localImageReference(t *testing.T) imageFixture {
 func imageDestination(t *testing.T, root string, reference string) string {
 	t.Helper()
 
-	destination, err := chamberImageShared.DestinationForCanonicalImage(root, reference, chamberImageShared.Platform{})
+	destination, err := chamberImage.DestinationForCanonicalImage(root, reference, chamberImage.Platform{})
 	if err != nil {
 		t.Fatalf("DestinationForCanonicalImage() error = %v", err)
 	}
@@ -412,11 +412,11 @@ func assertLayoutHasImageRef(t *testing.T, path string, reference string) {
 	t.Fatalf("OCI layout ref annotation %q not found for reference %q", imagespec.AnnotationRefName, reference)
 }
 
-func assertPullReusesExistingLayout(t *testing.T, puller chamberImageShared.Puller, reference string, first chamberImageShared.PulledImage) {
+func assertPullReusesExistingLayout(t *testing.T, puller chamberImage.Puller, reference string, first chamberImage.PulledImage) {
 	t.Helper()
 
 	before := time.Now().UTC()
-	reused, err := puller.Pull(context.Background(), chamberImageShared.PullRequest{
+	reused, err := puller.Pull(context.Background(), chamberImage.PullRequest{
 		Reference: reference,
 	})
 	if err != nil {

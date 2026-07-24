@@ -1,6 +1,6 @@
-// Package image is the public SDK entry point for Chamber image operations.
+// Package image defines the public SDK contracts and configuration for Chamber
+// image operations.
 //
-// NewPuller returns a ready OCI image puller that writes OCI image layouts under
-// a caller-provided root. Callers own root placement, locking, cleanup, and
-// recovery.
+// Use the factory subpackage to construct Chamber's built-in image operation
+// implementations. Callers own root placement, locking, cleanup, and recovery.
 package image

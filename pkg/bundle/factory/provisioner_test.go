@@ -1,4 +1,4 @@
-package bundle
+package factory
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 	"sort"
 	"testing"
 
-	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -22,7 +22,7 @@ type provisionerImplementation struct {
 
 var provisionerImplementations = []provisionerImplementation{
 	{
-		name:      chamberBundleShared.ProvisionerNameDirectory,
+		name:      chamberBundle.ProvisionerNameDirectory,
 		privilege: capability.Rootless,
 		privileges: []capability.Privilege{
 			capability.Rootless,
@@ -35,7 +35,7 @@ func TestProvisionerImplementationsSatisfySharedConstructorContract(t *testing.T
 		t.Run(implementation.name, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "bundles")
 
-			provisioner, err := NewProvisioner(chamberBundleShared.Config{
+			provisioner, err := NewProvisioner(chamberBundle.Config{
 				Root:      root,
 				Name:      implementation.name,
 				Privilege: implementation.privilege,
@@ -64,7 +64,7 @@ func TestProvisionerImplementationsRejectUnsupportedPrivilegeBeforeFilesystemMut
 		t.Run(implementation.name, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "bundles")
 
-			_, err := NewProvisioner(chamberBundleShared.Config{
+			_, err := NewProvisioner(chamberBundle.Config{
 				Root:      root,
 				Name:      implementation.name,
 				Privilege: capability.Rootful,

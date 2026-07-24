@@ -1,4 +1,4 @@
-package image
+package factory
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
@@ -14,7 +14,7 @@ import (
 func TestNewPreparesConfiguredImageRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "images")
 
-	puller, err := NewPuller(chamberImageShared.Config{Root: root}, localfs.NewDirectoryManager())
+	puller, err := NewPuller(chamberImage.Config{Root: root}, localfs.NewDirectoryManager())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -25,13 +25,13 @@ func TestNewPreparesConfiguredImageRoot(t *testing.T) {
 }
 
 func TestNewRequiresConfiguredImageRoot(t *testing.T) {
-	if _, err := NewPuller(chamberImageShared.Config{}, localfs.NewDirectoryManager()); err == nil {
+	if _, err := NewPuller(chamberImage.Config{}, localfs.NewDirectoryManager()); err == nil {
 		t.Fatal("New() error = nil, want root required error")
 	}
 }
 
 func TestNewRequiresDirectoryManager(t *testing.T) {
-	if _, err := NewPuller(chamberImageShared.Config{}, nil); err == nil {
+	if _, err := NewPuller(chamberImage.Config{}, nil); err == nil {
 		t.Fatal("New() error = nil, want directory manager error")
 	} else if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
 		t.Fatalf("New() error = %v, want invalid request code", err)
@@ -39,7 +39,7 @@ func TestNewRequiresDirectoryManager(t *testing.T) {
 }
 
 func TestNewWrapsImageRootSetupFailuresWithFilesystemCode(t *testing.T) {
-	_, err := NewPuller(chamberImageShared.Config{Root: filepath.Join(t.TempDir(), "images")}, failingDirectoryManager{err: errors.New("disk full")})
+	_, err := NewPuller(chamberImage.Config{Root: filepath.Join(t.TempDir(), "images")}, failingDirectoryManager{err: errors.New("disk full")})
 	if err == nil {
 		t.Fatal("New() error = nil, want filesystem error")
 	}

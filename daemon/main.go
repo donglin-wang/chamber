@@ -15,9 +15,9 @@ import (
 
 	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	chamberEtcdMetadataStore "github.com/donglin-wang/chamber/daemon/metadata/etcd"
-	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chamberImage "github.com/donglin-wang/chamber/pkg/image"
-	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
+	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
+	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
@@ -73,18 +73,18 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer store.Close()
 
-	runtime, err := chamberRuntime.NewRuntime(lifetime, cfg.Runtime, directoryManager)
+	runtime, err := chamberRuntimeFactory.NewRuntime(lifetime, cfg.Runtime, directoryManager)
 	if err != nil {
 		return fmt.Errorf("create runtime: %w", err)
 	}
 
 	mux := newServer()
-	puller, err := chamberImage.NewPuller(cfg.Image, directoryManager)
+	puller, err := chamberImageFactory.NewPuller(cfg.Image, directoryManager)
 	if err != nil {
 		return fmt.Errorf("create image puller: %w", err)
 	}
 	registerImageRoutes(mux, cfg, store, puller)
-	provisioner, err := chamberBundle.NewProvisioner(
+	provisioner, err := chamberBundleFactory.NewProvisioner(
 		cfg.Bundle,
 		directoryManager,
 	)

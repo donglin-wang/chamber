@@ -12,11 +12,11 @@ import (
 	"time"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chamberBundleShared "github.com/donglin-wang/chamber/pkg/bundle/shared"
+	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
-	chamberImageShared "github.com/donglin-wang/chamber/pkg/image/shared"
+	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
-	chamberRuntimeShared "github.com/donglin-wang/chamber/pkg/runtime/shared"
+	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
@@ -103,10 +103,10 @@ func run(cfg *config) error {
 		}
 	}
 
-	runtime, err := chamberRuntime.NewRuntime(ctx, chamberRuntimeShared.Config{
+	runtime, err := chamberRuntimeFactory.NewRuntime(ctx, chamberRuntime.Config{
 		RuntimeRoot:   paths.runtimeRoot,
 		RuntimeBinDir: paths.runtimeBinDir,
-		Name:          chamberRuntimeShared.RuntimeNameRunc,
+		Name:          chamberRuntime.RuntimeNameRunc,
 		Privilege:     capability.Rootless,
 		Logging:       loggingConfig,
 	}, directoryManager)
@@ -116,7 +116,7 @@ func run(cfg *config) error {
 	descriptor := runtime.Descriptor()
 	logging.Info(ctx, "CI runtime ready", "runtime", descriptor.Name, "version", descriptor.Version, "path", descriptor.BinaryPath)
 
-	puller, err := chamberImage.NewPuller(chamberImageShared.Config{
+	puller, err := chamberImageFactory.NewPuller(chamberImage.Config{
 		Root:    paths.imageRoot,
 		Logging: loggingConfig,
 	}, directoryManager)
@@ -128,10 +128,10 @@ func run(cfg *config) error {
 		return err
 	}
 
-	provisioner, err := chamberBundle.NewProvisioner(
-		chamberBundleShared.Config{
+	provisioner, err := chamberBundleFactory.NewProvisioner(
+		chamberBundle.Config{
 			Root:      paths.bundleRoot,
-			Name:      chamberBundleShared.ProvisionerNameDirectory,
+			Name:      chamberBundle.ProvisionerNameDirectory,
 			Privilege: capability.Rootless,
 			Logging:   loggingConfig,
 		},
@@ -223,11 +223,11 @@ func ciPaths(root string) paths {
 	}
 }
 
-func ensureImage(ctx context.Context, puller chamberImageShared.Puller, imageRef string) (string, error) {
+func ensureImage(ctx context.Context, puller chamberImage.Puller, imageRef string) (string, error) {
 	logging.Info(ctx, "CI image pull started", "image_ref", imageRef)
-	pulled, err := puller.Pull(ctx, chamberImageShared.PullRequest{
+	pulled, err := puller.Pull(ctx, chamberImage.PullRequest{
 		Reference: imageRef,
-		Platform: chamberImageShared.Platform{
+		Platform: chamberImage.Platform{
 			OS: "linux",
 		},
 	})
@@ -251,17 +251,17 @@ type jobRequest struct {
 	keep         bool
 }
 
-func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provisioner chamberBundleShared.Provisioner, request jobRequest) jobResult {
+func runJob(ctx context.Context, runtime chamberRuntime.Runtime, provisioner chamberBundle.Provisioner, request jobRequest) jobResult {
 	containerID := "chamber-ci-" + request.job.name + "-" + uuid.NewString()
 	result := jobResult{name: request.job.name, exitCode: 1}
 	terminal := false
 
 	logging.Info(ctx, "CI job started", "job", request.job.name, "args", request.job.args)
-	provisioned, err := provisioner.Provision(ctx, chamberBundleShared.ProvisionRequest{
+	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
 		ContainerID: containerID,
 		ImageLayout: request.imageLayout,
 		ImageRef:    request.imageRef,
-		Process: chamberBundleShared.ProcessSpec{
+		Process: chamberBundle.ProcessSpec{
 			Args: request.job.args,
 			Env: []string{
 				"PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -273,7 +273,7 @@ func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provision
 			Cwd:      "/workspace",
 			Terminal: &terminal,
 		},
-		Mounts: []chamberBundleShared.Mount{
+		Mounts: []chamberBundle.Mount{
 			{Source: request.workspace, Target: "/workspace"},
 			{Source: request.goBuildCache, Target: "/gocache"},
 			{Source: request.goModCache, Target: "/gomodcache"},
@@ -291,7 +291,7 @@ func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provision
 		}()
 	}
 
-	container, err := runtime.Run(ctx, chamberRuntimeShared.RunRequest{Bundle: provisioned})
+	container, err := runtime.Run(ctx, chamberRuntime.RunRequest{Bundle: provisioned})
 	if err != nil {
 		result.err = fmt.Errorf("run job container: %w", err)
 		return result
@@ -300,12 +300,12 @@ func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provision
 	result.exitCode = waitResult.ExitCode
 	result.err = waitErr
 
-	if stdout, err := container.ReadLog(chamberRuntimeShared.StdoutLogStream); err == nil {
+	if stdout, err := container.ReadLog(chamberRuntime.StdoutLogStream); err == nil {
 		result.stdout = stdout
 	} else if result.err == nil {
 		result.err = fmt.Errorf("read stdout: %w", err)
 	}
-	if stderr, err := container.ReadLog(chamberRuntimeShared.StderrLogStream); err == nil {
+	if stderr, err := container.ReadLog(chamberRuntime.StderrLogStream); err == nil {
 		result.stderr = stderr
 	} else if result.err == nil {
 		result.err = fmt.Errorf("read stderr: %w", err)
@@ -315,9 +315,9 @@ func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provision
 		result.err = fmt.Errorf("delete runtime container: %w", deleteErr)
 	}
 	if !request.keep {
-		for _, stream := range []chamberRuntimeShared.LogStream{
-			chamberRuntimeShared.StdoutLogStream,
-			chamberRuntimeShared.StderrLogStream,
+		for _, stream := range []chamberRuntime.LogStream{
+			chamberRuntime.StdoutLogStream,
+			chamberRuntime.StderrLogStream,
 		} {
 			if deleteErr := container.DeleteLog(stream); deleteErr != nil && result.err == nil {
 				result.err = fmt.Errorf("delete %s log: %w", stream, deleteErr)
@@ -328,11 +328,11 @@ func runJob(ctx context.Context, runtime chamberRuntimeShared.Runtime, provision
 }
 
 type waitOutcome struct {
-	result chamberRuntimeShared.ContainerResult
+	result chamberRuntime.ContainerResult
 	err    error
 }
 
-func waitForContainer(ctx context.Context, container chamberRuntimeShared.Container) (chamberRuntimeShared.ContainerResult, error) {
+func waitForContainer(ctx context.Context, container chamberRuntime.Container) (chamberRuntime.ContainerResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -348,13 +348,13 @@ func waitForContainer(ctx context.Context, container chamberRuntimeShared.Contai
 	case <-ctx.Done():
 		timeoutErr := fmt.Errorf("%w: CI job timed out: %w", chamberErrors.ErrCanceled, ctx.Err())
 		if deleteErr := container.Delete(context.Background(), true); deleteErr != nil && !looksAlreadyDeleted(deleteErr) {
-			return chamberRuntimeShared.ContainerResult{ExitCode: 1}, errors.Join(timeoutErr, fmt.Errorf("force-delete timed out job container: %w", deleteErr))
+			return chamberRuntime.ContainerResult{ExitCode: 1}, errors.Join(timeoutErr, fmt.Errorf("force-delete timed out job container: %w", deleteErr))
 		}
 		select {
 		case outcome := <-done:
 			return outcome.result, errors.Join(timeoutErr, outcome.err)
 		case <-time.After(forcedDeleteWait):
-			return chamberRuntimeShared.ContainerResult{ExitCode: 1}, fmt.Errorf("%w: timed out waiting for forced-delete job container to exit", timeoutErr)
+			return chamberRuntime.ContainerResult{ExitCode: 1}, fmt.Errorf("%w: timed out waiting for forced-delete job container to exit", timeoutErr)
 		}
 	}
 }
