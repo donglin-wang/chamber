@@ -106,7 +106,7 @@ Important current boundaries:
   SDK contract category such as invalid image layout, image reference, bundle
   mount, process spec, or container ID.
 - `pkg/shared/containerid`: shared container ID validation used by provisioning and runtime adapters so bundle creation cannot accept IDs the runtime later rejects.
-- `pkg/shared/imageref`: shared image reference validation and canonicalization used by image and bundle adapters so callers can provision with the same non-canonical reference they used to pull.
+- `pkg/image` owns image reference validation and canonicalization so callers can provision with the same non-canonical reference they used to pull.
 - `pkg/shared/localfs`: explicit filesystem dependency for private directories and temp files. It owns filesystem policy primitives, not broad utility behavior.
 - `pkg/shared/testutil`: shared tests helpers. Its location is not ideal, but keep it there for now.
 - `daemon/metadata`: daemon-owned durable vocabulary for images, containers, operations, and states. Keep daemon-only sentinel storage errors such as `ErrNotFound` and `ErrAlreadyExists` here, but use `pkg/shared/errors.Code` for durable operation/container error codes.

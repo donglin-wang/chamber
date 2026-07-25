@@ -19,7 +19,6 @@ import (
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/imageref"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -92,7 +91,7 @@ func (p *Provisioner) Provision(
 	if request.ImageRef == "" {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: image ref is required", chamberErrors.ErrInvalidImageReference)
 	}
-	imageRef, err := imageref.Canonical(request.ImageRef)
+	imageRef, err := chamberImage.CanonicalImageReference(request.ImageRef)
 	if err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}

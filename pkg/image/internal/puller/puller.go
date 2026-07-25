@@ -14,7 +14,6 @@ import (
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/imageref"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -58,7 +57,7 @@ func (p *Puller) Pull(ctx context.Context, request chamberImage.PullRequest) (ch
 		return chamberImage.PulledImage{}, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
 	}
 
-	canonicalReference, err := imageref.Canonical(request.Reference)
+	canonicalReference, err := chamberImage.CanonicalImageReference(request.Reference)
 	if err != nil {
 		return chamberImage.PulledImage{}, err
 	}

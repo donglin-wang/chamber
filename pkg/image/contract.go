@@ -14,6 +14,7 @@ import (
 	"time"
 
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
+	"github.com/google/go-containerregistry/pkg/name"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -75,6 +76,28 @@ type Auth struct {
 
 	// Token is used for bearer-token registry authentication.
 	Token string
+}
+
+// CanonicalImageReference parses raw as an OCI image reference and returns its
+// canonical string form.
+func CanonicalImageReference(raw string) (string, error) {
+	ref, err := name.ParseReference(raw)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid image reference %q: %w", chamberErrors.ErrInvalidImageReference, raw, err)
+	}
+	return ref.Name(), nil
+}
+
+// ValidateImageReference checks that raw is an acceptable OCI image reference.
+func ValidateImageReference(raw string) error {
+	_, err := CanonicalImageReference(raw)
+	return err
+}
+
+// IsValidImageReference reports whether raw is an acceptable OCI image
+// reference.
+func IsValidImageReference(raw string) bool {
+	return ValidateImageReference(raw) == nil
 }
 
 // PulledImage describes the OCI image layout produced or reused by a pull.
