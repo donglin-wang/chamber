@@ -79,11 +79,11 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	mux := newServer()
-	puller, err := chamberImageFactory.NewPuller(cfg.Image, directoryManager)
+	imageStore, err := chamberImageFactory.NewStore(cfg.Image, directoryManager)
 	if err != nil {
-		return fmt.Errorf("create image puller: %w", err)
+		return fmt.Errorf("create image store: %w", err)
 	}
-	registerImageRoutes(mux, cfg, store, puller)
+	registerImageRoutes(mux, cfg, store, imageStore)
 	provisioner, err := chamberBundleFactory.NewProvisioner(
 		cfg.Bundle,
 		directoryManager,
@@ -94,6 +94,7 @@ func run(ctx context.Context, args []string) error {
 	registerContainerRoutes(
 		mux,
 		store,
+		imageStore,
 		runtime,
 		provisioner,
 		lifetime,

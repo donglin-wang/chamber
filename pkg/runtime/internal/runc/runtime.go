@@ -81,9 +81,13 @@ func newWithOptions(ctx context.Context, config chamberRuntime.Config, directory
 		return nil, err
 	}
 
-	binary, err := defaultRuntimeBinary(goruntime.GOARCH)
-	if err != nil {
-		return nil, err
+	binary := runtimeBinary{version: defaultVersion}
+	if strings.TrimSpace(config.RuntimePath) == "" {
+		var err error
+		binary, err = defaultRuntimeBinary(goruntime.GOARCH)
+		if err != nil {
+			return nil, err
+		}
 	}
 	runtime := &Runtime{
 		config:           config,
@@ -127,6 +131,21 @@ func (r *Runtime) Descriptor() chamberRuntime.Descriptor {
 func (r *Runtime) installBinary(ctx context.Context) error {
 	if r == nil || r.directoryManager == nil {
 		return fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+	}
+	if strings.TrimSpace(r.config.RuntimePath) != "" {
+		if err := validateLocalRuntimeBinary(r.binaryPath); err != nil {
+			return err
+		}
+		if err := os.Chmod(r.binaryPath, 0755); err != nil {
+			return fmt.Errorf("%w: make local runtime binary executable: %w", chamberErrors.ErrRuntimeInstallFailed, err)
+		}
+		chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
+			"runtime", runtimeName,
+			"version", r.binary.version,
+			"path", r.binaryPath,
+			"source", "local",
+		)
+		return nil
 	}
 	binary := r.binary
 	if binary.version == "" || binary.url == "" || binary.sha256 == "" {
@@ -354,6 +373,13 @@ func (r *Runtime) stateRoot() (string, error) {
 }
 
 func configuredBinaryPath(config chamberRuntime.Config) (string, error) {
+	if path := strings.TrimSpace(config.RuntimePath); path != "" {
+		binaryPath, err := absPath(path)
+		if err != nil {
+			return "", fmt.Errorf("%w: resolve runtime path: %w", chamberErrors.ErrInvalidRequest, err)
+		}
+		return binaryPath, nil
+	}
 	if config.RuntimeBinDir == "" {
 		return "", fmt.Errorf("%w: runtime bin dir is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -362,6 +388,20 @@ func configuredBinaryPath(config chamberRuntime.Config) (string, error) {
 		return "", fmt.Errorf("%w: resolve runtime bin dir: %w", chamberErrors.ErrInvalidRequest, err)
 	}
 	return filepath.Join(binDir, runtimeName), nil
+}
+
+func validateLocalRuntimeBinary(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%w: runtime path does not exist", chamberErrors.ErrInvalidRequest)
+		}
+		return fmt.Errorf("%w: inspect runtime path: %w", chamberErrors.ErrFilesystemFailed, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("%w: runtime path must be a file", chamberErrors.ErrInvalidRequest)
+	}
+	return nil
 }
 
 func defaultRuntimeBinary(arch string) (runtimeBinary, error) {

@@ -11,40 +11,50 @@ import (
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
-func TestNewPreparesConfiguredImageRoot(t *testing.T) {
+func TestNewStorePreparesConfiguredImageRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "images")
 
-	puller, err := NewPuller(chamberImage.Config{Root: root}, localfs.NewDirectoryManager())
+	store, err := NewStore(chamberImage.Config{Root: root}, localfs.NewDirectoryManager())
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf("NewStore() error = %v", err)
 	}
-	if puller == nil {
-		t.Fatal("New() puller = nil, want puller")
+	if store == nil {
+		t.Fatal("NewStore() store = nil, want store")
 	}
 	assertPrivateDir(t, root)
-}
-
-func TestNewRequiresConfiguredImageRoot(t *testing.T) {
-	if _, err := NewPuller(chamberImage.Config{}, localfs.NewDirectoryManager()); err == nil {
-		t.Fatal("New() error = nil, want root required error")
+	assertPrivateDir(t, filepath.Join(root, "layout"))
+	assertPrivateDir(t, filepath.Join(root, "metadata"))
+	assertPrivateDir(t, filepath.Join(root, "metadata", "images"))
+	assertPrivateDir(t, filepath.Join(root, "tmp"))
+	if _, err := os.Stat(filepath.Join(root, "layout", "oci-layout")); err != nil {
+		t.Fatalf("Stat(oci-layout) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "layout", "index.json")); err != nil {
+		t.Fatalf("Stat(index.json) error = %v", err)
 	}
 }
 
-func TestNewRequiresDirectoryManager(t *testing.T) {
-	if _, err := NewPuller(chamberImage.Config{}, nil); err == nil {
-		t.Fatal("New() error = nil, want directory manager error")
+func TestNewStoreRequiresConfiguredImageRoot(t *testing.T) {
+	if _, err := NewStore(chamberImage.Config{}, localfs.NewDirectoryManager()); err == nil {
+		t.Fatal("NewStore() error = nil, want root required error")
+	}
+}
+
+func TestNewStoreRequiresDirectoryManager(t *testing.T) {
+	if _, err := NewStore(chamberImage.Config{}, nil); err == nil {
+		t.Fatal("NewStore() error = nil, want directory manager error")
 	} else if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
-		t.Fatalf("New() error = %v, want invalid request code", err)
+		t.Fatalf("NewStore() error = %v, want invalid request code", err)
 	}
 }
 
-func TestNewWrapsImageRootSetupFailuresWithFilesystemCode(t *testing.T) {
-	_, err := NewPuller(chamberImage.Config{Root: filepath.Join(t.TempDir(), "images")}, failingDirectoryManager{err: errors.New("disk full")})
+func TestNewStoreWrapsImageRootSetupFailuresWithFilesystemCode(t *testing.T) {
+	_, err := NewStore(chamberImage.Config{Root: filepath.Join(t.TempDir(), "images")}, failingDirectoryManager{err: errors.New("disk full")})
 	if err == nil {
-		t.Fatal("New() error = nil, want filesystem error")
+		t.Fatal("NewStore() error = nil, want filesystem error")
 	}
 	if !errors.Is(err, chamberErrors.ErrFilesystemFailed) {
-		t.Fatalf("New() error = %v, want filesystem failed code", err)
+		t.Fatalf("NewStore() error = %v, want filesystem failed code", err)
 	}
 }
 

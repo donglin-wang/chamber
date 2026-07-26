@@ -11,6 +11,7 @@ import (
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/google/uuid"
@@ -48,6 +49,7 @@ type containerResponse struct {
 func registerContainerRoutes(
 	mux *http.ServeMux,
 	store metadata.Store,
+	imageStore chamberImage.Store,
 	runtime chamberRuntime.Runtime,
 	provisioner chamberBundle.Provisioner,
 	lifetime context.Context,
@@ -97,6 +99,7 @@ func registerContainerRoutes(
 		result, err := runContainer(
 			r.Context(),
 			store,
+			imageStore,
 			runtime,
 			provisioner,
 			runtimeCtx,
@@ -179,6 +182,7 @@ type runContainerResult struct {
 func runContainer(
 	ctx context.Context,
 	store metadata.Store,
+	imageStore chamberImage.Store,
 	runtime chamberRuntime.Runtime,
 	provisioner chamberBundle.Provisioner,
 	runtimeCtx context.Context,
@@ -191,11 +195,18 @@ func runContainer(
 	if provisioner == nil {
 		return runContainerResult{}, fmt.Errorf("bundle provisioner is required")
 	}
+	if imageStore == nil {
+		return runContainerResult{}, fmt.Errorf("image store is required")
+	}
 	if runtime == nil {
 		return runContainerResult{}, fmt.Errorf("runtime is required")
 	}
 	if runtimeCtx == nil {
 		runtimeCtx = context.Background()
+	}
+	canonicalImageRef, err := chamberImage.CanonicalImageReference(imageRef)
+	if err != nil {
+		return runContainerResult{}, err
 	}
 
 	startedAt := time.Now().UTC()
@@ -221,7 +232,7 @@ func runContainer(
 		return runContainerResult{}, fmt.Errorf("create run operation: %w", err)
 	}
 
-	image, err := store.GetImage(ctx, imageRef)
+	image, err := store.GetImage(ctx, canonicalImageRef)
 	if err != nil {
 		code := chamberErrors.ErrMetadataFailed
 		if errors.Is(err, metadata.ErrNotFound) {
@@ -234,11 +245,19 @@ func runContainer(
 
 	runtimeName := runtime.Descriptor().Name
 	terminal := false
+	imageLayout, err := imageStore.Layout(ctx)
+	if err != nil {
+		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrInvalidImageLayout)
+		failErr := operationError(operationID, chamberErrors.ErrInvalidImageLayout, errors.Join(err, transitionErr))
+		return runContainerResult{operation: operation}, failErr
+	}
 
 	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
-		ContainerID: containerID,
-		ImageLayout: image.LayoutPath,
-		ImageRef:    image.Reference,
+		ContainerID:   containerID,
+		ImageLayout:   imageLayout,
+		ImageRef:      image.Reference,
+		ImageDigest:   image.Digest,
+		ImagePlatform: image.Platform,
 		Process: chamberBundle.ProcessSpec{
 			Args:     command,
 			Terminal: &terminal,

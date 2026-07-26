@@ -11,6 +11,7 @@ import (
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	metadataetcd "github.com/donglin-wang/chamber/daemon/metadata/etcd"
 	"github.com/donglin-wang/chamber/daemon/metadata/memory"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
@@ -127,7 +128,7 @@ func assertImageRoundTrip(t *testing.T, store metadata.Store) {
 	image := metadata.Image{
 		Reference:  "docker.io/library/alpine:latest",
 		Digest:     "sha256:abc123",
-		LayoutPath: "/tmp/chamber/images/alpine",
+		Platform:   chamberImage.Platform{OS: "linux", Architecture: "arm64"},
 		PulledAt:   pulledAt,
 		LastUsedAt: pulledAt,
 	}

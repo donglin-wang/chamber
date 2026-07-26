@@ -81,12 +81,24 @@ type bundleInput struct {
 
 type imageInput struct {
 	Root    *string      `json:"root,omitempty"`
+	Buildah buildahInput `json:"buildah,omitempty"`
 	Logging loggingInput `json:"logging,omitempty"`
+}
+
+type buildahInput struct {
+	Path          *string `json:"path,omitempty"`
+	Version       *string `json:"version,omitempty"`
+	URL           *string `json:"url,omitempty"`
+	SHA256        *string `json:"sha256,omitempty"`
+	StorageDriver *string `json:"storage_driver,omitempty"`
+	Runtime       *string `json:"runtime,omitempty"`
+	Isolation     *string `json:"isolation,omitempty"`
 }
 
 type runtimeInput struct {
 	RuntimeRoot   *string               `json:"runtime_root,omitempty"`
 	RuntimeBinDir *string               `json:"runtime_bin_dir,omitempty"`
+	RuntimePath   *string               `json:"runtime_path,omitempty"`
 	Name          *string               `json:"name,omitempty"`
 	Privilege     *capability.Privilege `json:"privilege,omitempty"`
 	Logging       loggingInput          `json:"logging,omitempty"`
@@ -287,8 +299,10 @@ func absolutizePaths(cfg *Config) {
 		&cfg.TmpRoot,
 		&cfg.Bundle.Root,
 		&cfg.Image.Root,
+		&cfg.Image.Buildah.Path,
 		&cfg.Runtime.RuntimeRoot,
 		&cfg.Runtime.RuntimeBinDir,
+		&cfg.Runtime.RuntimePath,
 		&cfg.Metadata.Root,
 	}
 
@@ -322,7 +336,33 @@ func mergeImageInput(base imageInput, overlay imageInput) imageInput {
 	if overlay.Root != nil {
 		base.Root = overlay.Root
 	}
+	base.Buildah = mergeBuildahInput(base.Buildah, overlay.Buildah)
 	base.Logging = mergeLoggingInput(base.Logging, overlay.Logging)
+	return base
+}
+
+func mergeBuildahInput(base buildahInput, overlay buildahInput) buildahInput {
+	if overlay.Path != nil {
+		base.Path = overlay.Path
+	}
+	if overlay.Version != nil {
+		base.Version = overlay.Version
+	}
+	if overlay.URL != nil {
+		base.URL = overlay.URL
+	}
+	if overlay.SHA256 != nil {
+		base.SHA256 = overlay.SHA256
+	}
+	if overlay.StorageDriver != nil {
+		base.StorageDriver = overlay.StorageDriver
+	}
+	if overlay.Runtime != nil {
+		base.Runtime = overlay.Runtime
+	}
+	if overlay.Isolation != nil {
+		base.Isolation = overlay.Isolation
+	}
 	return base
 }
 
@@ -339,6 +379,9 @@ func mergeRuntimeInput(base runtimeInput, overlay runtimeInput) runtimeInput {
 	}
 	if overlay.RuntimeBinDir != nil {
 		base.RuntimeBinDir = overlay.RuntimeBinDir
+	}
+	if overlay.RuntimePath != nil {
+		base.RuntimePath = overlay.RuntimePath
 	}
 	if overlay.Name != nil {
 		base.Name = overlay.Name
@@ -374,7 +417,32 @@ func applyImageInput(config *chamberImage.Config, input imageInput) {
 	if input.Root != nil {
 		config.Root = *input.Root
 	}
+	applyBuildahInput(&config.Buildah, input.Buildah)
 	config.Logging = applyLoggingInput(config.Logging, input.Logging)
+}
+
+func applyBuildahInput(config *chamberImage.BuildahConfig, input buildahInput) {
+	if input.Path != nil {
+		config.Path = *input.Path
+	}
+	if input.Version != nil {
+		config.Version = *input.Version
+	}
+	if input.URL != nil {
+		config.URL = *input.URL
+	}
+	if input.SHA256 != nil {
+		config.SHA256 = *input.SHA256
+	}
+	if input.StorageDriver != nil {
+		config.StorageDriver = *input.StorageDriver
+	}
+	if input.Runtime != nil {
+		config.Runtime = *input.Runtime
+	}
+	if input.Isolation != nil {
+		config.Isolation = *input.Isolation
+	}
 }
 
 func applyRuntimeInput(config *chamberRuntime.Config, input runtimeInput) {
@@ -383,6 +451,9 @@ func applyRuntimeInput(config *chamberRuntime.Config, input runtimeInput) {
 	}
 	if input.RuntimeBinDir != nil {
 		config.RuntimeBinDir = *input.RuntimeBinDir
+	}
+	if input.RuntimePath != nil {
+		config.RuntimePath = *input.RuntimePath
 	}
 	if input.Name != nil {
 		config.Name = *input.Name

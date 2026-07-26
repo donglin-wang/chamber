@@ -26,7 +26,7 @@ type pullImageResponse struct {
 	PulledAt    time.Time `json:"pulled_at"`
 }
 
-func registerImageRoutes(mux *http.ServeMux, cfg chamberDaemonConfig.Config, store metadata.Store, puller chamberImage.Puller) {
+func registerImageRoutes(mux *http.ServeMux, cfg chamberDaemonConfig.Config, store metadata.Store, imageStore chamberImage.Store) {
 	mux.HandleFunc("POST /v1/images/pull", func(w http.ResponseWriter, r *http.Request) {
 		var request pullImageRequest
 		if err := decodeJSON(w, r, &request); err != nil {
@@ -39,7 +39,7 @@ func registerImageRoutes(mux *http.ServeMux, cfg chamberDaemonConfig.Config, sto
 			return
 		}
 
-		result, err := pullImage(r.Context(), store, puller, strings.TrimSpace(request.Reference))
+		result, err := pullImage(r.Context(), store, imageStore, strings.TrimSpace(request.Reference))
 		if err != nil {
 			writeDaemonError(w, err)
 			return
@@ -59,12 +59,12 @@ type pullImageResult struct {
 	image     metadata.Image
 }
 
-func pullImage(ctx context.Context, store metadata.Store, puller chamberImage.Puller, reference string) (pullImageResult, error) {
+func pullImage(ctx context.Context, store metadata.Store, imageStore chamberImage.Store, reference string) (pullImageResult, error) {
 	if store == nil {
 		return pullImageResult{}, fmt.Errorf("metadata store is required")
 	}
-	if puller == nil {
-		return pullImageResult{}, fmt.Errorf("image puller is required")
+	if imageStore == nil {
+		return pullImageResult{}, fmt.Errorf("image store is required")
 	}
 
 	startedAt := time.Now().UTC()
@@ -85,24 +85,7 @@ func pullImage(ctx context.Context, store metadata.Store, puller chamberImage.Pu
 		return pullImageResult{}, fmt.Errorf("create pull operation: %w", err)
 	}
 
-	existing, err := store.GetImage(ctx, reference)
-	if err == nil && chamberImage.LayoutExistsContext(ctx, existing.LayoutPath) {
-		completed, err := store.SucceedOperation(ctx, operationID)
-		if err != nil {
-			return pullImageResult{operation: operation, image: existing}, operationError(operationID, chamberErrors.ErrMetadataFailed, err)
-		}
-		return pullImageResult{
-			operation: completed,
-			image:     existing,
-		}, nil
-	}
-	if err != nil && !errors.Is(err, metadata.ErrNotFound) {
-		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrMetadataFailed)
-		failErr := operationError(operationID, chamberErrors.ErrMetadataFailed, errors.Join(err, transitionErr))
-		return pullImageResult{operation: operation}, failErr
-	}
-
-	pulled, err := puller.Pull(ctx, chamberImage.PullRequest{
+	stored, err := imageStore.Pull(ctx, chamberImage.PullRequest{
 		Reference: reference,
 	})
 	if err != nil {
@@ -112,20 +95,14 @@ func pullImage(ctx context.Context, store metadata.Store, puller chamberImage.Pu
 		return pullImageResult{operation: operation}, failErr
 	}
 
-	pulledAt := pulled.PulledAt
+	pulledAt := stored.UpdatedAt
 	if pulledAt.IsZero() {
 		pulledAt = time.Now().UTC()
 	}
-	layoutPath := pulled.LayoutPath
-	if layoutPath == "" {
-		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrPullFailed)
-		failErr := operationError(operationID, chamberErrors.ErrPullFailed, errors.Join(errors.New("image puller returned empty layout path"), transitionErr))
-		return pullImageResult{operation: operation}, failErr
-	}
 	image := metadata.Image{
-		Reference:  reference,
-		Digest:     pulled.Digest,
-		LayoutPath: layoutPath,
+		Reference:  stored.Reference,
+		Digest:     stored.Digest,
+		Platform:   stored.Platform,
 		PulledAt:   pulledAt,
 		LastUsedAt: pulledAt,
 	}

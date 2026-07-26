@@ -3,6 +3,7 @@ package bundle
 import (
 	"context"
 
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 )
 
@@ -44,6 +45,12 @@ type ProvisionRequest struct {
 
 	// ImageRef is the image reference expected in the layout metadata.
 	ImageRef string
+
+	// ImageDigest is the selected image target descriptor digest when known.
+	ImageDigest string
+
+	// ImagePlatform is the selected image platform when known.
+	ImagePlatform chamberImage.Platform
 
 	// Process overrides the image's default process fields when set.
 	Process ProcessSpec

@@ -59,7 +59,7 @@ func TestPullImageRequiresReference(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/v1/images/pull", strings.NewReader(`{"reference":" "}`))
 
 	mux := newServer()
-	registerImageRoutes(mux, testConfig(t), memory.NewMemoryStore(), fakePuller{})
+	registerImageRoutes(mux, testConfig(t), memory.NewMemoryStore(), fakeImageStore{})
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusBadRequest {
@@ -72,7 +72,7 @@ func TestPullImagePullsAndRecordsImage(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/v1/images/pull", strings.NewReader(`{"reference":"docker.io/library/alpine:latest"}`))
 
 	mux := newServer()
-	registerImageRoutes(mux, testConfig(t), memory.NewMemoryStore(), fakePuller{})
+	registerImageRoutes(mux, testConfig(t), memory.NewMemoryStore(), fakeImageStore{})
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
@@ -94,7 +94,7 @@ func TestPullImageRecordsPreciseSDKErrorCode(t *testing.T) {
 	result, err := pullImage(
 		context.Background(),
 		store,
-		fakePuller{err: fmt.Errorf("%w: bad ref", chamberErrors.ErrInvalidImageReference)},
+		fakeImageStore{err: fmt.Errorf("%w: bad ref", chamberErrors.ErrInvalidImageReference)},
 		"not a reference",
 	)
 	if err == nil {
@@ -117,7 +117,7 @@ func TestRunContainerRequiresCommand(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/v1/containers/run", strings.NewReader(`{"image":"docker.io/library/alpine:latest","command":[]}`))
 
 	mux := newServer()
-	registerContainerRoutes(mux, memory.NewMemoryStore(), nil, nil, context.Background())
+	registerContainerRoutes(mux, memory.NewMemoryStore(), nil, nil, nil, context.Background())
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusBadRequest {
@@ -132,6 +132,7 @@ func TestRunContainerRecordsPreciseProvisionerErrorCode(t *testing.T) {
 	result, err := runContainer(
 		context.Background(),
 		store,
+		fakeImageStore{},
 		fakeRuntime{},
 		fakeProvisioner{err: fmt.Errorf("%w: bad mount", chamberErrors.ErrInvalidBundleMount)},
 		context.Background(),
@@ -153,6 +154,7 @@ func TestRunContainerRecordsPreciseRuntimeErrorCode(t *testing.T) {
 	result, err := runContainer(
 		context.Background(),
 		store,
+		fakeImageStore{},
 		fakeRuntime{err: fmt.Errorf("%w: launch canceled", chamberErrors.ErrCanceled)},
 		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
 		context.Background(),
@@ -185,6 +187,7 @@ func TestRunContainerStoresProvisionedBundlePath(t *testing.T) {
 	registerContainerRoutes(
 		mux,
 		store,
+		fakeImageStore{},
 		fakeRuntime{},
 		fakeProvisioner{bundlePath: provisionedBundlePath},
 		context.Background(),
@@ -218,6 +221,7 @@ func TestRunContainerRequestsNonTerminalProcess(t *testing.T) {
 	_, err := runContainer(
 		context.Background(),
 		store,
+		fakeImageStore{},
 		fakeRuntime{},
 		fakeProvisioner{
 			bundlePath: "/tmp/chamber-test/provisioner-owned/container",
@@ -238,14 +242,62 @@ func TestRunContainerRequestsNonTerminalProcess(t *testing.T) {
 	}
 }
 
+func TestRunContainerCanonicalizesImageBeforeLookup(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+
+	_, err := runContainer(
+		context.Background(),
+		store,
+		fakeImageStore{},
+		fakeRuntime{},
+		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
+		context.Background(),
+		"alpine",
+		[]string{"/bin/true"},
+	)
+	if err != nil {
+		t.Fatalf("runContainer(short image) error = %v", err)
+	}
+}
+
+func TestRunContainerPassesImagePlatformToProvisioner(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+	var provisionRequest chamberBundle.ProvisionRequest
+
+	_, err := runContainer(
+		context.Background(),
+		store,
+		fakeImageStore{},
+		fakeRuntime{},
+		fakeProvisioner{
+			bundlePath: "/tmp/chamber-test/provisioner-owned/container",
+			request:    &provisionRequest,
+		},
+		context.Background(),
+		"docker.io/library/alpine:latest",
+		[]string{"/bin/true"},
+	)
+	if err != nil {
+		t.Fatalf("runContainer() error = %v", err)
+	}
+	if provisionRequest.ImagePlatform.Architecture != "arm64" {
+		t.Fatalf("ImagePlatform = %#v, want persisted platform", provisionRequest.ImagePlatform)
+	}
+}
+
 func putTestImage(t *testing.T, store metadata.Store) {
 	t.Helper()
 
 	if err := store.PutImage(context.Background(), metadata.Image{
-		Reference:  "docker.io/library/alpine:latest",
-		Digest:     "sha256:image",
-		LayoutPath: "/tmp/chamber-test/images/alpine",
-		PulledAt:   time.Now().UTC(),
+		Reference: "index.docker.io/library/alpine:latest",
+		Digest:    "sha256:image",
+		Platform: chamberImage.Platform{
+			OS:           "linux",
+			Architecture: "arm64",
+		},
+		PulledAt: time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("PutImage() error = %v", err)
 	}
@@ -278,7 +330,7 @@ func TestContainerLogsReadByContainerID(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/v1/containers/container-1/logs?stream=stderr", nil)
 
 	mux := newServer()
-	registerContainerRoutes(mux, store, nil, nil, context.Background())
+	registerContainerRoutes(mux, store, nil, nil, nil, context.Background())
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
@@ -406,23 +458,48 @@ func (c fakeContainer) DeleteLog(stream chamberRuntime.LogStream) error {
 	}
 }
 
-type fakePuller struct {
-	err error
+type fakeImageStore struct {
+	err        error
+	layoutPath string
 }
 
-func (p fakePuller) Pull(ctx context.Context, request chamberImage.PullRequest) (chamberImage.PulledImage, error) {
+func (s fakeImageStore) Pull(ctx context.Context, request chamberImage.PullRequest) (chamberImage.Image, error) {
 	if err := ctx.Err(); err != nil {
-		return chamberImage.PulledImage{}, err
+		return chamberImage.Image{}, err
 	}
-	if p.err != nil {
-		return chamberImage.PulledImage{}, p.err
+	if s.err != nil {
+		return chamberImage.Image{}, s.err
 	}
-	return chamberImage.PulledImage{
-		Reference:  request.Reference,
-		Digest:     "sha256:abc123",
-		LayoutPath: "/tmp/chamber-test/images/fake-layout",
-		PulledAt:   time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC),
+	return chamberImage.Image{
+		Reference: request.Reference,
+		Digest:    "sha256:abc123",
+		Platform:  chamberImage.NormalizePlatform(request.Platform),
+		Source:    chamberImage.SourcePulled,
+		CreatedAt: time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC),
 	}, nil
+}
+
+func (s fakeImageStore) Build(ctx context.Context, request chamberImage.BuildRequest) (chamberImage.Image, error) {
+	return chamberImage.Image{}, chamberErrors.ErrInvalidRequest
+}
+
+func (s fakeImageStore) List(ctx context.Context, request chamberImage.ListRequest) ([]chamberImage.Image, error) {
+	return nil, nil
+}
+
+func (s fakeImageStore) Remove(ctx context.Context, request chamberImage.RemoveRequest) error {
+	return nil
+}
+
+func (s fakeImageStore) Layout(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if s.layoutPath != "" {
+		return s.layoutPath, nil
+	}
+	return "/tmp/chamber-test/images/layout", nil
 }
 
 func assertUUIDV7(t *testing.T, raw string) {

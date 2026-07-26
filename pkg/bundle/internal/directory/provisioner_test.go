@@ -12,9 +12,14 @@ import (
 	"testing"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	ggcrLayout "github.com/google/go-containerregistry/pkg/v1/layout"
+	"github.com/google/go-containerregistry/pkg/v1/random"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	ociumoci "github.com/opencontainers/umoci"
 )
@@ -470,7 +475,7 @@ func TestTranslateToOCIBindMountsRejectsInvalidRequests(t *testing.T) {
 	}
 }
 
-func TestValidateImageRefInLayoutRejectsMissingRef(t *testing.T) {
+func TestImageManifestInLayoutRejectsMissingRef(t *testing.T) {
 	imageLayout := filepath.Join(t.TempDir(), "layout")
 	engine, err := ociumoci.CreateLayout(imageLayout)
 	if err != nil {
@@ -479,17 +484,17 @@ func TestValidateImageRefInLayoutRejectsMissingRef(t *testing.T) {
 	if err := ociumoci.NewImage(engine, "present", nil); err != nil {
 		t.Fatalf("NewImage() error = %v", err)
 	}
-	if err := validateImageRefInLayout(context.Background(), engine, imageLayout, "missing"); err == nil {
-		t.Fatal("validateImageRefInLayout() error = nil, want missing ref error")
+	if _, err := imageManifestInLayout(context.Background(), engine, imageLayout, "missing", "", chamberImage.Platform{}); err == nil {
+		t.Fatal("imageManifestInLayout() error = nil, want missing ref error")
 	} else if !errors.Is(err, chamberErrors.ErrInvalidImageLayout) {
-		t.Fatalf("validateImageRefInLayout() error = %v, want invalid image layout code", err)
+		t.Fatalf("imageManifestInLayout() error = %v, want invalid image layout code", err)
 	}
 	if err := engine.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
 }
 
-func TestValidateImageRefInLayoutHonorsCanceledContext(t *testing.T) {
+func TestImageManifestInLayoutHonorsCanceledContext(t *testing.T) {
 	imageLayout := filepath.Join(t.TempDir(), "layout")
 	engine, err := ociumoci.CreateLayout(imageLayout)
 	if err != nil {
@@ -499,10 +504,62 @@ func TestValidateImageRefInLayoutHonorsCanceledContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := validateImageRefInLayout(ctx, engine, imageLayout, "present"); err == nil {
-		t.Fatal("validateImageRefInLayout() error = nil, want canceled error")
+	if _, err := imageManifestInLayout(ctx, engine, imageLayout, "present", "", chamberImage.Platform{}); err == nil {
+		t.Fatal("imageManifestInLayout() error = nil, want canceled error")
 	} else if !errors.Is(err, chamberErrors.ErrCanceled) {
-		t.Fatalf("validateImageRefInLayout() error = %v, want canceled code", err)
+		t.Fatalf("imageManifestInLayout() error = %v, want canceled code", err)
+	}
+}
+
+func TestImageManifestInLayoutSelectsExactDigestAndPlatform(t *testing.T) {
+	imageLayout := filepath.Join(t.TempDir(), "layout")
+	layoutPath, err := ggcrLayout.Write(imageLayout, empty.Index)
+	if err != nil {
+		t.Fatalf("layout.Write() error = %v", err)
+	}
+	firstImage, err := random.Image(1024, 1)
+	if err != nil {
+		t.Fatalf("random.Image(first) error = %v", err)
+	}
+	secondImage, err := random.Image(2048, 1)
+	if err != nil {
+		t.Fatalf("random.Image(second) error = %v", err)
+	}
+	platform := v1.Platform{OS: "linux", Architecture: "amd64"}
+	annotations := map[string]string{"org.opencontainers.image.ref.name": "example.com/library/app:latest"}
+	if err := layoutPath.AppendImage(firstImage, ggcrLayout.WithPlatform(platform), ggcrLayout.WithAnnotations(annotations)); err != nil {
+		t.Fatalf("AppendImage(first) error = %v", err)
+	}
+	if err := layoutPath.AppendImage(secondImage, ggcrLayout.WithPlatform(platform), ggcrLayout.WithAnnotations(annotations)); err != nil {
+		t.Fatalf("AppendImage(second) error = %v", err)
+	}
+	secondDigest, err := secondImage.Digest()
+	if err != nil {
+		t.Fatalf("Digest(second) error = %v", err)
+	}
+	secondConfig, err := secondImage.ConfigName()
+	if err != nil {
+		t.Fatalf("ConfigName(second) error = %v", err)
+	}
+	engine, err := ociumoci.OpenLayout(imageLayout)
+	if err != nil {
+		t.Fatalf("OpenLayout() error = %v", err)
+	}
+	defer engine.Close()
+
+	manifest, err := imageManifestInLayout(
+		context.Background(),
+		engine,
+		imageLayout,
+		"example.com/library/app:latest",
+		secondDigest.String(),
+		chamberImage.Platform{OS: "linux", Architecture: "amd64"},
+	)
+	if err != nil {
+		t.Fatalf("imageManifestInLayout() error = %v", err)
+	}
+	if manifest.Config.Digest.String() != secondConfig.String() {
+		t.Fatalf("manifest config digest = %s, want second image config %s", manifest.Config.Digest, secondConfig)
 	}
 }
 

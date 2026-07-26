@@ -90,6 +90,34 @@ func TestNewDefaultsToRuncAdapterName(t *testing.T) {
 	}
 }
 
+func TestNewUsesConfiguredLocalRuntimePath(t *testing.T) {
+	content := []byte("local runc")
+	runtimePath := filepath.Join(privateTempDir(t), "runc")
+	if err := os.WriteFile(runtimePath, content, 0600); err != nil {
+		t.Fatalf("WriteFile(runc) error = %v", err)
+	}
+	requests := 0
+	client := &http.Client{Transport: httpClientFunc(func(*http.Request) (*http.Response, error) {
+		requests++
+		return response(http.StatusOK, io.NopCloser(strings.NewReader("unexpected"))), nil
+	})}
+
+	runtime := mustNew(t, chamberRuntime.Config{
+		RuntimeRoot: privateTempDir(t),
+		RuntimePath: runtimePath,
+		Name:        "runc",
+	}, localfs.NewDirectoryManager(), withHTTPClient(client))
+
+	descriptor := runtime.Descriptor()
+	if descriptor.BinaryPath != runtimePath {
+		t.Fatalf("Descriptor().BinaryPath = %q, want %q", descriptor.BinaryPath, runtimePath)
+	}
+	if requests != 0 {
+		t.Fatalf("download requests = %d, want 0", requests)
+	}
+	assertFileContentAndMode(t, runtimePath, content, 0755)
+}
+
 func TestNewRejectsWrongDigest(t *testing.T) {
 	content := []byte("not the pinned binary")
 	binDir := privateTempDir(t)

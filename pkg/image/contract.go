@@ -2,8 +2,6 @@ package image
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,25 +19,41 @@ import (
 // ErrRootRequired is returned when image operations receive an empty image root.
 var ErrRootRequired = fmt.Errorf("%w: image root is required", chamberErrors.ErrInvalidRequest)
 
-// PullPolicy controls whether a puller may reuse an existing local image
-// layout.
+// Store owns images in one shared OCI image layout below its configured root.
+type Store interface {
+	// Pull fetches or reuses the requested image in the store's shared layout.
+	Pull(ctx context.Context, request PullRequest) (Image, error)
+
+	// Build builds a Dockerfile into the store's shared layout.
+	Build(ctx context.Context, request BuildRequest) (Image, error)
+
+	// List returns committed image records from the store metadata.
+	List(ctx context.Context, request ListRequest) ([]Image, error)
+
+	// Remove removes an image record and its reference from the shared layout.
+	Remove(ctx context.Context, request RemoveRequest) error
+
+	// Layout returns the canonical shared OCI image layout path for this store.
+	Layout(ctx context.Context) (string, error)
+}
+
+// PullPolicy controls whether a store may reuse an existing image record.
 type PullPolicy string
 
 const (
-	// PullIfMissing reuses an existing layout for the same canonical reference
+	// PullIfMissing reuses an existing image for the same canonical reference
 	// and platform. It is the default when PullRequest.Policy is empty.
 	PullIfMissing PullPolicy = "if_missing"
 
-	// PullAlways fetches the reference again and replaces any existing layout at
-	// the derived destination. SDK callers are responsible for coordinating
-	// concurrent pulls to the same image root.
+	// PullAlways fetches the reference again and replaces the existing store
+	// metadata and shared-layout reference for the canonical reference/platform.
 	PullAlways PullPolicy = "always"
 )
 
-// PullRequest describes one image pull into the puller's configured image root.
+// PullRequest describes one image pull into the store's configured image root.
 type PullRequest struct {
 	// Reference is the image reference to pull. It may be familiar shorthand such
-	// as "alpine:latest"; pullers canonicalize it before deriving storage paths.
+	// as "alpine:latest"; stores canonicalize it before committing metadata.
 	Reference string
 
 	// Platform selects the image platform. Empty OS defaults to linux, empty
@@ -51,6 +65,45 @@ type PullRequest struct {
 
 	// Policy controls reuse of an existing layout. Empty means PullIfMissing.
 	Policy PullPolicy
+}
+
+// BuildRequest describes one local Dockerfile build into the store.
+type BuildRequest struct {
+	// Reference is the image reference to assign to the build result.
+	Reference string
+
+	// ContextPath is the absolute path to an existing local build context
+	// directory.
+	ContextPath string
+
+	// DockerfilePath is the absolute path to the Dockerfile. Empty means
+	// <ContextPath>/Dockerfile.
+	DockerfilePath string
+
+	// Platform selects the single image platform to build.
+	Platform Platform
+
+	// Target selects an optional Dockerfile build target.
+	Target string
+
+	// BuildArgs supplies Dockerfile frontend build arguments.
+	BuildArgs map[string]string
+}
+
+// ListRequest filters image store records.
+type ListRequest struct {
+	// Reference filters list results to one canonical image reference when set.
+	Reference string
+}
+
+// RemoveRequest identifies one image record and shared-layout reference to
+// remove.
+type RemoveRequest struct {
+	// Reference is the image reference to remove.
+	Reference string
+
+	// Platform selects the image platform to remove.
+	Platform Platform
 }
 
 // Platform identifies an OCI image platform.
@@ -78,6 +131,44 @@ type Auth struct {
 	Token string
 }
 
+// Source identifies how a stored image was produced.
+type Source string
+
+const (
+	// SourcePulled means the image came from a remote registry pull.
+	SourcePulled Source = "pulled"
+
+	// SourceBuilt means the image came from a local Dockerfile build.
+	SourceBuilt Source = "built"
+)
+
+// Image is a committed image record in a Store.
+type Image struct {
+	// Reference is the canonical image reference.
+	Reference string
+
+	// Digest is the selected target descriptor digest in the shared OCI layout.
+	Digest string
+
+	// Platform is the resolved platform for the selected target descriptor.
+	Platform Platform
+
+	// Source records whether the image was pulled or built.
+	Source Source
+
+	// SizeBytes is the sum of unique reachable descriptor/blob sizes for the
+	// selected target.
+	SizeBytes int64
+
+	// CreatedAt is the local store time when this image record was first
+	// committed.
+	CreatedAt time.Time
+
+	// UpdatedAt is the local store time when this image record was last
+	// successfully committed.
+	UpdatedAt time.Time
+}
+
 // CanonicalImageReference parses raw as an OCI image reference and returns its
 // canonical string form.
 func CanonicalImageReference(raw string) (string, error) {
@@ -100,48 +191,8 @@ func IsValidImageReference(raw string) bool {
 	return ValidateImageReference(raw) == nil
 }
 
-// PulledImage describes the OCI image layout produced or reused by a pull.
-type PulledImage struct {
-	// Reference is the canonical image reference stored in the layout metadata.
-	Reference string
-
-	// Digest is the digest returned by the registry for the pulled reference.
-	Digest string
-
-	// LayoutPath is the absolute path to the OCI image layout on disk.
-	LayoutPath string
-
-	// SizeBytes is the number of bytes reported for the pulled image content
-	// when that information is available.
-	SizeBytes int64
-
-	// PulledAt records when the puller produced this result.
-	PulledAt time.Time
-}
-
-// Puller pulls OCI images into a caller-owned image root.
-type Puller interface {
-	// Pull fetches or reuses the requested image and returns the local OCI image
-	// layout. The context controls pull work only; callers own cleanup and
-	// coordination for shared roots.
-	Pull(ctx context.Context, request PullRequest) (PulledImage, error)
-}
-
-// DestinationForCanonicalImage returns the deterministic layout path for a
-// canonical image reference and platform.
-func DestinationForCanonicalImage(root string, reference string, platform Platform) (string, error) {
-	if strings.TrimSpace(root) == "" {
-		return "", ErrRootRequired
-	}
-	if strings.TrimSpace(reference) == "" {
-		return "", fmt.Errorf("%w: canonical image reference is required", chamberErrors.ErrInvalidRequest)
-	}
-	identity := reference + "\n" + normalizePlatform(platform)
-	sum := sha256.Sum256([]byte(identity))
-	return filepath.Join(root, hex.EncodeToString(sum[:])), nil
-}
-
-func normalizePlatform(platform Platform) string {
+// NormalizePlatform applies Chamber's image platform defaults.
+func NormalizePlatform(platform Platform) Platform {
 	os := strings.TrimSpace(platform.OS)
 	if os == "" {
 		os = "linux"
@@ -151,7 +202,11 @@ func normalizePlatform(platform Platform) string {
 		architecture = goruntime.GOARCH
 	}
 	variant := strings.TrimSpace(platform.Variant)
-	return os + "/" + architecture + "/" + variant
+	return Platform{
+		OS:           os,
+		Architecture: architecture,
+		Variant:      variant,
+	}
 }
 
 // LayoutExists reports whether path is a valid OCI image layout.

@@ -50,7 +50,15 @@ const (
 	// ErrPullFailed means image pull work failed after request validation.
 	ErrPullFailed Code = "pull_failed"
 
-	// ErrMetadataFailed means daemon metadata storage could not complete an
+	// ErrBuildFailed means image build work failed after request/config
+	// validation.
+	ErrBuildFailed Code = "build_failed"
+
+	// ErrBuildInstallFailed means image builder artifact installation or
+	// validation failed.
+	ErrBuildInstallFailed Code = "build_install_failed"
+
+	// ErrMetadataFailed means Chamber metadata storage could not complete an
 	// operation.
 	ErrMetadataFailed Code = "metadata_failed"
 

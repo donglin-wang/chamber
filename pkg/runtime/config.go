@@ -20,6 +20,10 @@ type Config struct {
 	// or discovered.
 	RuntimeBinDir string
 
+	// RuntimePath is an absolute path to an existing runtime binary. Empty lets
+	// Chamber download and cache the managed runtime below RuntimeBinDir.
+	RuntimePath string
+
 	// Name selects the runtime implementation.
 	Name string
 

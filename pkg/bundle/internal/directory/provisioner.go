@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -21,6 +22,8 @@ import (
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
+	digest "github.com/opencontainers/go-digest"
+	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	ociumoci "github.com/opencontainers/umoci"
 	"github.com/opencontainers/umoci/oci/casext"
@@ -124,7 +127,8 @@ func (p *Provisioner) Provision(
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: open OCI image layout %q: %w", chamberErrors.ErrInvalidImageLayout, request.ImageLayout, err)
 	}
 	defer engine.Close()
-	if err := validateImageRefInLayout(ctx, engine, request.ImageLayout, imageRef); err != nil {
+	manifest, err := imageManifestInLayout(ctx, engine, request.ImageLayout, imageRef, request.ImageDigest, request.ImagePlatform)
+	if err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
 
@@ -135,7 +139,7 @@ func (p *Provisioner) Provision(
 		GIDMappings: gidMappings,
 		Rootless:    true,
 	}
-	if err := ociumoci.Unpack(engine, imageRef, tmpBundle, layer.UnpackOptions{
+	if err := layer.UnpackManifest(ctx, engine, tmpBundle, manifest, &layer.UnpackOptions{
 		OnDiskFormat: layer.DirRootfs{MapOptions: mapOptions},
 	}); err != nil {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: unpack OCI image into runtime bundle: %w", chamberErrors.ErrBundlePrepareFailed, err)
@@ -171,24 +175,95 @@ func (p *Provisioner) Provision(
 	return provisioned, nil
 }
 
-func validateImageRefInLayout(ctx context.Context, engine casext.Engine, layoutPath string, imageRef string) error {
+func imageManifestInLayout(
+	ctx context.Context,
+	engine casext.Engine,
+	layoutPath string,
+	imageRef string,
+	imageDigest string,
+	imagePlatform chamberImage.Platform,
+) (imagespec.Manifest, error) {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("%w: resolve image ref canceled before start: %w", chamberErrors.ErrCanceled, err)
+		return imagespec.Manifest{}, fmt.Errorf("%w: resolve image ref canceled before start: %w", chamberErrors.ErrCanceled, err)
 	}
 	descriptors, err := engine.ResolveReference(ctx, imageRef)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return fmt.Errorf("%w: resolve image ref canceled: %w", chamberErrors.ErrCanceled, ctxErr)
+			return imagespec.Manifest{}, fmt.Errorf("%w: resolve image ref canceled: %w", chamberErrors.ErrCanceled, ctxErr)
 		}
-		return fmt.Errorf("%w: resolve image ref %q in image layout %q: %w", chamberErrors.ErrInvalidImageLayout, imageRef, layoutPath, err)
+		return imagespec.Manifest{}, fmt.Errorf("%w: resolve image ref %q in image layout %q: %w", chamberErrors.ErrInvalidImageLayout, imageRef, layoutPath, err)
 	}
 	if len(descriptors) == 0 {
-		return fmt.Errorf("%w: image ref %q is not present in image layout %q", chamberErrors.ErrInvalidImageLayout, imageRef, layoutPath)
+		return imagespec.Manifest{}, fmt.Errorf("%w: image ref %q is not present in image layout %q", chamberErrors.ErrInvalidImageLayout, imageRef, layoutPath)
 	}
-	if len(descriptors) != 1 {
-		return fmt.Errorf("%w: image ref %q is ambiguous in image layout %q", chamberErrors.ErrInvalidImageLayout, imageRef, layoutPath)
+	var selected imagespec.Descriptor
+	if strings.TrimSpace(imageDigest) != "" {
+		expected, err := digest.Parse(imageDigest)
+		if err != nil {
+			return imagespec.Manifest{}, fmt.Errorf("%w: image digest is invalid: %w", chamberErrors.ErrInvalidImageLayout, err)
+		}
+		platform := chamberImage.NormalizePlatform(imagePlatform)
+		for _, descriptorPath := range descriptors {
+			descriptor := descriptorPath.Descriptor()
+			if descriptor.Digest == expected && platformMatches(descriptor.Platform, platform) {
+				selected = descriptor
+				break
+			}
+		}
+		if selected.Digest == "" {
+			return imagespec.Manifest{}, fmt.Errorf("%w: image ref %q in layout %q has no descriptor for digest %s and platform %s", chamberErrors.ErrInvalidImageLayout, imageRef, layoutPath, expected, platformString(platform))
+		}
+	} else {
+		if len(descriptors) != 1 {
+			return imagespec.Manifest{}, fmt.Errorf("%w: image ref %q is ambiguous in image layout %q", chamberErrors.ErrInvalidImageLayout, imageRef, layoutPath)
+		}
+		selected = descriptors[0].Descriptor()
 	}
-	return nil
+	return manifestFromDescriptor(ctx, engine, layoutPath, selected)
+}
+
+func manifestFromDescriptor(ctx context.Context, engine casext.Engine, layoutPath string, descriptor imagespec.Descriptor) (imagespec.Manifest, error) {
+	blob, err := engine.FromDescriptor(ctx, descriptor)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return imagespec.Manifest{}, fmt.Errorf("%w: read image manifest canceled: %w", chamberErrors.ErrCanceled, ctxErr)
+		}
+		return imagespec.Manifest{}, fmt.Errorf("%w: read image manifest %s in layout %q: %w", chamberErrors.ErrInvalidImageLayout, descriptor.Digest, layoutPath, err)
+	}
+	defer blob.Close()
+	if blob.Descriptor.MediaType != imagespec.MediaTypeImageManifest &&
+		blob.Descriptor.MediaType != "application/vnd.docker.distribution.manifest.v2+json" {
+		return imagespec.Manifest{}, fmt.Errorf("%w: image descriptor %s is not an image manifest", chamberErrors.ErrInvalidImageLayout, descriptor.Digest)
+	}
+	manifest, ok := blob.Data.(imagespec.Manifest)
+	if ok {
+		return manifest, nil
+	}
+	reader, ok := blob.Data.(io.Reader)
+	if !ok {
+		return imagespec.Manifest{}, fmt.Errorf("%w: image manifest %s has unexpected decoded type", chamberErrors.ErrInvalidImageLayout, descriptor.Digest)
+	}
+	if err := json.NewDecoder(reader).Decode(&manifest); err != nil {
+		return imagespec.Manifest{}, fmt.Errorf("%w: decode image manifest %s: %w", chamberErrors.ErrInvalidImageLayout, descriptor.Digest, err)
+	}
+	return manifest, nil
+}
+
+func platformMatches(candidate *imagespec.Platform, requested chamberImage.Platform) bool {
+	if candidate == nil {
+		return false
+	}
+	return candidate.OS == requested.OS &&
+		candidate.Architecture == requested.Architecture &&
+		candidate.Variant == requested.Variant
+}
+
+func platformString(platform chamberImage.Platform) string {
+	value := platform.OS + "/" + platform.Architecture
+	if platform.Variant != "" {
+		value += "/" + platform.Variant
+	}
+	return value
 }
 
 func writeRootlessRuntimeSpec(

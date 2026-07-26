@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
@@ -18,11 +19,11 @@ type Image struct {
 	// docker.io/library/alpine:latest.
 	Reference string `json:"reference"`
 
-	// Digest is the immutable manifest digest resolved by the puller.
+	// Digest is the immutable manifest digest resolved by the image store.
 	Digest string `json:"digest"`
 
-	// LayoutPath is an absolute path to an OCI image-layout directory.
-	LayoutPath string `json:"layout_path"`
+	// Platform is the resolved image platform associated with Digest.
+	Platform chamberImage.Platform `json:"platform"`
 
 	PulledAt   time.Time `json:"pulled_at"`
 	LastUsedAt time.Time `json:"last_used_at"`

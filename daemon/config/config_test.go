@@ -69,7 +69,10 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 		case "github.com/donglin-wang/chamber/pkg/image/factory",
 			"github.com/donglin-wang/chamber/pkg/bundle/factory",
 			"github.com/donglin-wang/chamber/pkg/runtime/factory",
-			"github.com/donglin-wang/chamber/pkg/image/internal/puller",
+			"github.com/donglin-wang/chamber/pkg/image/internal/buildah",
+			"github.com/donglin-wang/chamber/pkg/image/internal/metadata",
+			"github.com/donglin-wang/chamber/pkg/image/internal/registry",
+			"github.com/donglin-wang/chamber/pkg/image/internal/store",
 			"github.com/donglin-wang/chamber/pkg/bundle/internal/directory",
 			"github.com/donglin-wang/chamber/pkg/runtime/internal/runc",
 			"github.com/donglin-wang/chamber/daemon/metadata/etcd",
@@ -155,6 +158,7 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 		},
 		Image: chamberImage.Config{
 			Root:    filepath.Join(root, "images"),
+			Buildah: chamberImage.BuildahConfig{},
 			Logging: defaultLogging,
 		},
 		Runtime: chamberRuntime.Config{
@@ -191,6 +195,9 @@ func TestLoadFallsBackToHomeWhenXDGDataHomeIsUnset(t *testing.T) {
 	root := filepath.Join(home, ".local", "share", "chamber")
 	if cfg.Image.Root != filepath.Join(root, "images") {
 		t.Fatalf("Image.Root = %q, want %q", cfg.Image.Root, filepath.Join(root, "images"))
+	}
+	if cfg.Image.Buildah.Path != "" {
+		t.Fatalf("Image.Buildah.Path = %q, want empty local worker override by default", cfg.Image.Buildah.Path)
 	}
 	if cfg.Bundle.Root != filepath.Join(root, "bundles") {
 		t.Fatalf("Bundle.Root = %q, want %q", cfg.Bundle.Root, filepath.Join(root, "bundles"))
@@ -233,10 +240,20 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		},
 		Image: chamberImage.Config{
 			Root: "default/images",
+			Buildah: chamberImage.BuildahConfig{
+				Path:          "default/bin/buildah-worker",
+				Version:       "v1.44.1",
+				URL:           "https://example.test/buildah-worker-default",
+				SHA256:        "default-sha",
+				StorageDriver: "overlay",
+				Runtime:       "/usr/bin/crun",
+				Isolation:     "oci",
+			},
 		},
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   "default/runtime",
 			RuntimeBinDir: "default/bin",
+			RuntimePath:   "default/bin/runc",
 			Name:          chamberRuntime.RuntimeNameRunc,
 			Privilege:     capability.Rootless,
 		},
@@ -264,10 +281,20 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		},
 		Image: imageInput{
 			Root: ptr("input/images"),
+			Buildah: buildahInput{
+				Path:          ptr("input/bin/buildah-worker"),
+				Version:       ptr("v1.44.2"),
+				URL:           ptr("https://example.test/buildah-worker-input"),
+				SHA256:        ptr("input-sha"),
+				StorageDriver: ptr("vfs"),
+				Runtime:       ptr("/usr/bin/runc"),
+				Isolation:     ptr("chroot"),
+			},
 		},
 		Runtime: runtimeInput{
 			RuntimeRoot:   ptr("input/runtime"),
 			RuntimeBinDir: ptr("input/bin"),
+			RuntimePath:   ptr("input/bin/runc"),
 			Name:          ptr(chamberRuntime.RuntimeNameRunc),
 		},
 		Metadata: metadataInput{
@@ -306,6 +333,15 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		},
 		Image: chamberImage.Config{
 			Root: mustAbs(t, "input/images"),
+			Buildah: chamberImage.BuildahConfig{
+				Path:          mustAbs(t, "input/bin/buildah-worker"),
+				Version:       "v1.44.2",
+				URL:           "https://example.test/buildah-worker-input",
+				SHA256:        "input-sha",
+				StorageDriver: "vfs",
+				Runtime:       "/usr/bin/runc",
+				Isolation:     "chroot",
+			},
 			Logging: chamberLogging.Config{
 				Level:  "debug",
 				Format: "text",
@@ -314,6 +350,7 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   mustAbs(t, "input/runtime"),
 			RuntimeBinDir: mustAbs(t, "input/bin"),
+			RuntimePath:   mustAbs(t, "input/bin/runc"),
 			Name:          chamberRuntime.RuntimeNameRunc,
 			Privilege:     capability.Rootful,
 			Logging: chamberLogging.Config{
@@ -482,10 +519,11 @@ func TestLoadFileAppliesConfigFileThenCommandLineInput(t *testing.T) {
 		"privilege": "rootful",
 		"bundle": { "root": "file/bundles" },
 		"image": { "root": "file/images" },
-		"runtime": {
-			"runtime_root": "file/runtime",
-			"name": "runc"
-		},
+			"runtime": {
+				"runtime_root": "file/runtime",
+				"runtime_path": "file/bin/runc",
+				"name": "runc"
+			},
 		"open_telemetry_metrics_export_interval": 30000000000,
 		"logging": { "level": "debug" }
 	}`
@@ -522,6 +560,9 @@ func TestLoadFileAppliesConfigFileThenCommandLineInput(t *testing.T) {
 	}
 	if cfg.Runtime.Name != chamberRuntime.RuntimeNameRunc {
 		t.Fatalf("Runtime.Name = %q, want runc", cfg.Runtime.Name)
+	}
+	if cfg.Runtime.RuntimePath != mustAbs(t, "file/bin/runc") {
+		t.Fatalf("Runtime.RuntimePath = %q, want config file value", cfg.Runtime.RuntimePath)
 	}
 	if cfg.Runtime.Privilege != capability.Rootful {
 		t.Fatalf("Runtime.Privilege = %q, want top-level daemon privilege", cfg.Runtime.Privilege)

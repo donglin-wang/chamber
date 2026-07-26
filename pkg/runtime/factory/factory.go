@@ -62,14 +62,16 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, director
 	if config.RuntimeRoot == "" {
 		return nil, fmt.Errorf("%w: runtime root is required", chamberErrors.ErrInvalidRequest)
 	}
-	if config.RuntimeBinDir == "" {
+	if config.RuntimeBinDir == "" && strings.TrimSpace(config.RuntimePath) == "" {
 		return nil, fmt.Errorf("%w: runtime bin dir is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := directoryManager.MkdirPrivate(config.RuntimeRoot); err != nil {
 		return nil, fmt.Errorf("%w: create runtime root: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
-	if err := directoryManager.MkdirPrivate(config.RuntimeBinDir); err != nil {
-		return nil, fmt.Errorf("%w: create runtime bin dir: %v", chamberErrors.ErrFilesystemFailed, err)
+	if config.RuntimeBinDir != "" {
+		if err := directoryManager.MkdirPrivate(config.RuntimeBinDir); err != nil {
+			return nil, fmt.Errorf("%w: create runtime bin dir: %v", chamberErrors.ErrFilesystemFailed, err)
+		}
 	}
 
 	switch config.Name {

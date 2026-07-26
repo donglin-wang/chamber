@@ -133,15 +133,19 @@ func main() {
 	root := "/tmp/chamber-sdk-demo"
 	directoryManager := localfs.NewDirectoryManager()
 
-	puller, err := chamberImageFactory.NewPuller(chamberImage.Config{
+	imageStore, err := chamberImageFactory.NewStore(chamberImage.Config{
 		Root: filepath.Join(root, "images"),
 	}, directoryManager)
 	if err != nil {
 		panic(err)
 	}
-	pulled, err := puller.Pull(ctx, chamberImage.PullRequest{
+	image, err := imageStore.Pull(ctx, chamberImage.PullRequest{
 		Reference: "docker.io/library/alpine:latest",
 	})
+	if err != nil {
+		panic(err)
+	}
+	imageLayout, err := imageStore.Layout(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -156,9 +160,11 @@ func main() {
 	}
 	terminal := false
 	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
-		ContainerID: "demo",
-		ImageLayout: pulled.LayoutPath,
-		ImageRef:    pulled.Reference,
+		ContainerID:   "demo",
+		ImageLayout:   imageLayout,
+		ImageRef:      image.Reference,
+		ImageDigest:   image.Digest,
+		ImagePlatform: image.Platform,
 		Process: chamberBundle.ProcessSpec{
 			Args:     []string{"/bin/sh", "-c", "echo hello from chamber"},
 			Terminal: &terminal,
@@ -203,18 +209,42 @@ func main() {
 }
 ```
 
+`image.Store.Build` uses a `buildah-worker` subprocess for Dockerfile builds.
+Set `image.Buildah.Path` to use an existing local worker executable. When
+`Path` is empty, Chamber downloads and caches the managed worker below
+`<image-root>/bin/buildah-worker` using `image.Buildah.URL` and
+`image.Buildah.SHA256`, or the default v0.1.0-beta.4 worker metadata for the
+host architecture. The worker owns Buildah's required reexec setup, calls the
+Buildah Go SDK, and keeps Buildah graph, run, and temp state under the configured
+image root.
+
+See [host-assumption-validator-plan.md](host-assumption-validator-plan.md) for
+the Linux/rootless host assumptions Chamber should validate before build,
+provision, and run workflows.
+
 ## Validation
 
 Use an explicit Go cache in restricted macOS environments:
 
 ```sh
-GOCACHE=/tmp/chamber-go-cache go test ./...
-GOCACHE=/tmp/chamber-go-cache go vet ./...
+GOCACHE=/tmp/chamber-go-cache go test ./pkg/... ./daemon/...
+GOCACHE=/tmp/chamber-go-cache go vet ./pkg/... ./daemon/...
+```
+
+The `buildah-worker` command is a Linux Buildah binary. Validate it on Linux
+with the Buildah storage/image tags:
+
+```sh
+GOCACHE=/tmp/chamber-go-cache go test -tags "containers_image_openpgp exclude_graphdriver_btrfs" ./pkg/... ./daemon/... ./cmd/...
+```
+
+```sh
+CGO_ENABLED=0 go test ./pkg/image/...
 ```
 
 The default test suite avoids real registry pulls. To include registry
 integration coverage, opt in explicitly:
 
 ```sh
-CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/image/internal/puller -run TestImagePullerRealWorldBusybox
+CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/image/internal/store -run TestStoreRealWorldBusybox
 ```

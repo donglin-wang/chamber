@@ -116,14 +116,18 @@ func run(cfg *config) error {
 	descriptor := runtime.Descriptor()
 	logging.Info(ctx, "CI runtime ready", "runtime", descriptor.Name, "version", descriptor.Version, "path", descriptor.BinaryPath)
 
-	puller, err := chamberImageFactory.NewPuller(chamberImage.Config{
+	imageStore, err := chamberImageFactory.NewStore(chamberImage.Config{
 		Root:    paths.imageRoot,
 		Logging: loggingConfig,
 	}, directoryManager)
 	if err != nil {
-		return fmt.Errorf("create image puller: %w", err)
+		return fmt.Errorf("create image store: %w", err)
 	}
-	imageLayout, err := ensureImage(ctx, puller, cfg.image)
+	image, err := ensureImage(ctx, imageStore, cfg.image)
+	if err != nil {
+		return err
+	}
+	imageLayout, err := imageStore.Layout(ctx)
 	if err != nil {
 		return err
 	}
@@ -149,13 +153,15 @@ func run(cfg *config) error {
 	results := make([]jobResult, 0, len(jobs))
 	for _, job := range jobs {
 		result := runJob(ctx, runtime, provisioner, jobRequest{
-			job:          job,
-			imageRef:     cfg.image,
-			imageLayout:  imageLayout,
-			workspace:    workspace,
-			goBuildCache: paths.goBuildCache,
-			goModCache:   paths.goModCache,
-			keep:         cfg.keep,
+			job:           job,
+			imageRef:      image.Reference,
+			imageDigest:   image.Digest,
+			imagePlatform: image.Platform,
+			imageLayout:   imageLayout,
+			workspace:     workspace,
+			goBuildCache:  paths.goBuildCache,
+			goModCache:    paths.goModCache,
+			keep:          cfg.keep,
 		})
 		results = append(results, result)
 		logResult(ctx, result)
@@ -223,32 +229,31 @@ func ciPaths(root string) paths {
 	}
 }
 
-func ensureImage(ctx context.Context, puller chamberImage.Puller, imageRef string) (string, error) {
+func ensureImage(ctx context.Context, imageStore chamberImage.Store, imageRef string) (chamberImage.Image, error) {
 	logging.Info(ctx, "CI image pull started", "image_ref", imageRef)
-	pulled, err := puller.Pull(ctx, chamberImage.PullRequest{
+	image, err := imageStore.Pull(ctx, chamberImage.PullRequest{
 		Reference: imageRef,
 		Platform: chamberImage.Platform{
 			OS: "linux",
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("pull image %q: %w", imageRef, err)
+		return chamberImage.Image{}, fmt.Errorf("pull image %q: %w", imageRef, err)
 	}
-	if pulled.LayoutPath == "" {
-		return "", fmt.Errorf("pull image %q: image puller returned empty layout path", imageRef)
-	}
-	logging.Info(ctx, "CI image pulled", "image_ref", pulled.Reference, "digest", pulled.Digest, "bytes", pulled.SizeBytes)
-	return pulled.LayoutPath, nil
+	logging.Info(ctx, "CI image pulled", "image_ref", image.Reference, "digest", image.Digest, "bytes", image.SizeBytes)
+	return image, nil
 }
 
 type jobRequest struct {
-	job          job
-	imageRef     string
-	imageLayout  string
-	workspace    string
-	goBuildCache string
-	goModCache   string
-	keep         bool
+	job           job
+	imageRef      string
+	imageDigest   string
+	imagePlatform chamberImage.Platform
+	imageLayout   string
+	workspace     string
+	goBuildCache  string
+	goModCache    string
+	keep          bool
 }
 
 func runJob(ctx context.Context, runtime chamberRuntime.Runtime, provisioner chamberBundle.Provisioner, request jobRequest) jobResult {
@@ -258,9 +263,11 @@ func runJob(ctx context.Context, runtime chamberRuntime.Runtime, provisioner cha
 
 	logging.Info(ctx, "CI job started", "job", request.job.name, "args", request.job.args)
 	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
-		ContainerID: containerID,
-		ImageLayout: request.imageLayout,
-		ImageRef:    request.imageRef,
+		ContainerID:   containerID,
+		ImageLayout:   request.imageLayout,
+		ImageRef:      request.imageRef,
+		ImageDigest:   request.imageDigest,
+		ImagePlatform: request.imagePlatform,
 		Process: chamberBundle.ProcessSpec{
 			Args: request.job.args,
 			Env: []string{
