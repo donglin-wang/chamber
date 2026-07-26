@@ -34,7 +34,7 @@ const (
 	defaultAMD64URL    = "https://github.com/donglin-wang/chamber/releases/download/v0.1.0-beta.4/buildah-worker-linux-amd64"
 	defaultAMD64SHA256 = "649dea3351658956bbca0a635baca721968f4cb37b20db8a344d817ac7415bcd"
 	defaultARM64URL    = "https://github.com/donglin-wang/chamber/releases/download/v0.1.0-beta.4/buildah-worker-linux-arm64"
-	defaultARM64SHA256 = "62ec2157a1783aad5fdb9916774c424729786e8827c22ce8acbd268a7fa10402"
+	defaultARM64SHA256 = "d9f75975799c0ed2d176a89405518a1760a7e183e4269876c0920aaedd791355"
 )
 
 type Builder struct {

@@ -2,6 +2,8 @@ module github.com/donglin-wang/chamber
 
 go 1.26.4
 
+retract v0.1.0-beta.4 // Published with an invalid Buildah worker artifact.
+
 require (
 	github.com/apex/log v1.9.0
 	github.com/cyphar/filepath-securejoin v0.6.1
