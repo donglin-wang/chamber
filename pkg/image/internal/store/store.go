@@ -14,7 +14,7 @@ import (
 	"time"
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
-	"github.com/donglin-wang/chamber/pkg/image/internal/buildah"
+	"github.com/donglin-wang/chamber/pkg/image/internal/buildkit"
 	imageMetadata "github.com/donglin-wang/chamber/pkg/image/internal/metadata"
 	"github.com/donglin-wang/chamber/pkg/image/internal/registry"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
@@ -35,7 +35,7 @@ type Store struct {
 	mu               sync.Mutex
 	builderMu        sync.Mutex
 	buildMu          sync.Mutex
-	builder          *buildah.Builder
+	builder          *buildkit.Builder
 }
 
 var _ chamberImage.Store = (*Store)(nil)
@@ -157,11 +157,11 @@ func (s *Store) Build(ctx context.Context, request chamberImage.BuildRequest) (c
 	if err := s.requireReady(); err != nil {
 		return chamberImage.Image{}, err
 	}
-	if err := buildah.ValidateRequest(request); err != nil {
+	if err := buildkit.ValidateRequest(request); err != nil {
 		return chamberImage.Image{}, err
 	}
 
-	builder, err := s.buildahBuilder(ctx)
+	builder, err := s.buildkitBuilder(ctx)
 	if err != nil {
 		return chamberImage.Image{}, err
 	}
@@ -189,14 +189,14 @@ func (s *Store) Build(ctx context.Context, request chamberImage.BuildRequest) (c
 	})
 }
 
-func (s *Store) buildahBuilder(ctx context.Context) (*buildah.Builder, error) {
+func (s *Store) buildkitBuilder(ctx context.Context) (*buildkit.Builder, error) {
 	s.builderMu.Lock()
 	defer s.builderMu.Unlock()
 
 	if s.builder != nil {
 		return s.builder, nil
 	}
-	builder, err := buildah.New(ctx, s.config.Buildah, s.config.Root, s.directoryManager)
+	builder, err := buildkit.New(ctx, s.config.BuildKit, s.config.Root, s.directoryManager, s.logger)
 	if err != nil {
 		return nil, err
 	}

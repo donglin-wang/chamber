@@ -12,8 +12,14 @@ type Config struct {
 	// image layout, metadata, and temporary operation directories.
 	Root string
 
-	// Buildah configures Dockerfile builds. A zero value uses the managed
-	// buildah-worker download metadata and the vfs storage driver.
+	// BuildKit configures Dockerfile builds. A zero value uses managed BuildKit,
+	// RootlessKit, and runc binaries below <Config.Root>/bin.
+	BuildKit BuildKitConfig
+
+	// Buildah configures the deprecated Buildah-backed builder. It is retained
+	// for source compatibility; Store.Build uses BuildKit.
+	//
+	// Deprecated: configure BuildKit instead.
 	Buildah BuildahConfig
 
 	// Logging configures host-side Chamber logs for image operations. A zero
@@ -21,36 +27,85 @@ type Config struct {
 	Logging chamberLogging.Config
 }
 
+// BuildKitConfig configures BuildKit-backed image builds.
+type BuildKitConfig struct {
+	// BuildctlPath is an absolute path to an existing buildctl executable.
+	// Empty lets Chamber download and cache managed BuildKit tools below
+	// <Config.Root>/bin.
+	BuildctlPath string
+
+	// BuildkitdPath is an absolute path to an existing buildkitd executable.
+	// Empty lets Chamber download and cache managed BuildKit tools below
+	// <Config.Root>/bin.
+	BuildkitdPath string
+
+	// RootlessKitPath is an absolute path to an existing rootlesskit executable.
+	// Empty lets Chamber download and cache managed RootlessKit below
+	// <Config.Root>/bin.
+	RootlessKitPath string
+
+	// RuncPath is an absolute path to an existing runc executable. Empty lets
+	// Chamber download and cache managed runc below <Config.Root>/bin.
+	RuncPath string
+
+	// BuildKitVersion is the configured BuildKit version for logs and
+	// diagnostics when BuildKitURL and BuildKitSHA256 are set. Empty uses
+	// Chamber's pinned default for the host architecture.
+	BuildKitVersion string
+
+	// BuildKitURL is the source for a managed BuildKit release tarball. Empty
+	// uses Chamber's pinned default for the host architecture.
+	BuildKitURL string
+
+	// BuildKitSHA256 is the expected hex-encoded SHA256 digest for the managed
+	// BuildKit release tarball.
+	BuildKitSHA256 string
+
+	// RootlessKitVersion is the configured RootlessKit version for logs and
+	// diagnostics when RootlessKitURL and RootlessKitSHA256 are set. Empty uses
+	// Chamber's pinned default for the host architecture.
+	RootlessKitVersion string
+
+	// RootlessKitURL is the source for a managed RootlessKit release tarball.
+	// Empty uses Chamber's pinned default for the host architecture.
+	RootlessKitURL string
+
+	// RootlessKitSHA256 is the expected hex-encoded SHA256 digest for the
+	// managed RootlessKit release tarball.
+	RootlessKitSHA256 string
+
+	// Snapshotter selects BuildKit's OCI worker snapshotter. Empty defaults to
+	// native.
+	Snapshotter string
+}
+
 // BuildahConfig configures Buildah-backed image builds.
+//
+// Deprecated: Store.Build uses BuildKitConfig. This type is retained only so
+// older callers can compile while moving to BuildKitConfig.
 type BuildahConfig struct {
-	// Path is an absolute path to an existing buildah-worker executable. Empty
-	// lets Chamber download and cache the managed worker below <Config.Root>/bin.
+	// Path was an absolute path to an existing buildah-worker executable.
 	Path string
 
-	// Version is the configured Buildah version for logs and diagnostics when
-	// URL and SHA256 are set.
+	// Version was the configured Buildah version for logs and diagnostics when
+	// URL and SHA256 were set.
 	Version string
 
-	// URL is the source for a managed buildah-worker binary download. It must
-	// point to a buildah-worker executable. Empty uses Chamber's default worker
-	// release URL for the host architecture.
+	// URL was the source for a managed buildah-worker binary download.
 	URL string
 
-	// SHA256 is the expected hex-encoded SHA256 digest for a managed
-	// buildah-worker binary. URL and SHA256 must be configured together for
-	// downloads.
+	// SHA256 was the expected hex-encoded SHA256 digest for a managed
+	// buildah-worker binary.
 	SHA256 string
 
-	// StorageDriver selects the containers/storage graph driver used by
-	// Buildah. Empty defaults to vfs.
+	// StorageDriver selected the containers/storage graph driver used by
+	// Buildah.
 	StorageDriver string
 
-	// Runtime is passed to Buildah for Dockerfile RUN instructions when
-	// non-empty. Empty lets Buildah choose its default OCI runtime.
+	// Runtime was passed to Buildah for Dockerfile RUN instructions.
 	Runtime string
 
-	// Isolation is passed to Buildah for Dockerfile RUN instructions. Empty
-	// defaults to chroot to avoid depending on an ambient OCI runtime.
+	// Isolation was passed to Buildah for Dockerfile RUN instructions.
 	Isolation string
 }
 
@@ -58,8 +113,9 @@ type BuildahConfig struct {
 func DefaultConfig(rootPath string) Config {
 	imageRoot := filepath.Join(rootPath, "images")
 	return Config{
-		Root:    imageRoot,
-		Buildah: BuildahConfig{},
-		Logging: chamberLogging.Config{},
+		Root:     imageRoot,
+		BuildKit: BuildKitConfig{},
+		Buildah:  BuildahConfig{},
+		Logging:  chamberLogging.Config{},
 	}
 }

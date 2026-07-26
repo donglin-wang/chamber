@@ -80,9 +80,24 @@ type bundleInput struct {
 }
 
 type imageInput struct {
-	Root    *string      `json:"root,omitempty"`
-	Buildah buildahInput `json:"buildah,omitempty"`
-	Logging loggingInput `json:"logging,omitempty"`
+	Root     *string       `json:"root,omitempty"`
+	BuildKit buildKitInput `json:"buildkit,omitempty"`
+	Buildah  buildahInput  `json:"buildah,omitempty"`
+	Logging  loggingInput  `json:"logging,omitempty"`
+}
+
+type buildKitInput struct {
+	BuildctlPath       *string `json:"buildctl_path,omitempty"`
+	BuildkitdPath      *string `json:"buildkitd_path,omitempty"`
+	RootlessKitPath    *string `json:"rootlesskit_path,omitempty"`
+	RuncPath           *string `json:"runc_path,omitempty"`
+	BuildKitVersion    *string `json:"buildkit_version,omitempty"`
+	BuildKitURL        *string `json:"buildkit_url,omitempty"`
+	BuildKitSHA256     *string `json:"buildkit_sha256,omitempty"`
+	RootlessKitVersion *string `json:"rootlesskit_version,omitempty"`
+	RootlessKitURL     *string `json:"rootlesskit_url,omitempty"`
+	RootlessKitSHA256  *string `json:"rootlesskit_sha256,omitempty"`
+	Snapshotter        *string `json:"snapshotter,omitempty"`
 }
 
 type buildahInput struct {
@@ -299,6 +314,10 @@ func absolutizePaths(cfg *Config) {
 		&cfg.TmpRoot,
 		&cfg.Bundle.Root,
 		&cfg.Image.Root,
+		&cfg.Image.BuildKit.BuildctlPath,
+		&cfg.Image.BuildKit.BuildkitdPath,
+		&cfg.Image.BuildKit.RootlessKitPath,
+		&cfg.Image.BuildKit.RuncPath,
 		&cfg.Image.Buildah.Path,
 		&cfg.Runtime.RuntimeRoot,
 		&cfg.Runtime.RuntimeBinDir,
@@ -336,8 +355,46 @@ func mergeImageInput(base imageInput, overlay imageInput) imageInput {
 	if overlay.Root != nil {
 		base.Root = overlay.Root
 	}
+	base.BuildKit = mergeBuildKitInput(base.BuildKit, overlay.BuildKit)
 	base.Buildah = mergeBuildahInput(base.Buildah, overlay.Buildah)
 	base.Logging = mergeLoggingInput(base.Logging, overlay.Logging)
+	return base
+}
+
+func mergeBuildKitInput(base buildKitInput, overlay buildKitInput) buildKitInput {
+	if overlay.BuildctlPath != nil {
+		base.BuildctlPath = overlay.BuildctlPath
+	}
+	if overlay.BuildkitdPath != nil {
+		base.BuildkitdPath = overlay.BuildkitdPath
+	}
+	if overlay.RootlessKitPath != nil {
+		base.RootlessKitPath = overlay.RootlessKitPath
+	}
+	if overlay.RuncPath != nil {
+		base.RuncPath = overlay.RuncPath
+	}
+	if overlay.BuildKitVersion != nil {
+		base.BuildKitVersion = overlay.BuildKitVersion
+	}
+	if overlay.BuildKitURL != nil {
+		base.BuildKitURL = overlay.BuildKitURL
+	}
+	if overlay.BuildKitSHA256 != nil {
+		base.BuildKitSHA256 = overlay.BuildKitSHA256
+	}
+	if overlay.RootlessKitVersion != nil {
+		base.RootlessKitVersion = overlay.RootlessKitVersion
+	}
+	if overlay.RootlessKitURL != nil {
+		base.RootlessKitURL = overlay.RootlessKitURL
+	}
+	if overlay.RootlessKitSHA256 != nil {
+		base.RootlessKitSHA256 = overlay.RootlessKitSHA256
+	}
+	if overlay.Snapshotter != nil {
+		base.Snapshotter = overlay.Snapshotter
+	}
 	return base
 }
 
@@ -417,8 +474,45 @@ func applyImageInput(config *chamberImage.Config, input imageInput) {
 	if input.Root != nil {
 		config.Root = *input.Root
 	}
+	applyBuildKitInput(&config.BuildKit, input.BuildKit)
 	applyBuildahInput(&config.Buildah, input.Buildah)
 	config.Logging = applyLoggingInput(config.Logging, input.Logging)
+}
+
+func applyBuildKitInput(config *chamberImage.BuildKitConfig, input buildKitInput) {
+	if input.BuildctlPath != nil {
+		config.BuildctlPath = *input.BuildctlPath
+	}
+	if input.BuildkitdPath != nil {
+		config.BuildkitdPath = *input.BuildkitdPath
+	}
+	if input.RootlessKitPath != nil {
+		config.RootlessKitPath = *input.RootlessKitPath
+	}
+	if input.RuncPath != nil {
+		config.RuncPath = *input.RuncPath
+	}
+	if input.BuildKitVersion != nil {
+		config.BuildKitVersion = *input.BuildKitVersion
+	}
+	if input.BuildKitURL != nil {
+		config.BuildKitURL = *input.BuildKitURL
+	}
+	if input.BuildKitSHA256 != nil {
+		config.BuildKitSHA256 = *input.BuildKitSHA256
+	}
+	if input.RootlessKitVersion != nil {
+		config.RootlessKitVersion = *input.RootlessKitVersion
+	}
+	if input.RootlessKitURL != nil {
+		config.RootlessKitURL = *input.RootlessKitURL
+	}
+	if input.RootlessKitSHA256 != nil {
+		config.RootlessKitSHA256 = *input.RootlessKitSHA256
+	}
+	if input.Snapshotter != nil {
+		config.Snapshotter = *input.Snapshotter
+	}
 }
 
 func applyBuildahInput(config *chamberImage.BuildahConfig, input buildahInput) {

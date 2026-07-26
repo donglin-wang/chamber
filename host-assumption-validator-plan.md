@@ -24,8 +24,8 @@ That requires:
 - writable private state owned by the calling user;
 - predictable temp/runtime directories that are not shared across users.
 
-Buildah and runc hit many of the same assumptions because both eventually need
-rootless namespaces and process execution. Buildah adds builder storage and
+BuildKit and runc hit many of the same assumptions because both eventually need
+rootless namespaces and process execution. BuildKit adds builder state and
 Dockerfile `RUN`; runc adds final container lifecycle/cgroup/log behavior.
 
 ## Shared Assumptions
@@ -69,28 +69,30 @@ The minimum viable validator can distinguish:
   images;
 - unavailable: Chamber should fail before build/run with a clear diagnostic.
 
-## Buildah Worker Assumptions
+## BuildKit Builder Assumptions
 
-Chamber's Buildah backend shells out to Chamber's managed `buildah-worker`.
-The worker owns Buildah's reexec setup, calls the Buildah Go SDK, and keeps
-Buildah's graph root, run root, and temp root under the image store root.
+Chamber's BuildKit backend shells out to managed `buildctl`, `buildkitd`,
+`rootlesskit`, and `runc` binaries. The image store starts an ephemeral
+rootless BuildKit daemon for each build and keeps BuildKit state, runtime
+directories, home/config directories, temporary files, and the output archive
+under the image store root.
 
 Validator checks:
 
-- configured `image.Buildah.Path`, when set, is absolute and not a directory;
-- when `image.Buildah.Path` is empty, the managed worker URL, SHA256, and cache
-  path below `<image-root>/bin/buildah-worker` are configured;
-- an existing worker executable answers Chamber's current worker protocol probe;
-- an existing pinned worker binary matches its configured SHA256;
-- Buildah can run without root for the current user;
-- `--storage-driver=vfs` works as the conservative default;
-- if `overlay` is selected, rootless overlay requirements are present, usually
-  kernel support or `fuse-overlayfs`;
-- configured Buildah runtime exists when `image.Buildah.Runtime` is set;
-- configured Buildah isolation mode is supported by the host; Chamber defaults
-  to `chroot` isolation to avoid depending on an ambient OCI runtime;
-- Chamber image root can hold Buildah graph/run/tmp state;
-- Buildah can write an `oci-archive:` result into a Chamber temp directory;
+- configured local BuildKit tool paths, when set, are absolute and not
+  directories;
+- managed BuildKit and RootlessKit archive URL, SHA256, and cache paths below
+  `<image-root>/bin` are configured for the host architecture;
+- managed runc URL, SHA256, and cache path below `<image-root>/bin/runc` are
+  configured for the host architecture;
+- existing tool executables answer a `--version` probe;
+- the current user is non-root for the rootless BuildKit path;
+- unprivileged user namespaces are enabled;
+- AppArmor policy permits unprivileged user namespace setup;
+- BuildKit's `native` snapshotter works as the conservative default;
+- Chamber image root can hold BuildKit state/run/home/tmp directories;
+- BuildKit can write a `type=oci,dest=<archive>` result into a Chamber temp
+  directory;
 - registry access, auth files, custom certs, and proxy settings are available
   when Dockerfiles use remote base images.
 
@@ -102,13 +104,13 @@ Useful active probe:
 Stronger active probe:
 
 - build a tiny Dockerfile with a `RUN true` step. This verifies the expensive
-  part: Buildah can execute build containers rootlessly, not just assemble a
+  part: BuildKit can execute build containers rootlessly, not just assemble a
   scratch image.
 
 ## Bundle Provisioning Assumptions
 
 The directory provisioner unpacks a selected image manifest into an OCI bundle
-rootfs. It does not need Buildah's storage driver, but it still needs safe
+rootfs. It does not need BuildKit's snapshotter, but it still needs safe
 rootless filesystem behavior.
 
 Validator checks:
@@ -215,4 +217,4 @@ build tiny images, provision temporary bundles, and run short-lived containers.
 - `info`: host detail worth reporting for debugging.
 
 The goal is not to hide platform complexity. The goal is to fail before the user
-has to reverse-engineer a Buildah or runc error.
+has to reverse-engineer a BuildKit, RootlessKit, or runc error.

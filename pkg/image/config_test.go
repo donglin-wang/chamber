@@ -14,8 +14,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Root != filepath.Join(root, "images") {
 		t.Fatalf("Root = %q, want default image root", cfg.Root)
 	}
-	if cfg.Buildah.Path != "" {
-		t.Fatalf("Buildah.Path = %q, want caller-provided local worker path unset by default", cfg.Buildah.Path)
+	if cfg.BuildKit.BuildctlPath != "" {
+		t.Fatalf("BuildKit.BuildctlPath = %q, want caller-provided local buildctl path unset by default", cfg.BuildKit.BuildctlPath)
 	}
 }
 

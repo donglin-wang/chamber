@@ -209,14 +209,13 @@ func main() {
 }
 ```
 
-`image.Store.Build` uses a `buildah-worker` subprocess for Dockerfile builds.
-Set `image.Buildah.Path` to use an existing local worker executable. When
-`Path` is empty, Chamber downloads and caches the managed worker below
-`<image-root>/bin/buildah-worker` using `image.Buildah.URL` and
-`image.Buildah.SHA256`, or the default v0.1.0-beta.4 worker metadata for the
-host architecture. The worker owns Buildah's required reexec setup, calls the
-Buildah Go SDK, and keeps Buildah graph, run, and temp state under the configured
-image root.
+`image.Store.Build` uses an ephemeral rootless BuildKit daemon for Dockerfile
+builds. Set `image.BuildKit.BuildctlPath`, `BuildkitdPath`,
+`RootlessKitPath`, and `RuncPath` to use local tool binaries. When paths are
+empty, Chamber downloads and caches managed BuildKit, RootlessKit, and runc
+binaries below `<image-root>/bin`. Per-build daemon state, runtime directories,
+home/config directories, temporary files, and the OCI output archive stay below
+`<image-root>/tmp` and are removed after the build.
 
 See [host-assumption-validator-plan.md](host-assumption-validator-plan.md) for
 the Linux/rootless host assumptions Chamber should validate before build,
@@ -231,20 +230,18 @@ GOCACHE=/tmp/chamber-go-cache go test ./pkg/... ./daemon/...
 GOCACHE=/tmp/chamber-go-cache go vet ./pkg/... ./daemon/...
 ```
 
-The `buildah-worker` command is a Linux Buildah binary. Validate it on Linux
-with the Buildah storage/image tags:
+BuildKit builds require Linux rootless host support. Validate the normal package
+surface with:
 
 ```sh
-GOCACHE=/tmp/chamber-go-cache go test -tags "containers_image_openpgp exclude_graphdriver_btrfs" ./pkg/... ./daemon/... ./cmd/...
+GOCACHE=/tmp/chamber-go-cache go test ./...
 ```
 
-```sh
-CGO_ENABLED=0 go test ./pkg/image/...
-```
-
-The default test suite avoids real registry pulls. To include registry
-integration coverage, opt in explicitly:
+The default test suite avoids real registry pulls and real Dockerfile builds. To
+include integration coverage, opt in explicitly on a rootless-capable Linux
+host:
 
 ```sh
 CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/image/internal/store -run TestStoreRealWorldBusybox
+CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/image/internal/store -run TestStoreRealBuildKit
 ```

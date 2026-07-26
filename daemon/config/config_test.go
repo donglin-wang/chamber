@@ -70,6 +70,7 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 			"github.com/donglin-wang/chamber/pkg/bundle/factory",
 			"github.com/donglin-wang/chamber/pkg/runtime/factory",
 			"github.com/donglin-wang/chamber/pkg/image/internal/buildah",
+			"github.com/donglin-wang/chamber/pkg/image/internal/buildkit",
 			"github.com/donglin-wang/chamber/pkg/image/internal/metadata",
 			"github.com/donglin-wang/chamber/pkg/image/internal/registry",
 			"github.com/donglin-wang/chamber/pkg/image/internal/store",
@@ -157,9 +158,10 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 			Logging:   defaultLogging,
 		},
 		Image: chamberImage.Config{
-			Root:    filepath.Join(root, "images"),
-			Buildah: chamberImage.BuildahConfig{},
-			Logging: defaultLogging,
+			Root:     filepath.Join(root, "images"),
+			BuildKit: chamberImage.BuildKitConfig{},
+			Buildah:  chamberImage.BuildahConfig{},
+			Logging:  defaultLogging,
 		},
 		Runtime: chamberRuntime.Config{
 			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
@@ -196,8 +198,8 @@ func TestLoadFallsBackToHomeWhenXDGDataHomeIsUnset(t *testing.T) {
 	if cfg.Image.Root != filepath.Join(root, "images") {
 		t.Fatalf("Image.Root = %q, want %q", cfg.Image.Root, filepath.Join(root, "images"))
 	}
-	if cfg.Image.Buildah.Path != "" {
-		t.Fatalf("Image.Buildah.Path = %q, want empty local worker override by default", cfg.Image.Buildah.Path)
+	if cfg.Image.BuildKit.BuildctlPath != "" {
+		t.Fatalf("Image.BuildKit.BuildctlPath = %q, want empty local buildctl override by default", cfg.Image.BuildKit.BuildctlPath)
 	}
 	if cfg.Bundle.Root != filepath.Join(root, "bundles") {
 		t.Fatalf("Bundle.Root = %q, want %q", cfg.Bundle.Root, filepath.Join(root, "bundles"))
@@ -240,14 +242,18 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		},
 		Image: chamberImage.Config{
 			Root: "default/images",
-			Buildah: chamberImage.BuildahConfig{
-				Path:          "default/bin/buildah-worker",
-				Version:       "v1.44.1",
-				URL:           "https://example.test/buildah-worker-default",
-				SHA256:        "default-sha",
-				StorageDriver: "overlay",
-				Runtime:       "/usr/bin/crun",
-				Isolation:     "oci",
+			BuildKit: chamberImage.BuildKitConfig{
+				BuildctlPath:       "default/bin/buildctl",
+				BuildkitdPath:      "default/bin/buildkitd",
+				RootlessKitPath:    "default/bin/rootlesskit",
+				RuncPath:           "default/bin/runc",
+				BuildKitVersion:    "v0.31.1",
+				BuildKitURL:        "https://example.test/buildkit-default.tar.gz",
+				BuildKitSHA256:     "default-buildkit-sha",
+				RootlessKitVersion: "v3.0.1",
+				RootlessKitURL:     "https://example.test/rootlesskit-default.tar.gz",
+				RootlessKitSHA256:  "default-rootlesskit-sha",
+				Snapshotter:        "native",
 			},
 		},
 		Runtime: chamberRuntime.Config{
@@ -281,14 +287,18 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		},
 		Image: imageInput{
 			Root: ptr("input/images"),
-			Buildah: buildahInput{
-				Path:          ptr("input/bin/buildah-worker"),
-				Version:       ptr("v1.44.2"),
-				URL:           ptr("https://example.test/buildah-worker-input"),
-				SHA256:        ptr("input-sha"),
-				StorageDriver: ptr("vfs"),
-				Runtime:       ptr("/usr/bin/runc"),
-				Isolation:     ptr("chroot"),
+			BuildKit: buildKitInput{
+				BuildctlPath:       ptr("input/bin/buildctl"),
+				BuildkitdPath:      ptr("input/bin/buildkitd"),
+				RootlessKitPath:    ptr("input/bin/rootlesskit"),
+				RuncPath:           ptr("input/bin/runc"),
+				BuildKitVersion:    ptr("v0.31.2"),
+				BuildKitURL:        ptr("https://example.test/buildkit-input.tar.gz"),
+				BuildKitSHA256:     ptr("input-buildkit-sha"),
+				RootlessKitVersion: ptr("v3.0.2"),
+				RootlessKitURL:     ptr("https://example.test/rootlesskit-input.tar.gz"),
+				RootlessKitSHA256:  ptr("input-rootlesskit-sha"),
+				Snapshotter:        ptr("native"),
 			},
 		},
 		Runtime: runtimeInput{
@@ -333,14 +343,18 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		},
 		Image: chamberImage.Config{
 			Root: mustAbs(t, "input/images"),
-			Buildah: chamberImage.BuildahConfig{
-				Path:          mustAbs(t, "input/bin/buildah-worker"),
-				Version:       "v1.44.2",
-				URL:           "https://example.test/buildah-worker-input",
-				SHA256:        "input-sha",
-				StorageDriver: "vfs",
-				Runtime:       "/usr/bin/runc",
-				Isolation:     "chroot",
+			BuildKit: chamberImage.BuildKitConfig{
+				BuildctlPath:       mustAbs(t, "input/bin/buildctl"),
+				BuildkitdPath:      mustAbs(t, "input/bin/buildkitd"),
+				RootlessKitPath:    mustAbs(t, "input/bin/rootlesskit"),
+				RuncPath:           mustAbs(t, "input/bin/runc"),
+				BuildKitVersion:    "v0.31.2",
+				BuildKitURL:        "https://example.test/buildkit-input.tar.gz",
+				BuildKitSHA256:     "input-buildkit-sha",
+				RootlessKitVersion: "v3.0.2",
+				RootlessKitURL:     "https://example.test/rootlesskit-input.tar.gz",
+				RootlessKitSHA256:  "input-rootlesskit-sha",
+				Snapshotter:        "native",
 			},
 			Logging: chamberLogging.Config{
 				Level:  "debug",

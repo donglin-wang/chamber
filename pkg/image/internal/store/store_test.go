@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -20,7 +19,7 @@ import (
 const busyboxReference = "index.docker.io/library/busybox:latest"
 
 func TestStorePullCommitsToSharedLayoutAndReusesMetadata(t *testing.T) {
-	store, root := newTestStore(t, chamberImage.Config{})
+	store, root := newShortRootTestStore(t, chamberImage.Config{})
 	registry := testutil.NewFakeRegistry(t)
 	reference, expectedDigest := registry.PushRandomImage(t, "library/app", "latest")
 
@@ -61,7 +60,7 @@ func TestStorePullCommitsToSharedLayoutAndReusesMetadata(t *testing.T) {
 }
 
 func TestStorePullAlwaysRefreshesSharedLayoutReference(t *testing.T) {
-	store, _ := newTestStore(t, chamberImage.Config{})
+	store, _ := newShortRootTestStore(t, chamberImage.Config{})
 	registry := testutil.NewFakeRegistry(t)
 	reference, firstDigest := registry.PushRandomImage(t, "library/mutable", "latest")
 	first, err := store.Pull(context.Background(), chamberImage.PullRequest{Reference: reference})
@@ -98,7 +97,7 @@ func TestStorePullAlwaysRefreshesSharedLayoutReference(t *testing.T) {
 }
 
 func TestStoreRemoveDeletesMetadataAndIndexReferenceButLeavesLayout(t *testing.T) {
-	store, _ := newTestStore(t, chamberImage.Config{})
+	store, _ := newShortRootTestStore(t, chamberImage.Config{})
 	registry := testutil.NewFakeRegistry(t)
 	reference, _ := registry.PushRandomImage(t, "library/app", "latest")
 	img, err := store.Pull(context.Background(), chamberImage.PullRequest{Reference: reference})
@@ -141,52 +140,47 @@ func TestStoreBuildValidatesContextPath(t *testing.T) {
 	}
 }
 
-func TestStoreBuildahBuilderLazyInitializesOnce(t *testing.T) {
-	workerPath := filepath.Join(privateTempDir(t), "buildah-worker")
-	if err := os.WriteFile(workerPath, []byte("#!/bin/sh\nprintf '{\"protocol_version\":1}\\n'\n"), 0700); err != nil {
-		t.Fatalf("WriteFile(buildah-worker) error = %v", err)
-	}
-	store, _ := newTestStore(t, chamberImage.Config{
-		Buildah: chamberImage.BuildahConfig{Path: workerPath},
+func TestStoreBuildKitBuilderLazyInitializesOnce(t *testing.T) {
+	config := fakeBuildKitConfig(t)
+	store, _ := newShortRootTestStore(t, chamberImage.Config{
+		BuildKit: config,
 	})
 	if store.builder != nil {
-		t.Fatal("builder initialized before first buildahBuilder call")
+		t.Fatal("builder initialized before first buildkitBuilder call")
 	}
 
-	first, err := store.buildahBuilder(context.Background())
+	first, err := store.buildkitBuilder(context.Background())
 	if err != nil {
-		t.Fatalf("buildahBuilder(first) error = %v", err)
+		t.Fatalf("buildkitBuilder(first) error = %v", err)
 	}
-	second, err := store.buildahBuilder(context.Background())
+	second, err := store.buildkitBuilder(context.Background())
 	if err != nil {
-		t.Fatalf("buildahBuilder(second) error = %v", err)
+		t.Fatalf("buildkitBuilder(second) error = %v", err)
 	}
 	if first != second {
-		t.Fatal("buildahBuilder returned different builder pointers")
+		t.Fatal("buildkitBuilder returned different builder pointers")
 	}
 }
 
-func TestStoreBuildahBuilderRetriesAfterInitializationFailure(t *testing.T) {
-	store, root := newTestStore(t, chamberImage.Config{
-		Buildah: chamberImage.BuildahConfig{Path: filepath.Join(privateTempDir(t), "missing-buildah-worker")},
+func TestStoreBuildKitBuilderRetriesAfterInitializationFailure(t *testing.T) {
+	config := fakeBuildKitConfig(t)
+	config.BuildctlPath = filepath.Join(privateTempDir(t), "missing-buildctl")
+	store, root := newShortRootTestStore(t, chamberImage.Config{
+		BuildKit: config,
 	})
 
-	if _, err := store.buildahBuilder(context.Background()); !errors.Is(err, chamberErrors.ErrInvalidRequest) {
-		t.Fatalf("buildahBuilder(missing worker) error = %v, want invalid request", err)
+	if _, err := store.buildkitBuilder(context.Background()); !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("buildkitBuilder(missing buildctl) error = %v, want invalid request", err)
 	}
 	if store.builder != nil {
 		t.Fatal("builder cached after failed initialization")
 	}
 
-	workerPath := filepath.Join(root, "buildah-worker")
-	if err := os.WriteFile(workerPath, []byte("#!/bin/sh\nprintf '{\"protocol_version\":1}\\n'\n"), 0700); err != nil {
-		t.Fatalf("WriteFile(buildah-worker) error = %v", err)
-	}
-	store.config.Buildah.Path = workerPath
+	store.config.BuildKit = fakeBuildKitConfigBelow(t, root)
 
-	builder, err := store.buildahBuilder(context.Background())
+	builder, err := store.buildkitBuilder(context.Background())
 	if err != nil {
-		t.Fatalf("buildahBuilder(retry) error = %v", err)
+		t.Fatalf("buildkitBuilder(retry) error = %v", err)
 	}
 	if builder == nil || store.builder != builder {
 		t.Fatal("builder was not cached after successful retry")
@@ -211,26 +205,22 @@ func TestStoreRealWorldBusybox(t *testing.T) {
 	}
 }
 
-func TestStoreRealBuildahDockerfile(t *testing.T) {
+func TestStoreRealBuildKitDockerfile(t *testing.T) {
 	if os.Getenv("CHAMBER_INTEGRATION") != "1" {
-		t.Skip("set CHAMBER_INTEGRATION=1 to run Buildah integration tests")
+		t.Skip("set CHAMBER_INTEGRATION=1 to run BuildKit integration tests")
 	}
 
 	contextRoot := privateTempDir(t)
 	if err := os.WriteFile(filepath.Join(contextRoot, "Dockerfile"), []byte("FROM scratch\nCOPY hello.txt /hello.txt\n"), 0600); err != nil {
 		t.Fatalf("WriteFile(Dockerfile) error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(contextRoot, "hello.txt"), []byte("hello from buildah\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(contextRoot, "hello.txt"), []byte("hello from buildkit\n"), 0600); err != nil {
 		t.Fatalf("WriteFile(hello.txt) error = %v", err)
 	}
 
-	store, root := newTestStore(t, chamberImage.Config{
-		Buildah: chamberImage.BuildahConfig{
-			Path: buildBuildahWorker(t),
-		},
-	})
+	store, root := newShortRootTestStore(t, chamberImage.Config{})
 	img, err := store.Build(context.Background(), chamberImage.BuildRequest{
-		Reference:   "example.com/chamber/buildah-e2e:latest",
+		Reference:   "example.com/chamber/buildkit-e2e:latest",
 		ContextPath: contextRoot,
 	})
 	if err != nil {
@@ -252,9 +242,9 @@ func TestStoreRealBuildahDockerfile(t *testing.T) {
 	assertSharedLayoutHasDescriptor(t, layoutPath, img.Reference, img.Digest)
 }
 
-func TestStoreRealBuildahDockerfileWithRun(t *testing.T) {
+func TestStoreRealBuildKitDockerfileWithRun(t *testing.T) {
 	if os.Getenv("CHAMBER_INTEGRATION") != "1" {
-		t.Skip("set CHAMBER_INTEGRATION=1 to run Buildah integration tests")
+		t.Skip("set CHAMBER_INTEGRATION=1 to run BuildKit integration tests")
 	}
 
 	contextRoot := privateTempDir(t)
@@ -262,13 +252,35 @@ func TestStoreRealBuildahDockerfileWithRun(t *testing.T) {
 		t.Fatalf("WriteFile(Dockerfile) error = %v", err)
 	}
 
-	store, _ := newTestStore(t, chamberImage.Config{
-		Buildah: chamberImage.BuildahConfig{
-			Path: buildBuildahWorker(t),
-		},
-	})
+	store, _ := newShortRootTestStore(t, chamberImage.Config{})
 	img, err := store.Build(context.Background(), chamberImage.BuildRequest{
-		Reference:   "example.com/chamber/buildah-run-e2e:latest",
+		Reference:   "example.com/chamber/buildkit-run-e2e:latest",
+		ContextPath: contextRoot,
+	})
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if img.Source != chamberImage.SourceBuilt {
+		t.Fatalf("Source = %q, want built", img.Source)
+	}
+	if img.Digest == "" {
+		t.Fatal("Digest = empty, want generated image digest")
+	}
+}
+
+func TestStoreRealBuildKitDockerfileWithNetworkedRun(t *testing.T) {
+	if os.Getenv("CHAMBER_INTEGRATION") != "1" {
+		t.Skip("set CHAMBER_INTEGRATION=1 to run BuildKit integration tests")
+	}
+
+	contextRoot := privateTempDir(t)
+	if err := os.WriteFile(filepath.Join(contextRoot, "Dockerfile"), []byte("FROM docker.io/library/debian:trixie-slim\nRUN apt-get update\n"), 0600); err != nil {
+		t.Fatalf("WriteFile(Dockerfile) error = %v", err)
+	}
+
+	store, _ := newShortRootTestStore(t, chamberImage.Config{})
+	img, err := store.Build(context.Background(), chamberImage.BuildRequest{
+		Reference:   "example.com/chamber/buildkit-network-e2e:latest",
 		ContextPath: contextRoot,
 	})
 	if err != nil {
@@ -286,6 +298,28 @@ func newTestStore(t *testing.T, cfg chamberImage.Config) (*Store, string) {
 	t.Helper()
 
 	root := filepath.Join(privateTempDir(t), "images")
+	return newTestStoreAtRoot(t, cfg, root)
+}
+
+func newShortRootTestStore(t *testing.T, cfg chamberImage.Config) (*Store, string) {
+	t.Helper()
+
+	root, err := os.MkdirTemp("", "ch-img-*")
+	if err != nil {
+		t.Fatalf("MkdirTemp(short image root) error = %v", err)
+	}
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatalf("Chmod(short image root) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(root)
+	})
+	return newTestStoreAtRoot(t, cfg, root)
+}
+
+func newTestStoreAtRoot(t *testing.T, cfg chamberImage.Config, root string) (*Store, string) {
+	t.Helper()
+
 	cfg.Root = root
 	store, err := New(cfg, localfs.NewDirectoryManager())
 	if err != nil {
@@ -348,15 +382,29 @@ func privateTempDir(t *testing.T) string {
 	return path
 }
 
-func buildBuildahWorker(t *testing.T) string {
+func fakeBuildKitConfig(t *testing.T) chamberImage.BuildKitConfig {
+	t.Helper()
+	return fakeBuildKitConfigBelow(t, privateTempDir(t))
+}
+
+func fakeBuildKitConfigBelow(t *testing.T, root string) chamberImage.BuildKitConfig {
 	t.Helper()
 
-	workerPath := filepath.Join(privateTempDir(t), "buildah-worker")
-	command := exec.Command("go", "build", "-p", "1", "-tags", "containers_image_openpgp exclude_graphdriver_btrfs", "-o", workerPath, "github.com/donglin-wang/chamber/cmd/buildah-worker")
-	command.Env = append(os.Environ(), "CGO_ENABLED=1", "GOMAXPROCS=2")
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("go build buildah-worker error = %v\n%s", err, string(output))
+	buildctlPath := writeFakeTool(t, root, "buildctl")
+	return chamberImage.BuildKitConfig{
+		BuildctlPath:    buildctlPath,
+		BuildkitdPath:   writeFakeTool(t, root, "buildkitd"),
+		RootlessKitPath: writeFakeTool(t, root, "rootlesskit"),
+		RuncPath:        writeFakeTool(t, root, "runc"),
 	}
-	return workerPath
+}
+
+func writeFakeTool(t *testing.T, root string, name string) string {
+	t.Helper()
+
+	path := filepath.Join(root, name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf '"+name+" version test\\n'\n"), 0700); err != nil {
+		t.Fatalf("WriteFile(%s) error = %v", name, err)
+	}
+	return path
 }
