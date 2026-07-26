@@ -195,21 +195,45 @@ func TestDefaultManagedWorkerPathBelowImageRoot(t *testing.T) {
 
 func TestManagedBinaryDefaultsToBeta4WorkerURL(t *testing.T) {
 	originalRuntimeArch := runtimeArch
-	runtimeArch = func() string { return "amd64" }
 	defer func() { runtimeArch = originalRuntimeArch }()
 
-	binary, err := managedBinary(chamberImage.BuildahConfig{})
-	if err != nil {
-		t.Fatalf("managedBinary() error = %v", err)
+	tests := []struct {
+		name   string
+		arch   string
+		url    string
+		sha256 string
+	}{
+		{
+			name:   "amd64",
+			arch:   "amd64",
+			url:    "https://github.com/donglin-wang/chamber/releases/download/v0.1.0-beta.4/buildah-worker-linux-amd64",
+			sha256: "649dea3351658956bbca0a635baca721968f4cb37b20db8a344d817ac7415bcd",
+		},
+		{
+			name:   "arm64",
+			arch:   "arm64",
+			url:    "https://github.com/donglin-wang/chamber/releases/download/v0.1.0-beta.4/buildah-worker-linux-arm64",
+			sha256: "62ec2157a1783aad5fdb9916774c424729786e8827c22ce8acbd268a7fa10402",
+		},
 	}
-	if binary.version != "v0.1.0-beta.4" {
-		t.Fatalf("version = %q, want v0.1.0-beta.4", binary.version)
-	}
-	if binary.url != "https://github.com/donglin-wang/chamber/releases/download/v0.1.0-beta.4/buildah-worker-linux-amd64" {
-		t.Fatalf("url = %q, want beta.4 amd64 worker URL", binary.url)
-	}
-	if binary.sha256 != "649dea3351658956bbca0a635baca721968f4cb37b20db8a344d817ac7415bcd" {
-		t.Fatalf("sha256 = %q, want current beta.4 amd64 worker checksum", binary.sha256)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runtimeArch = func() string { return tt.arch }
+
+			binary, err := managedBinary(chamberImage.BuildahConfig{})
+			if err != nil {
+				t.Fatalf("managedBinary() error = %v", err)
+			}
+			if binary.version != "v0.1.0-beta.4" {
+				t.Fatalf("version = %q, want v0.1.0-beta.4", binary.version)
+			}
+			if binary.url != tt.url {
+				t.Fatalf("url = %q, want beta.4 %s worker URL", binary.url, tt.arch)
+			}
+			if binary.sha256 != tt.sha256 {
+				t.Fatalf("sha256 = %q, want current beta.4 %s worker checksum", binary.sha256, tt.arch)
+			}
+		})
 	}
 }
 

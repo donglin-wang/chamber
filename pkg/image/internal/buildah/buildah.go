@@ -33,6 +33,8 @@ const (
 	defaultVersion     = "v0.1.0-beta.4"
 	defaultAMD64URL    = "https://github.com/donglin-wang/chamber/releases/download/v0.1.0-beta.4/buildah-worker-linux-amd64"
 	defaultAMD64SHA256 = "649dea3351658956bbca0a635baca721968f4cb37b20db8a344d817ac7415bcd"
+	defaultARM64URL    = "https://github.com/donglin-wang/chamber/releases/download/v0.1.0-beta.4/buildah-worker-linux-arm64"
+	defaultARM64SHA256 = "62ec2157a1783aad5fdb9916774c424729786e8827c22ce8acbd268a7fa10402"
 )
 
 type Builder struct {
@@ -345,6 +347,8 @@ func managedBinary(config chamberImage.BuildahConfig) (buildahBinary, error) {
 	switch runtimeArch() {
 	case "amd64":
 		return buildahBinary{version: defaultVersion, url: defaultAMD64URL, sha256: defaultAMD64SHA256}, nil
+	case "arm64":
+		return buildahBinary{version: defaultVersion, url: defaultARM64URL, sha256: defaultARM64SHA256}, nil
 	default:
 		return buildahBinary{}, fmt.Errorf("%w: Buildah worker does not have a default binary for architecture %q", chamberErrors.ErrUnsupportedHost, runtimeArch())
 	}
