@@ -13,6 +13,9 @@ require (
 	github.com/opencontainers/umoci v0.6.0
 	go.etcd.io/etcd/client/v3 v3.7.0
 	go.etcd.io/etcd/server/v3 v3.7.0
+	go.podman.io/buildah v1.44.1
+	go.podman.io/image/v5 v5.40.0
+	go.podman.io/storage v1.63.0
 )
 
 require (
@@ -151,10 +154,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
-	go.podman.io/buildah v1.44.1 // indirect
 	go.podman.io/common v0.68.0 // indirect
-	go.podman.io/image/v5 v5.40.0 // indirect
-	go.podman.io/storage v1.63.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
@@ -172,7 +172,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gotest.tools/v3 v3.5.2 // indirect
 	k8s.io/utils v0.0.0-20260108192941-914a6e750570 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 	tags.cncf.io/container-device-interface v1.1.0 // indirect
