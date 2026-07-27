@@ -2,7 +2,6 @@ package factory
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	goruntime "runtime"
 	"slices"
@@ -12,7 +11,6 @@ import (
 
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
 type runtimeImplementation struct {
@@ -64,18 +62,19 @@ func TestRuntimeImplementationsListSharedConstructorCapabilities(t *testing.T) {
 	}
 }
 
-func TestRuntimeImplementationsRejectUnsupportedPrivilegeBeforeFilesystemMutation(t *testing.T) {
+func TestRuntimeImplementationsRejectUnsupportedPrivilege(t *testing.T) {
 	for _, implementation := range runtimeImplementations {
 		t.Run(implementation.name, func(t *testing.T) {
 			runtimeRoot := filepath.Join(t.TempDir(), "runtime")
 			binDir := filepath.Join(t.TempDir(), "bin")
 
-			_, err := NewRuntime(context.Background(), chamberRuntime.Config{
+			config := chamberRuntime.Config{
 				RuntimeRoot:   runtimeRoot,
 				RuntimeBinDir: binDir,
 				Name:          implementation.name,
 				Privilege:     capability.Rootful,
-			}, localfs.NewDirectoryManager())
+			}
+			_, err := NewRuntime(context.Background(), config, newTestWorkspace(t, runtimeRoot), newTestWorkspace(t, binDir))
 
 			if err == nil {
 				t.Fatal("NewRuntime() error = nil, want unsupported privilege error")
@@ -83,17 +82,11 @@ func TestRuntimeImplementationsRejectUnsupportedPrivilegeBeforeFilesystemMutatio
 			if !strings.Contains(err.Error(), "does not support") {
 				t.Fatalf("NewRuntime() error = %v, want unsupported privilege", err)
 			}
-			if _, statErr := os.Stat(runtimeRoot); !os.IsNotExist(statErr) {
-				t.Fatalf("runtime root stat error = %v, want not exist", statErr)
-			}
-			if _, statErr := os.Stat(binDir); !os.IsNotExist(statErr) {
-				t.Fatalf("runtime bin dir stat error = %v, want not exist", statErr)
-			}
 		})
 	}
 }
 
-func TestRuntimeImplementationsRejectNonLinuxHostBeforeFilesystemMutation(t *testing.T) {
+func TestRuntimeImplementationsRejectNonLinuxHost(t *testing.T) {
 	if goruntime.GOOS == "linux" {
 		t.Skip("Linux hosts pass the shared OS gate")
 	}
@@ -102,24 +95,19 @@ func TestRuntimeImplementationsRejectNonLinuxHostBeforeFilesystemMutation(t *tes
 			runtimeRoot := filepath.Join(t.TempDir(), "runtime")
 			binDir := filepath.Join(t.TempDir(), "bin")
 
-			_, err := NewRuntime(context.Background(), chamberRuntime.Config{
+			config := chamberRuntime.Config{
 				RuntimeRoot:   runtimeRoot,
 				RuntimeBinDir: binDir,
 				Name:          implementation.name,
 				Privilege:     implementation.privilege,
-			}, localfs.NewDirectoryManager())
+			}
+			_, err := NewRuntime(context.Background(), config, newTestWorkspace(t, runtimeRoot), newTestWorkspace(t, binDir))
 
 			if err == nil {
 				t.Fatal("NewRuntime() error = nil, want Linux host requirement")
 			}
 			if !strings.Contains(err.Error(), "requires a Linux host or Linux VM") {
 				t.Fatalf("NewRuntime() error = %v, want Linux host explanation", err)
-			}
-			if _, statErr := os.Stat(runtimeRoot); !os.IsNotExist(statErr) {
-				t.Fatalf("runtime root stat error = %v, want not exist", statErr)
-			}
-			if _, statErr := os.Stat(binDir); !os.IsNotExist(statErr) {
-				t.Fatalf("runtime bin dir stat error = %v, want not exist", statErr)
 			}
 		})
 	}

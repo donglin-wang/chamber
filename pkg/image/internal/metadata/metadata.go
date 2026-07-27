@@ -17,7 +17,7 @@ import (
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
 type Metadata interface {
@@ -28,31 +28,39 @@ type Metadata interface {
 }
 
 type JSONMetadata struct {
-	root             string
-	imagesRoot       string
-	directoryManager localfs.DirectoryManager
+	root       string
+	imagesRoot string
+	workspace  *hostfs.Workspace
 }
 
 var _ Metadata = (*JSONMetadata)(nil)
 
-func NewJSON(root string, directoryManager localfs.DirectoryManager) (*JSONMetadata, error) {
-	if directoryManager == nil {
-		return nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+func NewJSON(root string, workspace *hostfs.Workspace) (*JSONMetadata, error) {
+	if workspace == nil {
+		return nil, fmt.Errorf("%w: image metadata workspace is required", chamberErrors.ErrInvalidRequest)
 	}
 	if strings.TrimSpace(root) == "" {
 		return nil, fmt.Errorf("%w: image metadata root is required", chamberErrors.ErrInvalidRequest)
 	}
 	imagesRoot := filepath.Join(root, "images")
-	if err := directoryManager.MkdirPrivate(root); err != nil {
+	rootRel, err := filepath.Rel(workspace.Root(), root)
+	if err != nil {
+		return nil, fmt.Errorf("%w: resolve image metadata root: %w", chamberErrors.ErrInvalidRequest, err)
+	}
+	imagesRel, err := filepath.Rel(workspace.Root(), imagesRoot)
+	if err != nil {
+		return nil, fmt.Errorf("%w: resolve image metadata images root: %w", chamberErrors.ErrInvalidRequest, err)
+	}
+	if _, err := workspace.MkdirPrivate(rootRel); err != nil {
 		return nil, fmt.Errorf("%w: create image metadata root: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
-	if err := directoryManager.MkdirPrivate(imagesRoot); err != nil {
+	if _, err := workspace.MkdirPrivate(imagesRel); err != nil {
 		return nil, fmt.Errorf("%w: create image metadata images root: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
 	return &JSONMetadata{
-		root:             root,
-		imagesRoot:       imagesRoot,
-		directoryManager: directoryManager,
+		root:       root,
+		imagesRoot: imagesRoot,
+		workspace:  workspace,
 	}, nil
 }
 
@@ -75,7 +83,11 @@ func (m *JSONMetadata) Put(ctx context.Context, img chamberImage.Image) error {
 	}
 
 	path := m.recordPath(img.Reference, img.Platform)
-	file, err := m.directoryManager.CreateTemp(m.imagesRoot, "."+filepath.Base(path)+".tmp-*")
+	imagesRel, err := filepath.Rel(m.workspace.Root(), m.imagesRoot)
+	if err != nil {
+		return fmt.Errorf("%w: resolve image metadata temp directory: %w", chamberErrors.ErrFilesystemFailed, err)
+	}
+	file, err := m.workspace.CreateTemp(imagesRel, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("%w: create temporary image metadata file: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
@@ -272,7 +284,7 @@ func requireReady(ctx context.Context, m *JSONMetadata) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if m == nil || strings.TrimSpace(m.imagesRoot) == "" || m.directoryManager == nil {
+	if m == nil || strings.TrimSpace(m.imagesRoot) == "" || m.workspace == nil {
 		return fmt.Errorf("%w: image metadata store is not initialized", chamberErrors.ErrInvalidRequest)
 	}
 	return nil

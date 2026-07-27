@@ -2,6 +2,7 @@ package factory
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -9,7 +10,7 @@ import (
 	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/internal/directory"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
 var provisionerCapabilities = map[string]chamberBundle.Capabilities{
@@ -24,9 +25,9 @@ var provisionerCapabilities = map[string]chamberBundle.Capabilities{
 // checks the selected implementation capabilities, and returns a ready bundle
 // provisioner. Callers own bundle-root placement, cleanup, cancellation policy,
 // and recovery.
-func NewProvisioner(config chamberBundle.Config, directoryManager localfs.DirectoryManager) (chamberBundle.Provisioner, error) {
-	if directoryManager == nil {
-		return nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+func NewProvisioner(config chamberBundle.Config, workspace *hostfs.Workspace) (chamberBundle.Provisioner, error) {
+	if workspace == nil {
+		return nil, fmt.Errorf("%w: bundle workspace is required", chamberErrors.ErrInvalidRequest)
 	}
 	if config.Name == "" {
 		return nil, fmt.Errorf("%w: bundle provisioner name is required", chamberErrors.ErrInvalidRequest)
@@ -44,13 +45,24 @@ func NewProvisioner(config chamberBundle.Config, directoryManager localfs.Direct
 	if config.Root == "" {
 		return nil, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
 	}
-	if err := directoryManager.MkdirPrivate(config.Root); err != nil {
-		return nil, fmt.Errorf("%w: create bundle root: %v", chamberErrors.ErrFilesystemFailed, err)
+	configRoot, err := filepath.Abs(config.Root)
+	if err != nil {
+		return nil, fmt.Errorf("%w: resolve bundle root: %w", chamberErrors.ErrInvalidRequest, err)
 	}
+	if filepath.Clean(configRoot) != filepath.Clean(workspace.Root()) {
+		return nil, fmt.Errorf("%w: bundle root %q does not match workspace root %q", chamberErrors.ErrInvalidRequest, config.Root, workspace.Root())
+	}
+	if err := requireWorkspaceCapabilities("bundle workspace", workspace.Capabilities(), hostfs.Capabilities{
+		PrivateDirs:           true,
+		AtomicDirectoryRename: true,
+	}); err != nil {
+		return nil, err
+	}
+	config.Root = workspace.Root()
 
 	switch config.Name {
 	case chamberBundle.ProvisionerNameDirectory:
-		return chamberDirectoryProvisioner.New(config, directoryManager)
+		return chamberDirectoryProvisioner.New(config, workspace)
 	default:
 		return nil, fmt.Errorf("%w: unsupported bundle provisioner name %q (supported: %s)", chamberErrors.ErrInvalidRequest, config.Name, strings.Join(SupportedProvisionerNames(), ", "))
 	}
@@ -91,4 +103,23 @@ func supportsPrivilege(capabilities chamberBundle.Capabilities, privilege capabi
 		}
 	}
 	return false
+}
+
+func requireWorkspaceCapabilities(label string, observed hostfs.Capabilities, required hostfs.Capabilities) error {
+	if required.PrivateDirs && !observed.PrivateDirs {
+		return fmt.Errorf("%w: %s requires private directories", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.FileFsync && !observed.FileFsync {
+		return fmt.Errorf("%w: %s requires file fsync", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.DirectoryFsync && !observed.DirectoryFsync {
+		return fmt.Errorf("%w: %s requires directory fsync", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.AtomicFileRename && !observed.AtomicFileRename {
+		return fmt.Errorf("%w: %s requires atomic file rename between temporary and durable roots", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.AtomicDirectoryRename && !observed.AtomicDirectoryRename {
+		return fmt.Errorf("%w: %s requires atomic directory rename between temporary and durable roots", chamberErrors.ErrFilesystemFailed, label)
+	}
+	return nil
 }

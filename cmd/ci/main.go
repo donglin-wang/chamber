@@ -19,7 +19,7 @@ import (
 	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	"github.com/donglin-wang/chamber/pkg/shared/logging"
 	"github.com/google/uuid"
 )
@@ -87,9 +87,15 @@ func run(cfg *config) error {
 		return fmt.Errorf("resolve root: %w", err)
 	}
 
-	directoryManager := localfs.NewDirectoryManager()
-	if err := directoryManager.MkdirPrivate(root); err != nil {
-		return fmt.Errorf("create CI root: %w", err)
+	ciWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    root,
+		TmpRoot: filepath.Join(root, "tmp", "ci"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create CI workspace: %w", err)
 	}
 	logging.Info(ctx, "CI root ready", "root", root)
 
@@ -98,9 +104,61 @@ func run(cfg *config) error {
 		paths.goBuildCache,
 		paths.goModCache,
 	} {
-		if err := directoryManager.MkdirPrivate(path); err != nil {
+		rel, err := filepath.Rel(ciWorkspace.Root(), path)
+		if err != nil {
+			return fmt.Errorf("resolve CI path %q: %w", path, err)
+		}
+		if _, err := ciWorkspace.MkdirPrivate(rel); err != nil {
 			return fmt.Errorf("create CI path %q: %w", path, err)
 		}
+	}
+	imageWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    paths.imageRoot,
+		TmpRoot: filepath.Join(root, "tmp", "images"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:           true,
+			FileFsync:             true,
+			AtomicFileRename:      true,
+			AtomicDirectoryRename: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create image workspace: %w", err)
+	}
+	bundleWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    paths.bundleRoot,
+		TmpRoot: filepath.Join(root, "tmp", "bundles"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:           true,
+			AtomicDirectoryRename: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create bundle workspace: %w", err)
+	}
+	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    paths.runtimeRoot,
+		TmpRoot: filepath.Join(root, "tmp", "runtime"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create runtime workspace: %w", err)
+	}
+	runtimeBinaryWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    paths.runtimeBinDir,
+		TmpRoot: filepath.Join(root, "tmp", "runtime-bin"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create runtime binary workspace: %w", err)
 	}
 
 	runtime, err := chamberRuntimeFactory.NewRuntime(ctx, chamberRuntime.Config{
@@ -109,7 +167,7 @@ func run(cfg *config) error {
 		Name:          chamberRuntime.RuntimeNameRunc,
 		Privilege:     capability.Rootless,
 		Logging:       loggingConfig,
-	}, directoryManager)
+	}, runtimeWorkspace, runtimeBinaryWorkspace)
 	if err != nil {
 		return fmt.Errorf("create runtime: %w", err)
 	}
@@ -119,7 +177,7 @@ func run(cfg *config) error {
 	imageStore, err := chamberImageFactory.NewStore(chamberImage.Config{
 		Root:    paths.imageRoot,
 		Logging: loggingConfig,
-	}, directoryManager)
+	}, imageWorkspace)
 	if err != nil {
 		return fmt.Errorf("create image store: %w", err)
 	}
@@ -139,7 +197,7 @@ func run(cfg *config) error {
 			Privilege: capability.Rootless,
 			Logging:   loggingConfig,
 		},
-		directoryManager,
+		bundleWorkspace,
 	)
 	if err != nil {
 		return fmt.Errorf("create bundle provisioner: %w", err)

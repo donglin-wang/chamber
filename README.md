@@ -125,17 +125,65 @@ import (
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
 func main() {
 	ctx := context.Background()
 	root := "/tmp/chamber-sdk-demo"
-	directoryManager := localfs.NewDirectoryManager()
+
+	imageWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    filepath.Join(root, "images"),
+		TmpRoot: filepath.Join(root, "tmp", "images"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:           true,
+			FileFsync:             true,
+			AtomicFileRename:      true,
+			AtomicDirectoryRename: true,
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	bundleWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    filepath.Join(root, "bundles"),
+		TmpRoot: filepath.Join(root, "tmp", "bundles"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:           true,
+			AtomicDirectoryRename: true,
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    filepath.Join(root, "run", "runtime"),
+		TmpRoot: filepath.Join(root, "tmp", "runtime"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	runtimeBinaryWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    filepath.Join(root, "bin"),
+		TmpRoot: filepath.Join(root, "tmp", "runtime-bin"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
 
 	imageStore, err := chamberImageFactory.NewStore(chamberImage.Config{
-		Root: filepath.Join(root, "images"),
-	}, directoryManager)
+		Root: imageWorkspace.Root(),
+	}, imageWorkspace)
 	if err != nil {
 		panic(err)
 	}
@@ -151,10 +199,10 @@ func main() {
 	}
 
 	provisioner, err := chamberBundleFactory.NewProvisioner(chamberBundle.Config{
-		Root:      filepath.Join(root, "bundles"),
+		Root:      bundleWorkspace.Root(),
 		Name:      chamberBundle.ProvisionerNameDirectory,
 		Privilege: capability.Rootless,
-	}, directoryManager)
+	}, bundleWorkspace)
 	if err != nil {
 		panic(err)
 	}
@@ -175,11 +223,11 @@ func main() {
 	}
 
 	runc, err := chamberRuntimeFactory.NewRuntime(ctx, chamberRuntime.Config{
-		RuntimeRoot:   filepath.Join(root, "run", "runtime"),
-		RuntimeBinDir: filepath.Join(root, "bin"),
+		RuntimeRoot:   runtimeWorkspace.Root(),
+		RuntimeBinDir: runtimeBinaryWorkspace.Root(),
 		Name:          chamberRuntime.RuntimeNameRunc,
 		Privilege:     capability.Rootless,
-	}, directoryManager)
+	}, runtimeWorkspace, runtimeBinaryWorkspace)
 	if err != nil {
 		panic(err)
 	}

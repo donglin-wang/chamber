@@ -11,7 +11,6 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
 type provisionerImplementation struct {
@@ -39,7 +38,7 @@ func TestProvisionerImplementationsSatisfySharedConstructorContract(t *testing.T
 				Root:      root,
 				Name:      implementation.name,
 				Privilege: implementation.privilege,
-			}, localfs.NewDirectoryManager())
+			}, newTestWorkspace(t, root))
 			if err != nil {
 				t.Fatalf("NewProvisioner() error = %v", err)
 			}
@@ -59,7 +58,7 @@ func TestProvisionerImplementationsSatisfySharedConstructorContract(t *testing.T
 	}
 }
 
-func TestProvisionerImplementationsRejectUnsupportedPrivilegeBeforeFilesystemMutation(t *testing.T) {
+func TestProvisionerImplementationsRejectUnsupportedPrivilege(t *testing.T) {
 	for _, implementation := range provisionerImplementations {
 		t.Run(implementation.name, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "bundles")
@@ -68,16 +67,13 @@ func TestProvisionerImplementationsRejectUnsupportedPrivilegeBeforeFilesystemMut
 				Root:      root,
 				Name:      implementation.name,
 				Privilege: capability.Rootful,
-			}, localfs.NewDirectoryManager())
+			}, newTestWorkspace(t, root))
 
 			if err == nil {
 				t.Fatal("NewProvisioner() error = nil, want unsupported privilege error")
 			}
 			if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
 				t.Fatalf("NewProvisioner() error = %v, want invalid request code", err)
-			}
-			if _, statErr := os.Stat(root); !os.IsNotExist(statErr) {
-				t.Fatalf("bundle root stat error = %v, want not exist", statErr)
 			}
 		})
 	}

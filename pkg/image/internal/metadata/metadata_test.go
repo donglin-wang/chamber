@@ -10,7 +10,7 @@ import (
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
 func TestJSONMetadataPutGetListAndDelete(t *testing.T) {
@@ -64,7 +64,19 @@ func newTestMetadata(t *testing.T) *JSONMetadata {
 	t.Helper()
 
 	root := filepath.Join(privateTempDir(t), "metadata")
-	store, err := NewJSON(root, localfs.NewDirectoryManager())
+	workspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    filepath.Dir(root),
+		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	store, err := NewJSON(root, workspace)
 	if err != nil {
 		t.Fatalf("NewJSON() error = %v", err)
 	}

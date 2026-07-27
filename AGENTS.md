@@ -58,7 +58,7 @@ Model privilege cleanly:
 - Keep code fixes and new implementation as minimal as possible without playing code golf. Prefer the smallest clear change that preserves the contract, tests the behavior at risk, and does not hide complexity behind clever compression.
 - Prefer explicit top-down dependency injection for filesystem, runtime, and backend choices.
 - Keep package-owned config at generic boundaries. Avoid letting global config import concrete adapters such as specific metadata or runtime implementations.
-- Keep shared helpers small and policy-shaped. `pkg/shared/localfs` should encode private-directory and temp-file policy, not become a broad utility grab bag.
+- Keep shared helpers small and policy-shaped. `pkg/shared/hostfs` should encode scoped private-directory, temporary-root, and filesystem-capability policy, not become a broad utility grab bag.
 
 ## Naming And Import Conventions
 
@@ -72,7 +72,7 @@ Model privilege cleanly:
   when they need Chamber's built-in constructors. Concrete adapter aliases such
   as `chamberImageStore` or `chamberDirectoryProvisioner` belong inside factory
   packages or implementation-specific tests, not normal daemon composition.
-- `localfs.DirectoryManager` values should be named `directoryManager` or a similarly explicit name. Do not shorten them to `directories`; that sounds like a collection of paths rather than the filesystem policy dependency.
+- `hostfs.Workspace` values should be named for their owning package, such as `imageWorkspace`, `bundleWorkspace`, `runtimeWorkspace`, or `metadataWorkspace`.
 - Concrete Chamber adapter packages should be named for the Chamber role they implement, not for the third-party library they currently use. Mention the backing library in the package comment, type comment, and implementation docs. Implementation-specific adapter packages live under `internal/`; SDK callers use factory constructors.
 - Keep upstream third-party imports visually distinct from Chamber adapter packages. For example, inside `pkg/bundle/internal/directory`, alias the upstream `github.com/opencontainers/umoci` import as `ociumoci` so readers can tell it apart from Chamber's directory-backed OCI adapter package.
 
@@ -106,7 +106,7 @@ Important current boundaries:
   mount, process spec, or container ID.
 - `pkg/shared/containerid`: shared container ID validation used by provisioning and runtime adapters so bundle creation cannot accept IDs the runtime later rejects.
 - `pkg/image` owns image reference validation and canonicalization so callers can provision with the same non-canonical reference they used to pull.
-- `pkg/shared/localfs`: explicit filesystem dependency for private directories and temp files. It owns filesystem policy primitives, not broad utility behavior.
+- `pkg/shared/hostfs`: explicit filesystem dependency for package-scoped durable roots, temporary roots, private files/directories, and required filesystem capability probes. It owns filesystem policy primitives, not broad utility behavior.
 - `pkg/shared/testutil`: shared tests helpers. Its location is not ideal, but keep it there for now.
 - `daemon/metadata`: daemon-owned durable vocabulary for images, containers, operations, and states. Keep daemon-only sentinel storage errors such as `ErrNotFound` and `ErrAlreadyExists` here, but use `pkg/shared/errors.Code` for durable operation/container error codes.
 - `daemon`: current daemon HTTP composition and operation orchestration.

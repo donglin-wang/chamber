@@ -11,7 +11,7 @@ import (
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	"github.com/donglin-wang/chamber/pkg/shared/testutil"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -321,7 +321,21 @@ func newTestStoreAtRoot(t *testing.T, cfg chamberImage.Config, root string) (*St
 	t.Helper()
 
 	cfg.Root = root
-	store, err := New(cfg, localfs.NewDirectoryManager())
+	tmpRoot := filepath.Join(filepath.Dir(root), "."+filepath.Base(root)+".tmp")
+	workspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    root,
+		TmpRoot: tmpRoot,
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:           true,
+			FileFsync:             true,
+			AtomicFileRename:      true,
+			AtomicDirectoryRename: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	store, err := New(cfg, workspace)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

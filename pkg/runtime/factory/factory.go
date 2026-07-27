@@ -3,6 +3,7 @@ package factory
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	goruntime "runtime"
 	"sort"
 	"strings"
@@ -11,7 +12,7 @@ import (
 	chamberRunc "github.com/donglin-wang/chamber/pkg/runtime/internal/runc"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
 var runtimeCapabilities = map[string]chamberRuntime.Capabilities{
@@ -29,19 +30,19 @@ var runtimeCapabilities = map[string]chamberRuntime.Capabilities{
 // private runtime directories, installs or reuses runtime artifacts as needed,
 // and returns a ready runtime. The supplied context controls construction work
 // only; container lifecycle is owned by Container values returned from Run.
-func NewRuntime(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager) (chamberRuntime.Runtime, error) {
-	return newRuntimeForOS(ctx, config, directoryManager, goruntime.GOOS)
+func NewRuntime(ctx context.Context, config chamberRuntime.Config, runtimeWorkspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace) (chamberRuntime.Runtime, error) {
+	return newRuntimeForOS(ctx, config, runtimeWorkspace, binaryWorkspace, goruntime.GOOS)
 }
 
-func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, osName string) (chamberRuntime.Runtime, error) {
+func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeWorkspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace, osName string) (chamberRuntime.Runtime, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("%w: runtime construction canceled before start: %w", chamberErrors.ErrCanceled, err)
 	}
-	if directoryManager == nil {
-		return nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+	if runtimeWorkspace == nil {
+		return nil, fmt.Errorf("%w: runtime workspace is required", chamberErrors.ErrInvalidRequest)
 	}
 	if config.Name == "" {
 		return nil, fmt.Errorf("%w: runtime name is required", chamberErrors.ErrInvalidRequest)
@@ -65,18 +66,45 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, director
 	if config.RuntimeBinDir == "" && strings.TrimSpace(config.RuntimePath) == "" {
 		return nil, fmt.Errorf("%w: runtime bin dir is required", chamberErrors.ErrInvalidRequest)
 	}
-	if err := directoryManager.MkdirPrivate(config.RuntimeRoot); err != nil {
-		return nil, fmt.Errorf("%w: create runtime root: %v", chamberErrors.ErrFilesystemFailed, err)
+	runtimeRoot, err := filepath.Abs(config.RuntimeRoot)
+	if err != nil {
+		return nil, fmt.Errorf("%w: resolve runtime root: %w", chamberErrors.ErrInvalidRequest, err)
 	}
-	if config.RuntimeBinDir != "" {
-		if err := directoryManager.MkdirPrivate(config.RuntimeBinDir); err != nil {
-			return nil, fmt.Errorf("%w: create runtime bin dir: %v", chamberErrors.ErrFilesystemFailed, err)
+	if filepath.Clean(runtimeRoot) != filepath.Clean(runtimeWorkspace.Root()) {
+		return nil, fmt.Errorf("%w: runtime root %q does not match workspace root %q", chamberErrors.ErrInvalidRequest, config.RuntimeRoot, runtimeWorkspace.Root())
+	}
+	if err := requireWorkspaceCapabilities("runtime workspace", runtimeWorkspace.Capabilities(), hostfs.Capabilities{
+		PrivateDirs:      true,
+		FileFsync:        true,
+		AtomicFileRename: true,
+	}); err != nil {
+		return nil, err
+	}
+	config.RuntimeRoot = runtimeWorkspace.Root()
+	if strings.TrimSpace(config.RuntimePath) == "" {
+		if binaryWorkspace == nil {
+			return nil, fmt.Errorf("%w: runtime binary workspace is required", chamberErrors.ErrInvalidRequest)
 		}
+		binRoot, err := filepath.Abs(config.RuntimeBinDir)
+		if err != nil {
+			return nil, fmt.Errorf("%w: resolve runtime bin dir: %w", chamberErrors.ErrInvalidRequest, err)
+		}
+		if filepath.Clean(binRoot) != filepath.Clean(binaryWorkspace.Root()) {
+			return nil, fmt.Errorf("%w: runtime bin dir %q does not match binary workspace root %q", chamberErrors.ErrInvalidRequest, config.RuntimeBinDir, binaryWorkspace.Root())
+		}
+		if err := requireWorkspaceCapabilities("runtime binary workspace", binaryWorkspace.Capabilities(), hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+		}); err != nil {
+			return nil, err
+		}
+		config.RuntimeBinDir = binaryWorkspace.Root()
 	}
 
 	switch config.Name {
 	case chamberRuntime.RuntimeNameRunc:
-		return chamberRunc.New(ctx, config, directoryManager)
+		return chamberRunc.New(ctx, config, runtimeWorkspace, binaryWorkspace)
 	default:
 		return nil, fmt.Errorf("%w: unsupported runtime name %q (supported: %s)", chamberErrors.ErrInvalidRequest, config.Name, strings.Join(SupportedNames(), ", "))
 	}
@@ -117,4 +145,23 @@ func supportsPrivilege(capabilities chamberRuntime.Capabilities, privilege capab
 		}
 	}
 	return false
+}
+
+func requireWorkspaceCapabilities(label string, observed hostfs.Capabilities, required hostfs.Capabilities) error {
+	if required.PrivateDirs && !observed.PrivateDirs {
+		return fmt.Errorf("%w: %s requires private directories", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.FileFsync && !observed.FileFsync {
+		return fmt.Errorf("%w: %s requires file fsync", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.DirectoryFsync && !observed.DirectoryFsync {
+		return fmt.Errorf("%w: %s requires directory fsync", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.AtomicFileRename && !observed.AtomicFileRename {
+		return fmt.Errorf("%w: %s requires atomic file rename between temporary and durable roots", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.AtomicDirectoryRename && !observed.AtomicDirectoryRename {
+		return fmt.Errorf("%w: %s requires atomic directory rename between temporary and durable roots", chamberErrors.ErrFilesystemFailed, label)
+	}
+	return nil
 }

@@ -2,7 +2,6 @@ package factory
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,12 +9,12 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
-func TestNewProvisionerRequiresDirectoryManager(t *testing.T) {
+func TestNewProvisionerRequiresWorkspace(t *testing.T) {
 	if _, err := NewProvisioner(chamberBundle.Config{Root: t.TempDir()}, nil); err == nil {
-		t.Fatal("NewProvisioner() error = nil, want directory manager error")
+		t.Fatal("NewProvisioner() error = nil, want workspace error")
 	}
 }
 
@@ -34,7 +33,7 @@ func TestNewProvisionerRequiresFinalConfig(t *testing.T) {
 
 	for name, config := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := NewProvisioner(config, localfs.NewDirectoryManager())
+			_, err := NewProvisioner(config, newTestWorkspace(t, root))
 			if err == nil {
 				t.Fatal("NewProvisioner() error = nil, want final config validation error")
 			}
@@ -43,9 +42,6 @@ func TestNewProvisionerRequiresFinalConfig(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), name) {
 				t.Fatalf("NewProvisioner() error = %v, want missing %s explanation", err, name)
-			}
-			if _, statErr := os.Stat(root); !os.IsNotExist(statErr) {
-				t.Fatalf("bundle root stat error = %v, want not exist", statErr)
 			}
 		})
 	}
@@ -58,7 +54,7 @@ func TestNewProvisionerRejectsUnsupportedName(t *testing.T) {
 		Root:      root,
 		Name:      "overlay",
 		Privilege: capability.Rootless,
-	}, localfs.NewDirectoryManager())
+	}, newTestWorkspace(t, root))
 
 	if err == nil {
 		t.Fatal("NewProvisioner() error = nil, want unsupported name error")
@@ -69,41 +65,34 @@ func TestNewProvisionerRejectsUnsupportedName(t *testing.T) {
 	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
 		t.Fatalf("NewProvisioner() error = %v, want invalid request code", err)
 	}
-	if _, statErr := os.Stat(root); !os.IsNotExist(statErr) {
-		t.Fatalf("bundle root stat error = %v, want not exist", statErr)
-	}
 }
 
-func TestNewProvisionerWrapsBundleRootSetupFailuresWithFilesystemCode(t *testing.T) {
+func TestNewProvisionerRejectsMismatchedWorkspaceRoot(t *testing.T) {
 	_, err := NewProvisioner(chamberBundle.Config{
 		Root:      filepath.Join(t.TempDir(), "bundles"),
 		Name:      chamberBundle.ProvisionerNameDirectory,
 		Privilege: capability.Rootless,
-	}, failingDirectoryManager{err: errors.New("disk full")})
+	}, newTestWorkspace(t, filepath.Join(t.TempDir(), "other-bundles")))
 	if err == nil {
-		t.Fatal("NewProvisioner() error = nil, want filesystem error")
+		t.Fatal("NewProvisioner() error = nil, want mismatch error")
 	}
-	if !errors.Is(err, chamberErrors.ErrFilesystemFailed) {
-		t.Fatalf("NewProvisioner() error = %v, want filesystem failed code", err)
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("NewProvisioner() error = %v, want invalid request code", err)
 	}
 }
 
-type failingDirectoryManager struct {
-	err error
-}
-
-func (manager failingDirectoryManager) MkdirPrivate(string) error {
-	return manager.err
-}
-
-func (manager failingDirectoryManager) MkdirPrivateParent(string) error {
-	return manager.err
-}
-
-func (manager failingDirectoryManager) MkdirTemp(string, string) (string, error) {
-	return "", manager.err
-}
-
-func (manager failingDirectoryManager) CreateTemp(string, string) (*os.File, error) {
-	return nil, manager.err
+func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
+	t.Helper()
+	workspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    root,
+		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:           true,
+			AtomicDirectoryRename: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	return workspace
 }

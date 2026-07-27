@@ -17,7 +17,7 @@ import (
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
@@ -38,24 +38,26 @@ const (
 )
 
 type Builder struct {
-	config           chamberImage.BuildKitConfig
-	root             string
-	paths            toolPaths
-	snapshotter      string
-	client           *http.Client
-	directoryManager localfs.DirectoryManager
-	logger           *chamberLogging.SlogLogger
+	config      chamberImage.BuildKitConfig
+	root        string
+	paths       toolPaths
+	snapshotter string
+	client      *http.Client
+	workspace   *hostfs.Workspace
+	logger      *chamberLogging.SlogLogger
 }
 
 // New returns a builder with BuildKit, RootlessKit, and runc installed or
 // verified below the image root.
-func New(ctx context.Context, config chamberImage.BuildKitConfig, root string, directoryManager localfs.DirectoryManager, logger *chamberLogging.SlogLogger) (Builder, error) {
+func New(ctx context.Context, config chamberImage.BuildKitConfig, workspace *hostfs.Workspace, logger *chamberLogging.SlogLogger) (Builder, error) {
 	builder := Builder{
-		config:           config,
-		root:             root,
-		client:           http.DefaultClient,
-		directoryManager: directoryManager,
-		logger:           logger,
+		config:    config,
+		client:    http.DefaultClient,
+		workspace: workspace,
+		logger:    logger,
+	}
+	if workspace != nil {
+		builder.root = workspace.Root()
 	}
 	if err := builder.install(ctx); err != nil {
 		return Builder{}, err
@@ -140,10 +142,10 @@ func (b Builder) validate(ctx context.Context) error {
 	if !filepath.IsAbs(b.root) {
 		return fmt.Errorf("%w: BuildKit root must be absolute", chamberErrors.ErrInvalidRequest)
 	}
-	if b.directoryManager == nil {
-		return fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+	if b.workspace == nil {
+		return fmt.Errorf("%w: image workspace is required", chamberErrors.ErrInvalidRequest)
 	}
-	return validateBuildKitSocketRoot(b.root)
+	return validateBuildKitSocketRoot(b.workspace.TmpRoot())
 }
 
 type buildDirectories struct {
@@ -157,6 +159,10 @@ type buildDirectories struct {
 
 func (b Builder) createBuildDirectories(outputLayout string) (buildDirectories, func(), error) {
 	tmpRoot := filepath.Dir(outputLayout)
+	tmpRel, err := filepath.Rel(b.workspace.TmpRoot(), tmpRoot)
+	if err != nil || tmpRel == ".." || strings.HasPrefix(tmpRel, ".."+string(filepath.Separator)) {
+		return buildDirectories{}, nil, fmt.Errorf("%w: BuildKit output layout must be below image temporary root", chamberErrors.ErrInvalidRequest)
+	}
 	var dirs buildDirectories
 	var created []string
 	for name, target := range map[string]*string{
@@ -165,7 +171,7 @@ func (b Builder) createBuildDirectories(outputLayout string) (buildDirectories, 
 		buildKitHomeTempPattern:  &dirs.homeDir,
 		buildKitTmpTempPattern:   &dirs.tmpDir,
 	} {
-		path, err := b.directoryManager.MkdirTemp(tmpRoot, name)
+		path, err := b.workspace.MkdirTemp(tmpRel, name)
 		if err != nil {
 			for _, cleanupPath := range created {
 				_ = os.RemoveAll(cleanupPath)
@@ -183,13 +189,13 @@ func (b Builder) createBuildDirectories(outputLayout string) (buildDirectories, 
 	}
 
 	dirs.dockerConfig = filepath.Join(dirs.homeDir, ".docker")
-	if err := b.directoryManager.MkdirPrivate(dirs.dockerConfig); err != nil {
+	if err := os.MkdirAll(dirs.dockerConfig, 0700); err != nil {
 		for _, cleanupPath := range created {
 			_ = os.RemoveAll(cleanupPath)
 		}
 		return buildDirectories{}, nil, fmt.Errorf("%w: create BuildKit Docker config directory: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
-	archive, err := b.directoryManager.CreateTemp(tmpRoot, buildKitOutputTempPattern)
+	archive, err := b.workspace.CreateTemp(tmpRel, buildKitOutputTempPattern)
 	if err != nil {
 		for _, cleanupPath := range created {
 			_ = os.RemoveAll(cleanupPath)
@@ -213,8 +219,8 @@ func (b Builder) createBuildDirectories(outputLayout string) (buildDirectories, 
 	return dirs, cleanup, nil
 }
 
-func validateBuildKitSocketRoot(root string) error {
-	runDir := filepath.Join(root, "tmp", buildKitRunDirectoryWithLongestSuffix())
+func validateBuildKitSocketRoot(tmpRoot string) error {
+	runDir := filepath.Join(tmpRoot, buildKitRunDirectoryWithLongestSuffix())
 	return validateBuildKitSocketPaths(runDir)
 }
 

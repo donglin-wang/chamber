@@ -1,5 +1,9 @@
 # Image Store And Dockerfile Build Plan
 
+Historical note: this plan predates the `pkg/shared/hostfs.Workspace`
+migration. Any references to `localfs.DirectoryManager` or old factory
+signatures are superseded by scoped host filesystem workspaces.
+
 This plan describes a focused refactor of `pkg/image` so image storage is owned by a single public `image.Store` interface. It intentionally ignores backward compatibility with the current public `image.Puller` interface.
 
 ## Context

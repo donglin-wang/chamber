@@ -3,7 +3,6 @@ package factory
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,7 +10,7 @@ import (
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -31,12 +30,13 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestNewRejectsUnsupportedRuntimeName(t *testing.T) {
-	_, err := newRuntimeForOS(context.Background(), chamberRuntime.Config{
+	config := chamberRuntime.Config{
 		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
 		Name:          "crun",
 		Privilege:     capability.Rootless,
-	}, localfs.NewDirectoryManager(), "linux")
+	}
+	_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, config.RuntimeRoot), newTestWorkspace(t, config.RuntimeBinDir), "linux")
 	if err == nil {
 		t.Fatal("New() error = nil, want unsupported runtime name error")
 	}
@@ -64,7 +64,7 @@ func TestNewRequiresFinalRuntimeConfig(t *testing.T) {
 
 	for name, config := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := newRuntimeForOS(context.Background(), config, localfs.NewDirectoryManager(), "linux")
+			_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, config.RuntimeRoot), newTestWorkspace(t, config.RuntimeBinDir), "linux")
 			if err == nil {
 				t.Fatal("New() error = nil, want final config validation error")
 			}
@@ -79,12 +79,13 @@ func TestNewRequiresFinalRuntimeConfig(t *testing.T) {
 }
 
 func TestNewRejectsUnsupportedHostWithErrorCode(t *testing.T) {
-	_, err := newRuntimeForOS(context.Background(), chamberRuntime.Config{
+	config := chamberRuntime.Config{
 		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
 		Name:          chamberRuntime.RuntimeNameRunc,
 		Privilege:     capability.Rootless,
-	}, localfs.NewDirectoryManager(), "darwin")
+	}
+	_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, config.RuntimeRoot), newTestWorkspace(t, config.RuntimeBinDir), "darwin")
 	if err == nil {
 		t.Fatal("New() error = nil, want unsupported host error")
 	}
@@ -93,37 +94,35 @@ func TestNewRejectsUnsupportedHostWithErrorCode(t *testing.T) {
 	}
 }
 
-func TestNewWrapsRuntimeRootSetupFailuresWithFilesystemCode(t *testing.T) {
-	_, err := newRuntimeForOS(context.Background(), chamberRuntime.Config{
+func TestNewRejectsMismatchedRuntimeWorkspaceRoot(t *testing.T) {
+	config := chamberRuntime.Config{
 		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
 		Name:          chamberRuntime.RuntimeNameRunc,
 		Privilege:     capability.Rootless,
-	}, failingDirectoryManager{err: errors.New("disk full")}, "linux")
+	}
+	_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, filepath.Join(t.TempDir(), "other-runtime")), newTestWorkspace(t, config.RuntimeBinDir), "linux")
 	if err == nil {
-		t.Fatal("New() error = nil, want filesystem error")
+		t.Fatal("New() error = nil, want mismatch error")
 	}
-	if !errors.Is(err, chamberErrors.ErrFilesystemFailed) {
-		t.Fatalf("New() error = %v, want filesystem failed code", err)
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("New() error = %v, want invalid request code", err)
 	}
 }
 
-type failingDirectoryManager struct {
-	err error
-}
-
-func (manager failingDirectoryManager) MkdirPrivate(string) error {
-	return manager.err
-}
-
-func (manager failingDirectoryManager) MkdirPrivateParent(string) error {
-	return manager.err
-}
-
-func (manager failingDirectoryManager) MkdirTemp(string, string) (string, error) {
-	return "", manager.err
-}
-
-func (manager failingDirectoryManager) CreateTemp(string, string) (*os.File, error) {
-	return nil, manager.err
+func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
+	t.Helper()
+	workspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    root,
+		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	return workspace
 }

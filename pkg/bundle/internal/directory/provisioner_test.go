@@ -15,7 +15,7 @@ import (
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	ggcrLayout "github.com/google/go-containerregistry/pkg/v1/layout"
@@ -25,10 +25,11 @@ import (
 )
 
 func TestNewUsesCurrentUserIDMap(t *testing.T) {
+	root := filepath.Join(privateTempDir(t), "bundles")
 	provisioner, err := New(chamberBundle.Config{
-		Root:      filepath.Join(privateTempDir(t), "bundles"),
+		Root:      root,
 		Privilege: capability.Rootless,
-	}, localfs.NewDirectoryManager())
+	}, newTestWorkspace(t, root))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -54,10 +55,11 @@ func TestDescriptorDeclaresDirectorySupport(t *testing.T) {
 }
 
 func TestProvisionClassifiesMissingImageLayoutAsInvalidRequest(t *testing.T) {
+	root := filepath.Join(privateTempDir(t), "bundles")
 	provisioner, err := New(chamberBundle.Config{
-		Root:      filepath.Join(privateTempDir(t), "bundles"),
+		Root:      root,
 		Privilege: capability.Rootless,
-	}, localfs.NewDirectoryManager())
+	}, newTestWorkspace(t, root))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -91,10 +93,11 @@ func TestProvisionCanonicalizesImageRefBeforeUnpack(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 
+	root := filepath.Join(privateTempDir(t), "bundles")
 	provisioner, err := New(chamberBundle.Config{
-		Root:      filepath.Join(privateTempDir(t), "bundles"),
+		Root:      root,
 		Privilege: capability.Rootless,
-	}, localfs.NewDirectoryManager())
+	}, newTestWorkspace(t, root))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -664,4 +667,20 @@ func boolPtr(value bool) *bool {
 
 func uint32Ptr(value uint32) *uint32 {
 	return &value
+}
+
+func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
+	t.Helper()
+	workspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    root,
+		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:           true,
+			AtomicDirectoryRename: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	return workspace
 }

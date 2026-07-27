@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
 )
 
 const legacyTarRegularFile = 0
@@ -37,14 +36,14 @@ func (b Builder) extractOCITar(tarPath string, destination string) error {
 		}
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := b.directoryManager.MkdirPrivate(target); err != nil {
+			if err := b.mkdirPrivatePath(target); err != nil {
 				return fmt.Errorf("%w: create OCI archive directory: %w", chamberErrors.ErrFilesystemFailed, err)
 			}
 		case tar.TypeReg, legacyTarRegularFile:
-			if err := b.directoryManager.MkdirPrivate(filepath.Dir(target)); err != nil {
+			if err := b.mkdirPrivatePath(filepath.Dir(target)); err != nil {
 				return fmt.Errorf("%w: create OCI archive file parent: %w", chamberErrors.ErrFilesystemFailed, err)
 			}
-			if err := writeFileAtomic(target, reader, 0600, b.directoryManager); err != nil {
+			if err := b.writeFileAtomic(target, reader, 0600); err != nil {
 				return err
 			}
 		default:
@@ -67,15 +66,15 @@ func safeTarPath(root string, name string) (string, error) {
 	return target, nil
 }
 
-func writeExecutableAtomic(path string, reader io.Reader, directoryManager localfs.DirectoryManager) error {
-	return writeFileAtomic(path, reader, 0755, directoryManager)
+func (b Builder) writeExecutableAtomic(path string, reader io.Reader) error {
+	return b.writeFileAtomic(path, reader, 0755)
 }
 
-func writeFileAtomic(path string, reader io.Reader, mode os.FileMode, directoryManager localfs.DirectoryManager) error {
-	if err := directoryManager.MkdirPrivate(filepath.Dir(path)); err != nil {
+func (b Builder) writeFileAtomic(path string, reader io.Reader, mode os.FileMode) error {
+	if err := b.mkdirPrivatePath(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("%w: create file parent: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
-	tmp, err := directoryManager.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	tmp, err := b.createTempForPath(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("%w: create temporary file: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
@@ -106,4 +105,36 @@ func writeFileAtomic(path string, reader io.Reader, mode os.FileMode, directoryM
 	}
 	committed = true
 	return nil
+}
+
+func (b Builder) mkdirPrivatePath(path string) error {
+	if rel, ok := relBelow(b.workspace.Root(), path); ok {
+		_, err := b.workspace.MkdirPrivate(rel)
+		return err
+	}
+	if _, ok := relBelow(b.workspace.TmpRoot(), path); ok {
+		return os.MkdirAll(path, 0700)
+	}
+	return fmt.Errorf("%w: path %q is outside image workspace", chamberErrors.ErrInvalidRequest, path)
+}
+
+func (b Builder) createTempForPath(parent string, pattern string) (*os.File, error) {
+	if rel, ok := relBelow(b.workspace.Root(), parent); ok {
+		return b.workspace.CreateTemp(rel, pattern)
+	}
+	if rel, ok := relBelow(b.workspace.TmpRoot(), parent); ok {
+		return b.workspace.CreateTemp(rel, pattern)
+	}
+	return nil, fmt.Errorf("%w: path %q is outside image workspace", chamberErrors.ErrInvalidRequest, parent)
+}
+
+func relBelow(root string, path string) (string, bool) {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return "", false
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
 }

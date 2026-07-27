@@ -20,7 +20,7 @@ import (
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 	digest "github.com/opencontainers/go-digest"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -33,14 +33,14 @@ import (
 var _ chamberBundle.Provisioner = (*Provisioner)(nil)
 
 type Provisioner struct {
-	config           chamberBundle.Config
-	uid              uint32
-	gid              uint32
-	directoryManager localfs.DirectoryManager
-	logger           *chamberLogging.SlogLogger
+	config    chamberBundle.Config
+	uid       uint32
+	gid       uint32
+	workspace *hostfs.Workspace
+	logger    *chamberLogging.SlogLogger
 }
 
-func New(config chamberBundle.Config, directoryManager localfs.DirectoryManager) (*Provisioner, error) {
+func New(config chamberBundle.Config, workspace *hostfs.Workspace) (*Provisioner, error) {
 	installApexBridge()
 
 	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
@@ -49,11 +49,11 @@ func New(config chamberBundle.Config, directoryManager localfs.DirectoryManager)
 	}
 
 	provisioner := &Provisioner{
-		config:           config,
-		uid:              uint32(os.Geteuid()),
-		gid:              uint32(os.Getegid()),
-		directoryManager: directoryManager,
-		logger:           logger,
+		config:    config,
+		uid:       uint32(os.Geteuid()),
+		gid:       uint32(os.Getegid()),
+		workspace: workspace,
+		logger:    logger,
 	}
 	return provisioner, nil
 }
@@ -79,8 +79,8 @@ func (p *Provisioner) Provision(
 	if err := ctx.Err(); err != nil {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: bundle provisioning canceled before start: %w", chamberErrors.ErrCanceled, err)
 	}
-	if p == nil || p.directoryManager == nil {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+	if p == nil || p.workspace == nil {
+		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: bundle workspace is required", chamberErrors.ErrInvalidRequest)
 	}
 	if p.config.Root == "" {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
@@ -107,7 +107,7 @@ func (p *Provisioner) Provision(
 		"image_layout", request.ImageLayout,
 		"bundle_path", finalBundle,
 	)
-	tmpBundle, err := p.directoryManager.MkdirTemp(bundleRoot, "."+request.ContainerID+".tmp-*")
+	tmpBundle, err := p.workspace.MkdirTemp(".", "."+request.ContainerID+".tmp-*")
 	if err != nil {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: create temporary bundle: %v", chamberErrors.ErrFilesystemFailed, err)
 	}

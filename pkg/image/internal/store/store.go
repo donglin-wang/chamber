@@ -18,7 +18,7 @@ import (
 	imageMetadata "github.com/donglin-wang/chamber/pkg/image/internal/metadata"
 	"github.com/donglin-wang/chamber/pkg/image/internal/registry"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go"
@@ -26,63 +26,102 @@ import (
 )
 
 type Store struct {
-	config           chamberImage.Config
-	directoryManager localfs.DirectoryManager
-	metadata         imageMetadata.Metadata
-	layoutRoot       string
-	tmpRoot          string
-	logger           *chamberLogging.SlogLogger
-	mu               sync.Mutex
-	builderMu        sync.Mutex
-	buildMu          sync.Mutex
-	builder          *buildkit.Builder
+	config     chamberImage.Config
+	workspace  *hostfs.Workspace
+	metadata   imageMetadata.Metadata
+	layoutRoot string
+	tmpRoot    string
+	logger     *chamberLogging.SlogLogger
+	mu         sync.Mutex
+	builderMu  sync.Mutex
+	buildMu    sync.Mutex
+	builder    *buildkit.Builder
 }
 
 var _ chamberImage.Store = (*Store)(nil)
 
-func New(config chamberImage.Config, directoryManager localfs.DirectoryManager) (*Store, error) {
-	if directoryManager == nil {
-		return nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+func New(config chamberImage.Config, workspace *hostfs.Workspace) (*Store, error) {
+	if workspace == nil {
+		return nil, fmt.Errorf("%w: image workspace is required", chamberErrors.ErrInvalidRequest)
 	}
 	if strings.TrimSpace(config.Root) == "" {
 		return nil, chamberImage.ErrRootRequired
 	}
+	if err := requireWorkspaceRoot("image root", config.Root, workspace.Root()); err != nil {
+		return nil, err
+	}
+	if err := requireWorkspaceCapabilities("image workspace", workspace.Capabilities(), hostfs.Capabilities{
+		PrivateDirs:           true,
+		FileFsync:             true,
+		AtomicFileRename:      true,
+		AtomicDirectoryRename: true,
+	}); err != nil {
+		return nil, err
+	}
+	config.Root = workspace.Root()
 	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
 	if err != nil {
 		return nil, err
 	}
-	if err := directoryManager.MkdirPrivate(config.Root); err != nil {
-		return nil, fmt.Errorf("%w: create image root: %w", chamberErrors.ErrFilesystemFailed, err)
-	}
 
 	layoutRoot := SharedLayoutDirectory(config.Root)
 	metadataRoot := filepath.Join(config.Root, "metadata")
-	tmpRoot := filepath.Join(config.Root, "tmp")
-	for _, path := range []string{layoutRoot, tmpRoot} {
-		if err := directoryManager.MkdirPrivate(path); err != nil {
-			return nil, fmt.Errorf("%w: create image store directory %q: %w", chamberErrors.ErrFilesystemFailed, path, err)
+	tmpRoot := workspace.TmpRoot()
+	for _, rel := range []string{"layout", "metadata"} {
+		if _, err := workspace.MkdirPrivate(rel); err != nil {
+			return nil, fmt.Errorf("%w: create image store directory %q: %w", chamberErrors.ErrFilesystemFailed, rel, err)
 		}
 	}
-	if err := initializeStoreLayout(layoutRoot, directoryManager); err != nil {
+	if err := initializeStoreLayout(workspace); err != nil {
 		return nil, err
 	}
-	metadataStore, err := imageMetadata.NewJSON(metadataRoot, directoryManager)
+	metadataStore, err := imageMetadata.NewJSON(metadataRoot, workspace)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Store{
-		config:           config,
-		directoryManager: directoryManager,
-		metadata:         metadataStore,
-		layoutRoot:       layoutRoot,
-		tmpRoot:          tmpRoot,
-		logger:           logger,
+		config:     config,
+		workspace:  workspace,
+		metadata:   metadataStore,
+		layoutRoot: layoutRoot,
+		tmpRoot:    tmpRoot,
+		logger:     logger,
 	}, nil
 }
 
 func SharedLayoutDirectory(root string) string {
 	return filepath.Join(root, "layout")
+}
+
+func requireWorkspaceRoot(label string, configured string, actual string) error {
+	configuredAbs, err := filepath.Abs(configured)
+	if err != nil {
+		return fmt.Errorf("%w: resolve %s %q: %w", chamberErrors.ErrInvalidRequest, label, configured, err)
+	}
+	if filepath.Clean(configuredAbs) != filepath.Clean(actual) {
+		return fmt.Errorf("%w: %s %q does not match workspace root %q", chamberErrors.ErrInvalidRequest, label, configured, actual)
+	}
+	return nil
+}
+
+func requireWorkspaceCapabilities(label string, observed hostfs.Capabilities, required hostfs.Capabilities) error {
+	if required.PrivateDirs && !observed.PrivateDirs {
+		return fmt.Errorf("%w: %s requires private directories", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.FileFsync && !observed.FileFsync {
+		return fmt.Errorf("%w: %s requires file fsync", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.DirectoryFsync && !observed.DirectoryFsync {
+		return fmt.Errorf("%w: %s requires directory fsync", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.AtomicFileRename && !observed.AtomicFileRename {
+		return fmt.Errorf("%w: %s requires atomic file rename between temporary and durable roots", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.AtomicDirectoryRename && !observed.AtomicDirectoryRename {
+		return fmt.Errorf("%w: %s requires atomic directory rename between temporary and durable roots", chamberErrors.ErrFilesystemFailed, label)
+	}
+	return nil
 }
 
 func (s *Store) Pull(ctx context.Context, request chamberImage.PullRequest) (chamberImage.Image, error) {
@@ -111,7 +150,7 @@ func (s *Store) Pull(ctx context.Context, request chamberImage.PullRequest) (cha
 		}
 	}
 
-	tmp, err := s.directoryManager.MkdirTemp(s.tmpRoot, ".pull-*")
+	tmp, err := s.workspace.MkdirTemp(".", ".pull-*")
 	if err != nil {
 		return chamberImage.Image{}, fmt.Errorf("%w: create temporary image layout: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
@@ -166,7 +205,7 @@ func (s *Store) Build(ctx context.Context, request chamberImage.BuildRequest) (c
 		return chamberImage.Image{}, err
 	}
 
-	tmp, err := s.directoryManager.MkdirTemp(s.tmpRoot, ".build-*")
+	tmp, err := s.workspace.MkdirTemp(".", ".build-*")
 	if err != nil {
 		return chamberImage.Image{}, fmt.Errorf("%w: create temporary build layout: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
@@ -196,7 +235,7 @@ func (s *Store) buildkitBuilder(ctx context.Context) (*buildkit.Builder, error) 
 	if s.builder != nil {
 		return s.builder, nil
 	}
-	builder, err := buildkit.New(ctx, s.config.BuildKit, s.config.Root, s.directoryManager, s.logger)
+	builder, err := buildkit.New(ctx, s.config.BuildKit, s.workspace, s.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +277,7 @@ func (s *Store) Remove(ctx context.Context, request chamberImage.RemoveRequest) 
 		return err
 	}
 	index.Manifests = removeDescriptors(index.Manifests, canonicalReference, platform)
-	return writeIndexAtomic(s.layoutRoot, index, s.directoryManager)
+	return writeIndexAtomic(s.workspace, index)
 }
 
 func (s *Store) Layout(ctx context.Context) (string, error) {
@@ -277,7 +316,7 @@ func resolvePullRequest(ctx context.Context, request chamberImage.PullRequest) (
 }
 
 func (s *Store) requireReady() error {
-	if s == nil || s.directoryManager == nil || s.metadata == nil || strings.TrimSpace(s.layoutRoot) == "" || strings.TrimSpace(s.tmpRoot) == "" {
+	if s == nil || s.workspace == nil || s.metadata == nil || strings.TrimSpace(s.layoutRoot) == "" || strings.TrimSpace(s.tmpRoot) == "" {
 		return fmt.Errorf("%w: image store is not initialized", chamberErrors.ErrInvalidRequest)
 	}
 	return nil
@@ -288,7 +327,7 @@ func (s *Store) existingValidImage(ctx context.Context, reference string, platfo
 	if err != nil {
 		return chamberImage.Image{}, err
 	}
-	if err := validateStoredImage(ctx, s.layoutRoot, existing, s.directoryManager); err != nil {
+	if err := validateStoredImage(ctx, s.layoutRoot, existing, s.workspace); err != nil {
 		return chamberImage.Image{}, err
 	}
 	return existing, nil
@@ -310,7 +349,7 @@ func (s *Store) commitLayout(ctx context.Context, request commitRequest) (chambe
 	if err != nil {
 		return chamberImage.Image{}, err
 	}
-	sizeBytes, err := copyReachableBlobs(ctx, request.tempLayout, s.layoutRoot, selected, s.directoryManager)
+	sizeBytes, err := copyReachableBlobs(ctx, request.tempLayout, s.layoutRoot, selected, s.workspace)
 	if err != nil {
 		return chamberImage.Image{}, err
 	}
@@ -320,7 +359,7 @@ func (s *Store) commitLayout(ctx context.Context, request commitRequest) (chambe
 	}
 	index.Manifests = removeDescriptors(index.Manifests, request.canonicalReference, request.platform)
 	index.Manifests = append(index.Manifests, descriptorForCommit(selected, request.canonicalReference, request.platform))
-	if err := writeIndexAtomic(s.layoutRoot, index, s.directoryManager); err != nil {
+	if err := writeIndexAtomic(s.workspace, index); err != nil {
 		return chamberImage.Image{}, err
 	}
 
@@ -356,24 +395,33 @@ func (s *Store) commitLayout(ctx context.Context, request commitRequest) (chambe
 	return img, nil
 }
 
-func initializeStoreLayout(root string, directoryManager localfs.DirectoryManager) error {
-	if err := directoryManager.MkdirPrivate(filepath.Join(root, "blobs")); err != nil {
+func initializeStoreLayout(workspace *hostfs.Workspace) error {
+	root := filepath.Join(workspace.Root(), "layout")
+	if _, err := workspace.MkdirPrivate("layout/blobs"); err != nil {
 		return fmt.Errorf("%w: create OCI image layout blobs directory: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
 	layoutPath := filepath.Join(root, "oci-layout")
 	indexPath := filepath.Join(root, "index.json")
 	if _, err := os.Stat(layoutPath); errors.Is(err, os.ErrNotExist) {
-		if err := os.WriteFile(layoutPath, []byte(`{"imageLayoutVersion":"1.0.0"}`+"\n"), 0600); err != nil {
+		file, err := workspace.CreatePrivate("layout/oci-layout")
+		if err != nil {
+			return fmt.Errorf("%w: initialize OCI image layout metadata: %w", chamberErrors.ErrFilesystemFailed, err)
+		}
+		if _, err := file.Write([]byte(`{"imageLayoutVersion":"1.0.0"}` + "\n")); err != nil {
+			_ = file.Close()
+			return fmt.Errorf("%w: initialize OCI image layout metadata: %w", chamberErrors.ErrFilesystemFailed, err)
+		}
+		if err := file.Close(); err != nil {
 			return fmt.Errorf("%w: initialize OCI image layout metadata: %w", chamberErrors.ErrFilesystemFailed, err)
 		}
 	} else if err != nil {
 		return fmt.Errorf("%w: inspect OCI image layout metadata: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
 	if _, err := os.Stat(indexPath); errors.Is(err, os.ErrNotExist) {
-		if err := writeIndexAtomic(root, imagespec.Index{
+		if err := writeIndexAtomic(workspace, imagespec.Index{
 			Versioned: specs.Versioned{SchemaVersion: 2},
 			Manifests: nil,
-		}, directoryManager); err != nil {
+		}); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -478,7 +526,8 @@ func readIndex(root string) (imagespec.Index, error) {
 	return index, nil
 }
 
-func writeIndexAtomic(root string, index imagespec.Index, directoryManager localfs.DirectoryManager) error {
+func writeIndexAtomic(workspace *hostfs.Workspace, index imagespec.Index) error {
+	root := filepath.Join(workspace.Root(), "layout")
 	if index.SchemaVersion == 0 {
 		index.SchemaVersion = 2
 	}
@@ -487,7 +536,7 @@ func writeIndexAtomic(root string, index imagespec.Index, directoryManager local
 		return fmt.Errorf("%w: encode OCI image layout index: %w", chamberErrors.ErrInvalidImageLayout, err)
 	}
 	data = append(data, '\n')
-	tmp, err := directoryManager.CreateTemp(root, ".index.json.tmp-*")
+	tmp, err := workspace.CreateTemp("layout", ".index.json.tmp-*")
 	if err != nil {
 		return fmt.Errorf("%w: create temporary OCI image layout index: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
@@ -519,12 +568,12 @@ func writeIndexAtomic(root string, index imagespec.Index, directoryManager local
 	return nil
 }
 
-func copyReachableBlobs(ctx context.Context, src string, dst string, descriptor imagespec.Descriptor, directoryManager localfs.DirectoryManager) (int64, error) {
+func copyReachableBlobs(ctx context.Context, src string, dst string, descriptor imagespec.Descriptor, workspace *hostfs.Workspace) (int64, error) {
 	seen := make(map[digest.Digest]bool)
-	return copyDescriptorGraph(ctx, src, dst, descriptor, seen, directoryManager)
+	return copyDescriptorGraph(ctx, src, dst, descriptor, seen, workspace)
 }
 
-func copyDescriptorGraph(ctx context.Context, src string, dst string, descriptor imagespec.Descriptor, seen map[digest.Digest]bool, directoryManager localfs.DirectoryManager) (int64, error) {
+func copyDescriptorGraph(ctx context.Context, src string, dst string, descriptor imagespec.Descriptor, seen map[digest.Digest]bool, workspace *hostfs.Workspace) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, fmt.Errorf("%w: copy OCI image blobs canceled: %w", chamberErrors.ErrCanceled, err)
 	}
@@ -539,7 +588,7 @@ func copyDescriptorGraph(ctx context.Context, src string, dst string, descriptor
 	if err := validateBlob(srcBlob, descriptor); err != nil {
 		return 0, err
 	}
-	if err := copyBlobIfMissing(srcBlob, blobPath(dst, descriptor), descriptor, directoryManager); err != nil {
+	if err := copyBlobIfMissing(srcBlob, blobPath(dst, descriptor), descriptor, workspace); err != nil {
 		return 0, err
 	}
 	total := descriptor.Size
@@ -551,7 +600,7 @@ func copyDescriptorGraph(ctx context.Context, src string, dst string, descriptor
 			return 0, err
 		}
 		for _, child := range index.Manifests {
-			size, err := copyDescriptorGraph(ctx, src, dst, child, seen, directoryManager)
+			size, err := copyDescriptorGraph(ctx, src, dst, child, seen, workspace)
 			if err != nil {
 				return 0, err
 			}
@@ -562,13 +611,13 @@ func copyDescriptorGraph(ctx context.Context, src string, dst string, descriptor
 		if err := decodeBlob(srcBlob, &manifest); err != nil {
 			return 0, err
 		}
-		size, err := copyDescriptorGraph(ctx, src, dst, manifest.Config, seen, directoryManager)
+		size, err := copyDescriptorGraph(ctx, src, dst, manifest.Config, seen, workspace)
 		if err != nil {
 			return 0, err
 		}
 		total += size
 		for _, child := range manifest.Layers {
-			size, err := copyDescriptorGraph(ctx, src, dst, child, seen, directoryManager)
+			size, err := copyDescriptorGraph(ctx, src, dst, child, seen, workspace)
 			if err != nil {
 				return 0, err
 			}
@@ -578,7 +627,7 @@ func copyDescriptorGraph(ctx context.Context, src string, dst string, descriptor
 	return total, nil
 }
 
-func validateStoredImage(ctx context.Context, layoutRoot string, img chamberImage.Image, directoryManager localfs.DirectoryManager) error {
+func validateStoredImage(ctx context.Context, layoutRoot string, img chamberImage.Image, workspace *hostfs.Workspace) error {
 	index, err := readIndex(layoutRoot)
 	if err != nil {
 		return err
@@ -587,7 +636,7 @@ func validateStoredImage(ctx context.Context, layoutRoot string, img chamberImag
 		if descriptor.Digest.String() == img.Digest &&
 			descriptor.Annotations[imagespec.AnnotationRefName] == img.Reference &&
 			platformMatches(descriptor.Platform, img.Platform) {
-			_, err := copyReachableBlobs(ctx, layoutRoot, layoutRoot, descriptor, directoryManager)
+			_, err := copyReachableBlobs(ctx, layoutRoot, layoutRoot, descriptor, workspace)
 			return err
 		}
 	}
@@ -626,17 +675,21 @@ func validateBlob(path string, descriptor imagespec.Descriptor) error {
 	return nil
 }
 
-func copyBlobIfMissing(src string, dst string, descriptor imagespec.Descriptor, directoryManager localfs.DirectoryManager) error {
+func copyBlobIfMissing(src string, dst string, descriptor imagespec.Descriptor, workspace *hostfs.Workspace) error {
 	if err := validateBlob(dst, descriptor); err == nil {
 		return nil
 	} else if !errors.Is(err, chamberErrors.ErrInvalidImageLayout) {
 		return err
 	}
 
-	if err := directoryManager.MkdirPrivate(filepath.Dir(dst)); err != nil {
+	relParent, err := filepath.Rel(workspace.Root(), filepath.Dir(dst))
+	if err != nil {
+		return fmt.Errorf("%w: resolve shared OCI image blob parent: %w", chamberErrors.ErrFilesystemFailed, err)
+	}
+	if _, err := workspace.MkdirPrivate(relParent); err != nil {
 		return fmt.Errorf("%w: create shared OCI image blob parent: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
-	tmp, err := directoryManager.CreateTemp(filepath.Dir(dst), "."+descriptor.Digest.Encoded()+".tmp-*")
+	tmp, err := workspace.CreateTemp(relParent, "."+descriptor.Digest.Encoded()+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("%w: create temporary shared OCI image blob: %w", chamberErrors.ErrFilesystemFailed, err)
 	}

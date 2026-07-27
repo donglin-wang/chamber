@@ -8,13 +8,14 @@ import (
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
 func TestNewStorePreparesConfiguredImageRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "images")
+	workspace := newTestWorkspace(t, root)
 
-	store, err := NewStore(chamberImage.Config{Root: root}, localfs.NewDirectoryManager())
+	store, err := NewStore(chamberImage.Config{Root: root}, workspace)
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
@@ -25,7 +26,6 @@ func TestNewStorePreparesConfiguredImageRoot(t *testing.T) {
 	assertPrivateDir(t, filepath.Join(root, "layout"))
 	assertPrivateDir(t, filepath.Join(root, "metadata"))
 	assertPrivateDir(t, filepath.Join(root, "metadata", "images"))
-	assertPrivateDir(t, filepath.Join(root, "tmp"))
 	if _, err := os.Stat(filepath.Join(root, "layout", "oci-layout")); err != nil {
 		t.Fatalf("Stat(oci-layout) error = %v", err)
 	}
@@ -35,47 +35,27 @@ func TestNewStorePreparesConfiguredImageRoot(t *testing.T) {
 }
 
 func TestNewStoreRequiresConfiguredImageRoot(t *testing.T) {
-	if _, err := NewStore(chamberImage.Config{}, localfs.NewDirectoryManager()); err == nil {
+	if _, err := NewStore(chamberImage.Config{}, newTestWorkspace(t, filepath.Join(t.TempDir(), "images"))); err == nil {
 		t.Fatal("NewStore() error = nil, want root required error")
 	}
 }
 
-func TestNewStoreRequiresDirectoryManager(t *testing.T) {
+func TestNewStoreRequiresWorkspace(t *testing.T) {
 	if _, err := NewStore(chamberImage.Config{}, nil); err == nil {
-		t.Fatal("NewStore() error = nil, want directory manager error")
+		t.Fatal("NewStore() error = nil, want workspace error")
 	} else if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
 		t.Fatalf("NewStore() error = %v, want invalid request code", err)
 	}
 }
 
-func TestNewStoreWrapsImageRootSetupFailuresWithFilesystemCode(t *testing.T) {
-	_, err := NewStore(chamberImage.Config{Root: filepath.Join(t.TempDir(), "images")}, failingDirectoryManager{err: errors.New("disk full")})
+func TestNewStoreRejectsMismatchedWorkspaceRoot(t *testing.T) {
+	_, err := NewStore(chamberImage.Config{Root: filepath.Join(t.TempDir(), "images")}, newTestWorkspace(t, filepath.Join(t.TempDir(), "other-images")))
 	if err == nil {
-		t.Fatal("NewStore() error = nil, want filesystem error")
+		t.Fatal("NewStore() error = nil, want mismatch error")
 	}
-	if !errors.Is(err, chamberErrors.ErrFilesystemFailed) {
-		t.Fatalf("NewStore() error = %v, want filesystem failed code", err)
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("NewStore() error = %v, want invalid request code", err)
 	}
-}
-
-type failingDirectoryManager struct {
-	err error
-}
-
-func (manager failingDirectoryManager) MkdirPrivate(string) error {
-	return manager.err
-}
-
-func (manager failingDirectoryManager) MkdirPrivateParent(string) error {
-	return manager.err
-}
-
-func (manager failingDirectoryManager) MkdirTemp(string, string) (string, error) {
-	return "", manager.err
-}
-
-func (manager failingDirectoryManager) CreateTemp(string, string) (*os.File, error) {
-	return nil, manager.err
 }
 
 func assertPrivateDir(t *testing.T, path string) {
@@ -91,4 +71,22 @@ func assertPrivateDir(t *testing.T, path string) {
 	if info.Mode().Perm() != 0700 {
 		t.Fatalf("mode = %o, want 0700", info.Mode().Perm())
 	}
+}
+
+func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
+	t.Helper()
+	workspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    root,
+		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:           true,
+			FileFsync:             true,
+			AtomicFileRename:      true,
+			AtomicDirectoryRename: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	return workspace
 }

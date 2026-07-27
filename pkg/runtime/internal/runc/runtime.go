@@ -21,7 +21,7 @@ import (
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
@@ -48,12 +48,13 @@ var capabilities = chamberRuntime.Capabilities{
 }
 
 type Runtime struct {
-	config           chamberRuntime.Config
-	binaryPath       string
-	binary           runtimeBinary
-	client           *http.Client
-	directoryManager localfs.DirectoryManager
-	logger           *chamberLogging.SlogLogger
+	config          chamberRuntime.Config
+	binaryPath      string
+	binary          runtimeBinary
+	client          *http.Client
+	workspace       *hostfs.Workspace
+	binaryWorkspace *hostfs.Workspace
+	logger          *chamberLogging.SlogLogger
 }
 
 type option func(*Runtime)
@@ -64,16 +65,32 @@ type runtimeBinary struct {
 	sha256  string
 }
 
-func New(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager) (*Runtime, error) {
-	return newWithOptions(ctx, config, directoryManager)
+func New(ctx context.Context, config chamberRuntime.Config, workspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace) (*Runtime, error) {
+	return newWithOptions(ctx, config, workspace, binaryWorkspace)
 }
 
-func newWithOptions(ctx context.Context, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...option) (*Runtime, error) {
+func newWithOptions(ctx context.Context, config chamberRuntime.Config, workspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace, options ...option) (*Runtime, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("%w: runtime construction canceled before start: %w", chamberErrors.ErrCanceled, err)
+	}
+	if err := requireWorkspaceCapabilities("runtime workspace", workspace, hostfs.Capabilities{
+		PrivateDirs:      true,
+		FileFsync:        true,
+		AtomicFileRename: true,
+	}); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(config.RuntimePath) == "" {
+		if err := requireWorkspaceCapabilities("runtime binary workspace", binaryWorkspace, hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
@@ -90,11 +107,12 @@ func newWithOptions(ctx context.Context, config chamberRuntime.Config, directory
 		}
 	}
 	runtime := &Runtime{
-		config:           config,
-		binary:           binary,
-		client:           http.DefaultClient,
-		directoryManager: directoryManager,
-		logger:           logger,
+		config:          config,
+		binary:          binary,
+		client:          http.DefaultClient,
+		workspace:       workspace,
+		binaryWorkspace: binaryWorkspace,
+		logger:          logger,
 	}
 	for _, option := range options {
 		option(runtime)
@@ -129,8 +147,8 @@ func (r *Runtime) Descriptor() chamberRuntime.Descriptor {
 }
 
 func (r *Runtime) installBinary(ctx context.Context) error {
-	if r == nil || r.directoryManager == nil {
-		return fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+	if r == nil || r.workspace == nil {
+		return fmt.Errorf("%w: runtime workspace is required", chamberErrors.ErrInvalidRequest)
 	}
 	if strings.TrimSpace(r.config.RuntimePath) != "" {
 		if err := validateLocalRuntimeBinary(r.binaryPath); err != nil {
@@ -158,6 +176,12 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 
 	binaryPath := r.binaryPath
 	binDir := filepath.Dir(binaryPath)
+	if r.binaryWorkspace == nil {
+		return fmt.Errorf("%w: runtime binary workspace is required", chamberErrors.ErrInvalidRequest)
+	}
+	if filepath.Clean(binDir) != filepath.Clean(r.binaryWorkspace.Root()) {
+		return fmt.Errorf("%w: runtime binary directory %q does not match binary workspace root %q", chamberErrors.ErrInvalidRequest, binDir, r.binaryWorkspace.Root())
+	}
 
 	if ok, err := fileMatchesSHA256(binaryPath, expectedDigest); err != nil {
 		return fmt.Errorf("%w: verify existing runtime binary: %w", chamberErrors.ErrRuntimeInstallFailed, err)
@@ -298,10 +322,11 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if r.directoryManager == nil {
-		return nil, nil, fmt.Errorf("%w: directory manager is required", chamberErrors.ErrInvalidRequest)
+	logRel, err := filepath.Rel(r.workspace.Root(), logDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: resolve runc log directory: %w", chamberErrors.ErrInvalidRequest, err)
 	}
-	if err := r.directoryManager.MkdirPrivate(logDir); err != nil {
+	if _, err := r.workspace.MkdirPrivate(logRel); err != nil {
 		return nil, nil, fmt.Errorf("%w: create runc log directory: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
 
@@ -314,13 +339,22 @@ func (r *Runtime) openLogs(containerID string) (*os.File, *os.File, error) {
 		return nil, nil, err
 	}
 
-	stdout, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	stdoutRel, err := filepath.Rel(r.workspace.Root(), stdoutPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: resolve stdout log path: %w", chamberErrors.ErrInvalidRequest, err)
+	}
+	stderrRel, err := filepath.Rel(r.workspace.Root(), stderrPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: resolve stderr log path: %w", chamberErrors.ErrInvalidRequest, err)
+	}
+	stdout, err := r.workspace.CreatePrivate(stdoutRel)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: open stdout log: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
-	stderr, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	stderr, err := r.workspace.CreatePrivate(stderrRel)
 	if err != nil {
 		_ = stdout.Close()
+		_ = os.Remove(stdoutPath)
 		return nil, nil, fmt.Errorf("%w: open stderr log: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
 	return stdout, stderr, nil
@@ -413,6 +447,29 @@ func defaultRuntimeBinary(arch string) (runtimeBinary, error) {
 	default:
 		return runtimeBinary{}, fmt.Errorf("%w: runc runtime does not have a default binary for architecture %q", chamberErrors.ErrUnsupportedHost, arch)
 	}
+}
+
+func requireWorkspaceCapabilities(label string, workspace *hostfs.Workspace, required hostfs.Capabilities) error {
+	if workspace == nil {
+		return fmt.Errorf("%w: %s is required", chamberErrors.ErrInvalidRequest, label)
+	}
+	observed := workspace.Capabilities()
+	if required.PrivateDirs && !observed.PrivateDirs {
+		return fmt.Errorf("%w: %s requires private directories", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.FileFsync && !observed.FileFsync {
+		return fmt.Errorf("%w: %s requires file fsync", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.DirectoryFsync && !observed.DirectoryFsync {
+		return fmt.Errorf("%w: %s requires directory fsync", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.AtomicFileRename && !observed.AtomicFileRename {
+		return fmt.Errorf("%w: %s requires atomic file rename between temporary and durable roots", chamberErrors.ErrFilesystemFailed, label)
+	}
+	if required.AtomicDirectoryRename && !observed.AtomicDirectoryRename {
+		return fmt.Errorf("%w: %s requires atomic directory rename between temporary and durable roots", chamberErrors.ErrFilesystemFailed, label)
+	}
+	return nil
 }
 
 type containerConfig struct {
@@ -674,7 +731,7 @@ func (r *Runtime) download(ctx context.Context, url string, expectedDigest []byt
 		return fmt.Errorf("%w: download runtime binary: unexpected HTTP status %s", chamberErrors.ErrRuntimeInstallFailed, response.Status)
 	}
 
-	tmp, err := r.directoryManager.CreateTemp(binDir, "."+filepath.Base(binaryPath)+".tmp-*")
+	tmp, err := r.binaryWorkspace.CreateTemp(".", "."+filepath.Base(binaryPath)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("%w: create temporary runtime binary: %v", chamberErrors.ErrFilesystemFailed, err)
 	}

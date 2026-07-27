@@ -19,7 +19,7 @@ import (
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
 func TestNewPreparesRuntimeDirectories(t *testing.T) {
@@ -31,7 +31,7 @@ func TestNewPreparesRuntimeDirectories(t *testing.T) {
 		RuntimeRoot:   root,
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
+	}, withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
 
 	if runtime == nil {
 		t.Fatal("New() runtime = nil, want runtime")
@@ -40,14 +40,14 @@ func TestNewPreparesRuntimeDirectories(t *testing.T) {
 	assertPrivateDir(t, binDir)
 }
 
-func TestNewRequiresDirectoryManager(t *testing.T) {
+func TestNewRequiresWorkspace(t *testing.T) {
 	_, err := New(context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
-	}, nil)
+	}, nil, nil)
 	if err == nil {
-		t.Fatal("New() error = nil, want directory manager error")
+		t.Fatal("New() error = nil, want workspace error")
 	}
 }
 
@@ -58,7 +58,7 @@ func TestNewDownloadsValidRuntimeBinary(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
+	}, withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
 
 	descriptor := runtime.Descriptor()
 	if descriptor.Name != "runc" {
@@ -79,7 +79,7 @@ func TestNewDefaultsToRuncAdapterName(t *testing.T) {
 	runtime := mustNew(t, chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
-	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
+	}, withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
 
 	descriptor := runtime.Descriptor()
 	if descriptor.Name != "runc" {
@@ -106,7 +106,7 @@ func TestNewUsesConfiguredLocalRuntimePath(t *testing.T) {
 		RuntimeRoot: privateTempDir(t),
 		RuntimePath: runtimePath,
 		Name:        "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(client))
+	}, withHTTPClient(client))
 
 	descriptor := runtime.Descriptor()
 	if descriptor.BinaryPath != runtimePath {
@@ -121,11 +121,11 @@ func TestNewUsesConfiguredLocalRuntimePath(t *testing.T) {
 func TestNewRejectsWrongDigest(t *testing.T) {
 	content := []byte("not the pinned binary")
 	binDir := privateTempDir(t)
-	_, err := newWithOptions(context.Background(), chamberRuntime.Config{
+	_, err := newWithTestWorkspaces(t, context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary([]byte("expected binary")))
+	}, withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary([]byte("expected binary")))
 
 	if err == nil {
 		t.Fatal("New() error = nil, want digest error")
@@ -142,11 +142,11 @@ func TestNewRejectsWrongDigest(t *testing.T) {
 }
 
 func TestNewRejectsNonOKResponse(t *testing.T) {
-	_, err := newWithOptions(context.Background(), chamberRuntime.Config{
+	_, err := newWithTestWorkspaces(t, context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusNotFound, io.NopCloser(strings.NewReader("not found")))), withTestBinary([]byte("anything")))
+	}, withHTTPClient(responseClient(http.StatusNotFound, io.NopCloser(strings.NewReader("not found")))), withTestBinary([]byte("anything")))
 
 	if err == nil {
 		t.Fatal("New() error = nil, want HTTP status error")
@@ -162,11 +162,11 @@ func TestNewRejectsNonOKResponse(t *testing.T) {
 func TestNewRejectsInterruptedBody(t *testing.T) {
 	content := []byte("partial")
 	binDir := privateTempDir(t)
-	_, err := newWithOptions(context.Background(), chamberRuntime.Config{
+	_, err := newWithTestWorkspaces(t, context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, &interruptedBody{content: content})), withTestBinary(content))
+	}, withHTTPClient(responseClient(http.StatusOK, &interruptedBody{content: content})), withTestBinary(content))
 
 	if err == nil {
 		t.Fatal("New() error = nil, want interrupted body error")
@@ -181,11 +181,11 @@ func TestNewRejectsInterruptedBody(t *testing.T) {
 
 func TestNewDownloadCancellationHasCanceledCode(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	_, err := newWithOptions(ctx, chamberRuntime.Config{
+	_, err := newWithTestWorkspaces(t, ctx, chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, &cancelingBody{cancel: cancel})), withTestBinary([]byte("anything")))
+	}, withHTTPClient(responseClient(http.StatusOK, &cancelingBody{cancel: cancel})), withTestBinary([]byte("anything")))
 
 	if err == nil {
 		t.Fatal("New() error = nil, want cancellation error")
@@ -216,7 +216,7 @@ func TestNewUsesExistingValidBinary(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(client), withTestBinary(content))
+	}, withHTTPClient(client), withTestBinary(content))
 
 	descriptor := runtime.Descriptor()
 	if descriptor.BinaryPath != path {
@@ -246,7 +246,7 @@ func TestNewMakesExistingValidBinaryExecutable(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(client), withTestBinary(content))
+	}, withHTTPClient(client), withTestBinary(content))
 
 	descriptor := runtime.Descriptor()
 	if descriptor.BinaryPath != path {
@@ -272,7 +272,7 @@ func TestNewReplacesExistingInvalidBinary(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: binDir,
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(newContent))))), withTestBinary(newContent))
+	}, withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(newContent))))), withTestBinary(newContent))
 
 	descriptor := runtime.Descriptor()
 	if descriptor.BinaryPath != path {
@@ -353,7 +353,7 @@ func TestNewReturnsAbsoluteBinaryPath(t *testing.T) {
 		RuntimeRoot:   relativeRuntimeRoot,
 		RuntimeBinDir: relativeBinDir,
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
+	}, withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
 
 	descriptor := runtime.Descriptor()
 	if !filepath.IsAbs(descriptor.BinaryPath) {
@@ -362,11 +362,11 @@ func TestNewReturnsAbsoluteBinaryPath(t *testing.T) {
 }
 
 func TestNewRequiresCompleteRuntimeBinaryConfiguration(t *testing.T) {
-	_, err := newWithOptions(context.Background(), chamberRuntime.Config{
+	_, err := newWithTestWorkspaces(t, context.Background(), chamberRuntime.Config{
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withBinary(runtimeBinary{
+	}, withBinary(runtimeBinary{
 		version: "test-version",
 		url:     "http://example.test/runc",
 	}))
@@ -555,12 +555,13 @@ esac
 
 func TestRunStartFailureHasErrorCodeAndRemovesLogs(t *testing.T) {
 	stateRoot := privateTempDir(t)
+	workspace := newRuntimeWorkspace(t, stateRoot)
 	runtime := &Runtime{
 		config: chamberRuntime.Config{
-			RuntimeRoot: stateRoot,
+			RuntimeRoot: workspace.Root(),
 		},
-		binaryPath:       filepath.Join(t.TempDir(), "missing-runc"),
-		directoryManager: localfs.NewDirectoryManager(),
+		binaryPath: filepath.Join(t.TempDir(), "missing-runc"),
+		workspace:  workspace,
 	}
 
 	_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
@@ -1107,7 +1108,7 @@ func runtimeWithBinary(t *testing.T, binaryPath string, stateRoot string) *Runti
 		RuntimeBinDir: filepath.Dir(binaryPath),
 		RuntimeRoot:   stateRoot,
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withTestBinary(content))
+	}, withTestBinary(content))
 }
 
 func runtimeWithConfigOnly(t *testing.T) *Runtime {
@@ -1118,21 +1119,28 @@ func runtimeWithConfigOnly(t *testing.T) *Runtime {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
-	}, localfs.NewDirectoryManager(), withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
+	}, withHTTPClient(responseClient(http.StatusOK, io.NopCloser(strings.NewReader(string(content))))), withTestBinary(content))
 }
 
-func mustNew(t testing.TB, config chamberRuntime.Config, directoryManager localfs.DirectoryManager, options ...option) *Runtime {
+func mustNew(t testing.TB, config chamberRuntime.Config, options ...option) *Runtime {
 	t.Helper()
 
-	config = prepareRuntimeConfig(t, config, directoryManager)
-	runtime, err := newWithOptions(context.Background(), config, directoryManager, options...)
+	config, runtimeWorkspace, binaryWorkspace := prepareRuntimeConfig(t, config)
+	runtime, err := newWithOptions(context.Background(), config, runtimeWorkspace, binaryWorkspace, options...)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 	return runtime
 }
 
-func prepareRuntimeConfig(t testing.TB, config chamberRuntime.Config, directoryManager localfs.DirectoryManager) chamberRuntime.Config {
+func newWithTestWorkspaces(t testing.TB, ctx context.Context, config chamberRuntime.Config, options ...option) (*Runtime, error) {
+	t.Helper()
+
+	config, runtimeWorkspace, binaryWorkspace := prepareRuntimeConfig(t, config)
+	return newWithOptions(ctx, config, runtimeWorkspace, binaryWorkspace, options...)
+}
+
+func prepareRuntimeConfig(t testing.TB, config chamberRuntime.Config) (chamberRuntime.Config, *hostfs.Workspace, *hostfs.Workspace) {
 	t.Helper()
 
 	if config.Name == "" {
@@ -1141,15 +1149,32 @@ func prepareRuntimeConfig(t testing.TB, config chamberRuntime.Config, directoryM
 	if config.Privilege == "" {
 		config.Privilege = capability.Rootless
 	}
-	for _, path := range []string{config.RuntimeRoot, config.RuntimeBinDir} {
-		if path == "" {
-			continue
-		}
-		if err := directoryManager.MkdirPrivate(path); err != nil {
-			t.Fatalf("MkdirPrivate(%q) error = %v", path, err)
-		}
+	runtimeWorkspace := newRuntimeWorkspace(t, config.RuntimeRoot)
+	config.RuntimeRoot = runtimeWorkspace.Root()
+	var binaryWorkspace *hostfs.Workspace
+	if strings.TrimSpace(config.RuntimePath) == "" {
+		binaryWorkspace = newRuntimeWorkspace(t, config.RuntimeBinDir)
+		config.RuntimeBinDir = binaryWorkspace.Root()
 	}
-	return config
+	return config, runtimeWorkspace, binaryWorkspace
+}
+
+func newRuntimeWorkspace(t testing.TB, root string) *hostfs.Workspace {
+	t.Helper()
+	tmpRoot := filepath.Join(filepath.Dir(root), "."+filepath.Base(root)+".tmp")
+	workspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    root,
+		TmpRoot: tmpRoot,
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	return workspace
 }
 
 type httpClientFunc func(*http.Request) (*http.Response, error)

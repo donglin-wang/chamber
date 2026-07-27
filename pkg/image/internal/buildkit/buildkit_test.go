@@ -19,7 +19,7 @@ import (
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go"
@@ -110,10 +110,7 @@ func TestValidateConfigRejectsUnsupportedSnapshotterAndRelativePaths(t *testing.
 
 func TestValidateRejectsRootThatWouldCreateOverlongBuildKitSocketPath(t *testing.T) {
 	root := "/" + strings.Repeat("a", linuxPathnameSocketMaxBytes)
-	err := (Builder{
-		root:             root,
-		directoryManager: localfs.NewDirectoryManager(),
-	}).validate(context.Background())
+	err := validateBuildKitSocketRoot(root)
 	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
 		t.Fatalf("validate() error = %v, want invalid request", err)
 	}
@@ -194,18 +191,15 @@ func TestDownloadAndExtractArchiveInstallsOnlyExpectedExecutables(t *testing.T) 
 	withHost(t, "linux", "amd64", 1000)
 	root := privateTempDir(t)
 	binDir := filepath.Join(root, "bin")
-	directoryManager := localfs.NewDirectoryManager()
-	if err := directoryManager.MkdirPrivate(binDir); err != nil {
+	builder := newTestBuilder(t, root)
+	if _, err := builder.workspace.MkdirPrivate("bin"); err != nil {
 		t.Fatalf("MkdirPrivate(bin) error = %v", err)
 	}
 	content := gzipTar(t, map[string][]byte{
 		"bin/buildctl":  executableContent("buildctl"),
 		"bin/buildkitd": executableContent("buildkitd"),
 	})
-	builder := Builder{
-		client:           responseClient(http.StatusOK, io.NopCloser(bytes.NewReader(content))),
-		directoryManager: directoryManager,
-	}
+	builder.client = responseClient(http.StatusOK, io.NopCloser(bytes.NewReader(content)))
 	err := builder.downloadAndExtractArchive(context.Background(), managedArchive{
 		version: "test",
 		url:     "https://example.test/buildkit.tar.gz",
@@ -231,10 +225,8 @@ func TestDownloadAndExtractArchiveAllowsOfficialUnextractedHelpers(t *testing.T)
 		"bin/buildkit-runc":         executableContent("buildkit-runc"),
 		"bin/buildkitd":             executableContent("buildkitd"),
 	})
-	builder := Builder{
-		client:           responseClient(http.StatusOK, io.NopCloser(bytes.NewReader(content))),
-		directoryManager: localfs.NewDirectoryManager(),
-	}
+	builder := newTestBuilder(t, root)
+	builder.client = responseClient(http.StatusOK, io.NopCloser(bytes.NewReader(content)))
 	err := builder.downloadAndExtractArchive(context.Background(), managedArchive{
 		version: "test",
 		url:     "https://example.test/buildkit.tar.gz",
@@ -275,10 +267,8 @@ func TestDownloadAndExtractArchiveRejectsUnsafeEntries(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			root := privateTempDir(t)
 			content := gzipTarEntries(t, tt.entries)
-			builder := Builder{
-				client:           responseClient(http.StatusOK, io.NopCloser(bytes.NewReader(content))),
-				directoryManager: localfs.NewDirectoryManager(),
-			}
+			builder := newTestBuilder(t, root)
+			builder.client = responseClient(http.StatusOK, io.NopCloser(bytes.NewReader(content)))
 			err := builder.downloadAndExtractArchive(context.Background(), managedArchive{
 				version: "test",
 				url:     "https://example.test/buildkit.tar.gz",
@@ -292,16 +282,15 @@ func TestDownloadAndExtractArchiveRejectsUnsafeEntries(t *testing.T) {
 }
 
 func TestDownloadAndExtractArchiveRejectsWrongChecksum(t *testing.T) {
+	root := privateTempDir(t)
 	content := gzipTar(t, map[string][]byte{"bin/buildctl": executableContent("buildctl")})
-	builder := Builder{
-		client:           responseClient(http.StatusOK, io.NopCloser(bytes.NewReader(content))),
-		directoryManager: localfs.NewDirectoryManager(),
-	}
+	builder := newTestBuilder(t, root)
+	builder.client = responseClient(http.StatusOK, io.NopCloser(bytes.NewReader(content)))
 	err := builder.downloadAndExtractArchive(context.Background(), managedArchive{
 		version: "test",
 		url:     "https://example.test/buildkit.tar.gz",
 		sha256:  sha256Hex([]byte("different")),
-	}, privateTempDir(t), map[string]string{"bin/buildctl": filepath.Join(privateTempDir(t), "buildctl")}, "BuildKit")
+	}, root, map[string]string{"bin/buildctl": filepath.Join(root, "buildctl")}, "BuildKit")
 	if !errors.Is(err, chamberErrors.ErrBuildInstallFailed) {
 		t.Fatalf("downloadAndExtractArchive() error = %v, want build install failed", err)
 	}
@@ -437,12 +426,12 @@ func TestExtractOCITarWritesLayout(t *testing.T) {
 		t.Fatalf("writeValidOCITar() error = %v", err)
 	}
 	outputLayout := filepath.Join(privateTempDir(t), "layout")
-	directoryManager := localfs.NewDirectoryManager()
-	if err := directoryManager.MkdirPrivate(outputLayout); err != nil {
-		t.Fatalf("MkdirPrivate(output layout) error = %v", err)
+	root := filepath.Dir(outputLayout)
+	builder := newTestBuilder(t, root)
+	if err := os.MkdirAll(outputLayout, 0700); err != nil {
+		t.Fatalf("MkdirAll(output layout) error = %v", err)
 	}
 
-	builder := Builder{directoryManager: directoryManager}
 	if err := builder.extractOCITar(tarPath, outputLayout); err != nil {
 		t.Fatalf("extractOCITar() error = %v", err)
 	}
@@ -624,6 +613,28 @@ func assertFileContentAndMode(t *testing.T, path string, wantContent []byte, wan
 	}
 	if got := info.Mode().Perm(); got != wantMode {
 		t.Fatalf("mode(%q) = %o, want %o", path, got, wantMode)
+	}
+}
+
+func newTestBuilder(t *testing.T, root string) Builder {
+	t.Helper()
+	workspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    root,
+		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:           true,
+			FileFsync:             true,
+			AtomicFileRename:      true,
+			AtomicDirectoryRename: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	return Builder{
+		root:      workspace.Root(),
+		client:    http.DefaultClient,
+		workspace: workspace,
 	}
 }
 

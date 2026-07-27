@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ import (
 	"github.com/donglin-wang/chamber/daemon/metadata/memory"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
 type traceContextKey struct{}
@@ -94,7 +95,7 @@ func TestStoreContract(t *testing.T) {
 
 			store, err := metadataetcd.Open(ctx, metadata.Config{
 				Root: dataDir,
-			}, localfs.NewDirectoryManager())
+			}, newTestWorkspace(t, dataDir))
 			if err != nil {
 				t.Fatalf("Open() error = %v", err)
 			}
@@ -118,6 +119,23 @@ func TestStoreContract(t *testing.T) {
 			assertTraceFieldsAreExplicit(t, store)
 		})
 	}
+}
+
+func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
+	t.Helper()
+	workspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    root,
+		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	return workspace
 }
 
 func assertImageRoundTrip(t *testing.T, store metadata.Store) {

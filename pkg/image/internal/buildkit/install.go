@@ -66,7 +66,7 @@ func (b Builder) installTools(ctx context.Context) (toolPaths, error) {
 		return toolPaths{}, err
 	}
 	binDir := filepath.Join(b.root, "bin")
-	if err := b.directoryManager.MkdirPrivate(binDir); err != nil {
+	if _, err := b.workspace.MkdirPrivate("bin"); err != nil {
 		return toolPaths{}, fmt.Errorf("%w: create BuildKit tool directory: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
 
@@ -342,7 +342,11 @@ func (b Builder) downloadArchive(ctx context.Context, url string, expectedDigest
 	if response.StatusCode != http.StatusOK {
 		return "", nil, fmt.Errorf("%w: download %s: unexpected HTTP status %s", chamberErrors.ErrBuildInstallFailed, label, response.Status)
 	}
-	tmp, err := b.directoryManager.CreateTemp(tempDir, "."+strings.ToLower(label)+"-*.tar.gz")
+	tempRel, ok := relBelow(b.workspace.Root(), tempDir)
+	if !ok {
+		return "", nil, fmt.Errorf("%w: %s temporary directory %q is outside image workspace", chamberErrors.ErrInvalidRequest, label, tempDir)
+	}
+	tmp, err := b.workspace.CreateTemp(tempRel, "."+strings.ToLower(label)+"-*.tar.gz")
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: create temporary %s archive: %w", chamberErrors.ErrFilesystemFailed, label, err)
 	}
@@ -412,7 +416,7 @@ func (b Builder) extractManagedArchive(archivePath string, expected map[string]s
 		if destination == "" {
 			continue
 		}
-		if err := writeExecutableAtomic(destination, reader, b.directoryManager); err != nil {
+		if err := b.writeExecutableAtomic(destination, reader); err != nil {
 			return err
 		}
 		seen[header.Name] = true
@@ -464,7 +468,11 @@ func (b Builder) downloadBinary(ctx context.Context, url string, expectedDigest 
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("%w: download %s: unexpected HTTP status %s", chamberErrors.ErrBuildInstallFailed, label, response.Status)
 	}
-	tmp, err := b.directoryManager.CreateTemp(binDir, "."+filepath.Base(binaryPath)+".tmp-*")
+	binRel, ok := relBelow(b.workspace.Root(), binDir)
+	if !ok {
+		return fmt.Errorf("%w: runtime binary directory %q is outside image workspace", chamberErrors.ErrInvalidRequest, binDir)
+	}
+	tmp, err := b.workspace.CreateTemp(binRel, "."+filepath.Base(binaryPath)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("%w: create temporary %s binary: %w", chamberErrors.ErrFilesystemFailed, label, err)
 	}

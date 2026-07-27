@@ -77,7 +77,7 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 			"github.com/donglin-wang/chamber/pkg/bundle/internal/directory",
 			"github.com/donglin-wang/chamber/pkg/runtime/internal/runc",
 			"github.com/donglin-wang/chamber/daemon/metadata/etcd",
-			"github.com/donglin-wang/chamber/pkg/shared/localfs":
+			"github.com/donglin-wang/chamber/pkg/shared/hostfs":
 			t.Fatalf("config package must import generic package boundaries and not composition or filesystem setup %q", importPath)
 		}
 	}

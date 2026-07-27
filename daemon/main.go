@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
 	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
 	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
@@ -66,27 +67,91 @@ func run(ctx context.Context, args []string) error {
 	lifetime, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
-	directoryManager := localfs.NewDirectoryManager()
-	store, err := chamberEtcdMetadataStore.Open(lifetime, cfg.Metadata, directoryManager)
+	imageWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    cfg.Image.Root,
+		TmpRoot: filepath.Join(cfg.TmpRoot, "images"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:           true,
+			FileFsync:             true,
+			AtomicFileRename:      true,
+			AtomicDirectoryRename: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create image workspace: %w", err)
+	}
+	bundleWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    cfg.Bundle.Root,
+		TmpRoot: filepath.Join(cfg.TmpRoot, "bundles"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:           true,
+			AtomicDirectoryRename: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create bundle workspace: %w", err)
+	}
+	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    cfg.Runtime.RuntimeRoot,
+		TmpRoot: filepath.Join(cfg.TmpRoot, "runtime"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create runtime workspace: %w", err)
+	}
+	var runtimeBinaryWorkspace *hostfs.Workspace
+	if cfg.Runtime.RuntimePath == "" {
+		runtimeBinaryWorkspace, err = hostfs.NewWorkspace(hostfs.Config{
+			Root:    cfg.Runtime.RuntimeBinDir,
+			TmpRoot: filepath.Join(cfg.TmpRoot, "runtime-bin"),
+			Capabilities: hostfs.Capabilities{
+				PrivateDirs:      true,
+				FileFsync:        true,
+				AtomicFileRename: true,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("create runtime binary workspace: %w", err)
+		}
+	}
+	metadataWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    cfg.Metadata.Root,
+		TmpRoot: filepath.Join(cfg.TmpRoot, "metadata"),
+		Capabilities: hostfs.Capabilities{
+			PrivateDirs:      true,
+			FileFsync:        true,
+			AtomicFileRename: true,
+			DirectoryFsync:   true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create metadata workspace: %w", err)
+	}
+
+	store, err := chamberEtcdMetadataStore.Open(lifetime, cfg.Metadata, metadataWorkspace)
 	if err != nil {
 		return fmt.Errorf("open metadata store: %w", err)
 	}
 	defer store.Close()
 
-	runtime, err := chamberRuntimeFactory.NewRuntime(lifetime, cfg.Runtime, directoryManager)
+	runtime, err := chamberRuntimeFactory.NewRuntime(lifetime, cfg.Runtime, runtimeWorkspace, runtimeBinaryWorkspace)
 	if err != nil {
 		return fmt.Errorf("create runtime: %w", err)
 	}
 
 	mux := newServer()
-	imageStore, err := chamberImageFactory.NewStore(cfg.Image, directoryManager)
+	imageStore, err := chamberImageFactory.NewStore(cfg.Image, imageWorkspace)
 	if err != nil {
 		return fmt.Errorf("create image store: %w", err)
 	}
 	registerImageRoutes(mux, cfg, store, imageStore)
 	provisioner, err := chamberBundleFactory.NewProvisioner(
 		cfg.Bundle,
-		directoryManager,
+		bundleWorkspace,
 	)
 	if err != nil {
 		return fmt.Errorf("create bundle provisioner: %w", err)

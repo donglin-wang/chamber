@@ -14,7 +14,7 @@ import (
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
-	"github.com/donglin-wang/chamber/pkg/shared/localfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
 )
@@ -40,9 +40,9 @@ type envelope[T any] struct {
 	Value         T   `json:"value"`
 }
 
-func Open(ctx context.Context, cfg metadata.Config, directoryManager localfs.DirectoryManager) (*Store, error) {
-	if directoryManager == nil {
-		return nil, fmt.Errorf("metadata etcd: directory manager is required")
+func Open(ctx context.Context, cfg metadata.Config, workspace *hostfs.Workspace) (*Store, error) {
+	if workspace == nil {
+		return nil, fmt.Errorf("metadata etcd: workspace is required")
 	}
 	if cfg.Root == "" {
 		return nil, fmt.Errorf("metadata etcd: root is required")
@@ -52,16 +52,25 @@ func Open(ctx context.Context, cfg metadata.Config, directoryManager localfs.Dir
 	if err != nil {
 		return nil, fmt.Errorf("metadata etcd: resolve root: %w", err)
 	}
-	if err := directoryManager.MkdirPrivate(dataDir); err != nil {
-		return nil, fmt.Errorf("metadata etcd: create data dir: %w", err)
+	if filepath.Clean(dataDir) != filepath.Clean(workspace.Root()) {
+		return nil, fmt.Errorf("metadata etcd: root %q does not match workspace root %q", cfg.Root, workspace.Root())
 	}
+	if err := requireWorkspaceCapabilities("metadata workspace", workspace.Capabilities(), hostfs.Capabilities{
+		PrivateDirs:      true,
+		FileFsync:        true,
+		AtomicFileRename: true,
+		DirectoryFsync:   true,
+	}); err != nil {
+		return nil, err
+	}
+	dataDir = workspace.Root()
 
 	clientSocket := filepath.Join(dataDir, "client.sock")
 	peerSocket := filepath.Join(dataDir, "peer.sock")
-	if err := directoryManager.MkdirPrivateParent(clientSocket); err != nil {
+	if _, err := workspace.MkdirPrivate("."); err != nil {
 		return nil, fmt.Errorf("metadata etcd: create client socket dir: %w", err)
 	}
-	if err := directoryManager.MkdirPrivateParent(peerSocket); err != nil {
+	if _, err := workspace.MkdirPrivate("."); err != nil {
 		return nil, fmt.Errorf("metadata etcd: create peer socket dir: %w", err)
 	}
 
@@ -116,6 +125,25 @@ func Open(ctx context.Context, cfg metadata.Config, directoryManager localfs.Dir
 		client: client,
 		server: server,
 	}, nil
+}
+
+func requireWorkspaceCapabilities(label string, observed hostfs.Capabilities, required hostfs.Capabilities) error {
+	if required.PrivateDirs && !observed.PrivateDirs {
+		return fmt.Errorf("metadata etcd: %s requires private directories", label)
+	}
+	if required.FileFsync && !observed.FileFsync {
+		return fmt.Errorf("metadata etcd: %s requires file fsync", label)
+	}
+	if required.DirectoryFsync && !observed.DirectoryFsync {
+		return fmt.Errorf("metadata etcd: %s requires directory fsync", label)
+	}
+	if required.AtomicFileRename && !observed.AtomicFileRename {
+		return fmt.Errorf("metadata etcd: %s requires atomic file rename between temporary and durable roots", label)
+	}
+	if required.AtomicDirectoryRename && !observed.AtomicDirectoryRename {
+		return fmt.Errorf("metadata etcd: %s requires atomic directory rename between temporary and durable roots", label)
+	}
+	return nil
 }
 
 func (s *Store) PutImage(ctx context.Context, image metadata.Image) error {
