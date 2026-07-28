@@ -50,6 +50,9 @@ func New(config chamberImage.Config, workspace *hostfs.Workspace) (*Store, error
 	if err := requireWorkspaceRoot("image root", config.Root, workspace.Root()); err != nil {
 		return nil, err
 	}
+	if err := requireWorkspaceTmpRoot("image temporary root", config.TmpRoot, workspace.TmpRoot()); err != nil {
+		return nil, err
+	}
 	if err := requireWorkspaceCapabilities("image workspace", workspace.Capabilities(), hostfs.Capabilities{
 		PrivateDirs:           true,
 		FileFsync:             true,
@@ -59,6 +62,7 @@ func New(config chamberImage.Config, workspace *hostfs.Workspace) (*Store, error
 		return nil, err
 	}
 	config.Root = workspace.Root()
+	config.TmpRoot = workspace.TmpRoot()
 	logger, err := chamberLogging.LoggerFromConfig(config.Logging, nil)
 	if err != nil {
 		return nil, err
@@ -101,6 +105,20 @@ func requireWorkspaceRoot(label string, configured string, actual string) error 
 	}
 	if filepath.Clean(configuredAbs) != filepath.Clean(actual) {
 		return fmt.Errorf("%w: %s %q does not match workspace root %q", chamberErrors.ErrInvalidRequest, label, configured, actual)
+	}
+	return nil
+}
+
+func requireWorkspaceTmpRoot(label string, configured string, actual string) error {
+	if strings.TrimSpace(configured) == "" {
+		return nil
+	}
+	configuredAbs, err := filepath.Abs(configured)
+	if err != nil {
+		return fmt.Errorf("%w: resolve %s %q: %w", chamberErrors.ErrInvalidRequest, label, configured, err)
+	}
+	if filepath.Clean(configuredAbs) != filepath.Clean(actual) {
+		return fmt.Errorf("%w: %s %q does not match workspace temporary root %q", chamberErrors.ErrInvalidRequest, label, configured, actual)
 	}
 	return nil
 }

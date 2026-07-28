@@ -100,6 +100,27 @@ func run(cfg *config) error {
 	logging.Info(ctx, "CI root ready", "root", root)
 
 	paths := ciPaths(root)
+	imageConfig := chamberImage.Config{
+		Root:    paths.imageRoot,
+		TmpRoot: filepath.Join(root, "tmp", "images"),
+		Logging: loggingConfig,
+	}
+	bundleConfig := chamberBundle.Config{
+		Root:      paths.bundleRoot,
+		TmpRoot:   filepath.Join(root, "tmp", "bundles"),
+		Name:      chamberBundle.ProvisionerNameDirectory,
+		Privilege: capability.Rootless,
+		Logging:   loggingConfig,
+	}
+	runtimeConfig := chamberRuntime.Config{
+		RuntimeRoot:       paths.runtimeRoot,
+		RuntimeTmpRoot:    filepath.Join(root, "tmp", "runtime"),
+		RuntimeBinDir:     paths.runtimeBinDir,
+		RuntimeBinTmpRoot: filepath.Join(root, "tmp", "runtime-bin"),
+		Name:              chamberRuntime.RuntimeNameRunc,
+		Privilege:         capability.Rootless,
+		Logging:           loggingConfig,
+	}
 	for _, path := range []string{
 		paths.goBuildCache,
 		paths.goModCache,
@@ -113,8 +134,8 @@ func run(cfg *config) error {
 		}
 	}
 	imageWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    paths.imageRoot,
-		TmpRoot: filepath.Join(root, "tmp", "images"),
+		Root:    imageConfig.Root,
+		TmpRoot: imageConfig.TmpRoot,
 		Capabilities: hostfs.Capabilities{
 			PrivateDirs:           true,
 			FileFsync:             true,
@@ -126,8 +147,8 @@ func run(cfg *config) error {
 		return fmt.Errorf("create image workspace: %w", err)
 	}
 	bundleWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    paths.bundleRoot,
-		TmpRoot: filepath.Join(root, "tmp", "bundles"),
+		Root:    bundleConfig.Root,
+		TmpRoot: bundleConfig.TmpRoot,
 		Capabilities: hostfs.Capabilities{
 			PrivateDirs:           true,
 			AtomicDirectoryRename: true,
@@ -137,8 +158,8 @@ func run(cfg *config) error {
 		return fmt.Errorf("create bundle workspace: %w", err)
 	}
 	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    paths.runtimeRoot,
-		TmpRoot: filepath.Join(root, "tmp", "runtime"),
+		Root:    runtimeConfig.RuntimeRoot,
+		TmpRoot: runtimeConfig.RuntimeTmpRoot,
 		Capabilities: hostfs.Capabilities{
 			PrivateDirs:      true,
 			FileFsync:        true,
@@ -149,8 +170,8 @@ func run(cfg *config) error {
 		return fmt.Errorf("create runtime workspace: %w", err)
 	}
 	runtimeBinaryWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    paths.runtimeBinDir,
-		TmpRoot: filepath.Join(root, "tmp", "runtime-bin"),
+		Root:    runtimeConfig.RuntimeBinDir,
+		TmpRoot: runtimeConfig.RuntimeBinTmpRoot,
 		Capabilities: hostfs.Capabilities{
 			PrivateDirs:      true,
 			FileFsync:        true,
@@ -161,23 +182,14 @@ func run(cfg *config) error {
 		return fmt.Errorf("create runtime binary workspace: %w", err)
 	}
 
-	runtime, err := chamberRuntimeFactory.NewRuntime(ctx, chamberRuntime.Config{
-		RuntimeRoot:   paths.runtimeRoot,
-		RuntimeBinDir: paths.runtimeBinDir,
-		Name:          chamberRuntime.RuntimeNameRunc,
-		Privilege:     capability.Rootless,
-		Logging:       loggingConfig,
-	}, runtimeWorkspace, runtimeBinaryWorkspace)
+	runtime, err := chamberRuntimeFactory.NewRuntime(ctx, runtimeConfig, runtimeWorkspace, runtimeBinaryWorkspace)
 	if err != nil {
 		return fmt.Errorf("create runtime: %w", err)
 	}
 	descriptor := runtime.Descriptor()
 	logging.Info(ctx, "CI runtime ready", "runtime", descriptor.Name, "version", descriptor.Version, "path", descriptor.BinaryPath)
 
-	imageStore, err := chamberImageFactory.NewStore(chamberImage.Config{
-		Root:    paths.imageRoot,
-		Logging: loggingConfig,
-	}, imageWorkspace)
+	imageStore, err := chamberImageFactory.NewStore(imageConfig, imageWorkspace)
 	if err != nil {
 		return fmt.Errorf("create image store: %w", err)
 	}
@@ -191,12 +203,7 @@ func run(cfg *config) error {
 	}
 
 	provisioner, err := chamberBundleFactory.NewProvisioner(
-		chamberBundle.Config{
-			Root:      paths.bundleRoot,
-			Name:      chamberBundle.ProvisionerNameDirectory,
-			Privilege: capability.Rootless,
-			Logging:   loggingConfig,
-		},
+		bundleConfig,
 		bundleWorkspace,
 	)
 	if err != nil {

@@ -46,6 +46,16 @@ func TestNewWorkspaceDefaultsTmpRootBelowOSTempDir(t *testing.T) {
 	}
 }
 
+func TestDefaultTmpRootAddsOptionalNameBelowUserTempRoot(t *testing.T) {
+	root := DefaultTmpRoot("")
+	if !strings.HasPrefix(root, filepath.Clean(os.TempDir())+string(filepath.Separator)) {
+		t.Fatalf("DefaultTmpRoot(\"\") = %q, want below %q", root, os.TempDir())
+	}
+	if got, want := DefaultTmpRoot("images"), filepath.Join(root, "images"); got != want {
+		t.Fatalf("DefaultTmpRoot(\"images\") = %q, want %q", got, want)
+	}
+}
+
 func TestNewWorkspaceRejectsUnsafeExistingRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "unsafe")
 	if err := os.Mkdir(root, 0755); err != nil {

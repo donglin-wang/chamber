@@ -81,6 +81,22 @@ func TestNewProvisionerRejectsMismatchedWorkspaceRoot(t *testing.T) {
 	}
 }
 
+func TestNewProvisionerRejectsMismatchedWorkspaceTmpRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "bundles")
+	_, err := NewProvisioner(chamberBundle.Config{
+		Root:      root,
+		TmpRoot:   filepath.Join(t.TempDir(), "other-tmp"),
+		Name:      chamberBundle.ProvisionerNameDirectory,
+		Privilege: capability.Rootless,
+	}, newTestWorkspace(t, root))
+	if err == nil {
+		t.Fatal("NewProvisioner() error = nil, want mismatch error")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("NewProvisioner() error = %v, want invalid request code", err)
+	}
+}
+
 func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
 	t.Helper()
 	workspace, err := hostfs.NewWorkspace(hostfs.Config{

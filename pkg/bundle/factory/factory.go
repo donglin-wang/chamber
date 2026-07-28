@@ -52,6 +52,9 @@ func NewProvisioner(config chamberBundle.Config, workspace *hostfs.Workspace) (c
 	if filepath.Clean(configRoot) != filepath.Clean(workspace.Root()) {
 		return nil, fmt.Errorf("%w: bundle root %q does not match workspace root %q", chamberErrors.ErrInvalidRequest, config.Root, workspace.Root())
 	}
+	if err := requireWorkspaceTmpRoot("bundle temporary root", config.TmpRoot, workspace.TmpRoot()); err != nil {
+		return nil, err
+	}
 	if err := requireWorkspaceCapabilities("bundle workspace", workspace.Capabilities(), hostfs.Capabilities{
 		PrivateDirs:           true,
 		AtomicDirectoryRename: true,
@@ -59,6 +62,7 @@ func NewProvisioner(config chamberBundle.Config, workspace *hostfs.Workspace) (c
 		return nil, err
 	}
 	config.Root = workspace.Root()
+	config.TmpRoot = workspace.TmpRoot()
 
 	switch config.Name {
 	case chamberBundle.ProvisionerNameDirectory:
@@ -103,6 +107,20 @@ func supportsPrivilege(capabilities chamberBundle.Capabilities, privilege capabi
 		}
 	}
 	return false
+}
+
+func requireWorkspaceTmpRoot(label string, configured string, actual string) error {
+	if strings.TrimSpace(configured) == "" {
+		return nil
+	}
+	configuredAbs, err := filepath.Abs(configured)
+	if err != nil {
+		return fmt.Errorf("%w: resolve %s %q: %w", chamberErrors.ErrInvalidRequest, label, configured, err)
+	}
+	if filepath.Clean(configuredAbs) != filepath.Clean(actual) {
+		return fmt.Errorf("%w: %s %q does not match workspace temporary root %q", chamberErrors.ErrInvalidRequest, label, configured, actual)
+	}
+	return nil
 }
 
 func requireWorkspaceCapabilities(label string, observed hostfs.Capabilities, required hostfs.Capabilities) error {

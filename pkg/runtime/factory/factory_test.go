@@ -21,6 +21,12 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.RuntimeRoot != filepath.Join(root, "run", "runtime") {
 		t.Fatalf("RuntimeRoot = %q, want default runtime root", cfg.RuntimeRoot)
 	}
+	if cfg.RuntimeTmpRoot != hostfs.DefaultTmpRoot("runtime") {
+		t.Fatalf("RuntimeTmpRoot = %q, want default runtime temp root", cfg.RuntimeTmpRoot)
+	}
+	if cfg.RuntimeBinTmpRoot != hostfs.DefaultTmpRoot("runtime-bin") {
+		t.Fatalf("RuntimeBinTmpRoot = %q, want default runtime binary temp root", cfg.RuntimeBinTmpRoot)
+	}
 	if cfg.Name != chamberRuntime.RuntimeNameRunc {
 		t.Fatalf("Name = %q, want runc", cfg.Name)
 	}
@@ -102,6 +108,44 @@ func TestNewRejectsMismatchedRuntimeWorkspaceRoot(t *testing.T) {
 		Privilege:     capability.Rootless,
 	}
 	_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, filepath.Join(t.TempDir(), "other-runtime")), newTestWorkspace(t, config.RuntimeBinDir), "linux")
+	if err == nil {
+		t.Fatal("New() error = nil, want mismatch error")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("New() error = %v, want invalid request code", err)
+	}
+}
+
+func TestNewRejectsMismatchedRuntimeWorkspaceTmpRoot(t *testing.T) {
+	runtimeRoot := filepath.Join(t.TempDir(), "runtime")
+	binDir := filepath.Join(t.TempDir(), "bin")
+	config := chamberRuntime.Config{
+		RuntimeRoot:    runtimeRoot,
+		RuntimeTmpRoot: filepath.Join(t.TempDir(), "other-runtime-tmp"),
+		RuntimeBinDir:  binDir,
+		Name:           chamberRuntime.RuntimeNameRunc,
+		Privilege:      capability.Rootless,
+	}
+	_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, runtimeRoot), newTestWorkspace(t, binDir), "linux")
+	if err == nil {
+		t.Fatal("New() error = nil, want mismatch error")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("New() error = %v, want invalid request code", err)
+	}
+}
+
+func TestNewRejectsMismatchedRuntimeBinaryWorkspaceTmpRoot(t *testing.T) {
+	runtimeRoot := filepath.Join(t.TempDir(), "runtime")
+	binDir := filepath.Join(t.TempDir(), "bin")
+	config := chamberRuntime.Config{
+		RuntimeRoot:       runtimeRoot,
+		RuntimeBinDir:     binDir,
+		RuntimeBinTmpRoot: filepath.Join(t.TempDir(), "other-bin-tmp"),
+		Name:              chamberRuntime.RuntimeNameRunc,
+		Privilege:         capability.Rootless,
+	}
+	_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, runtimeRoot), newTestWorkspace(t, binDir), "linux")
 	if err == nil {
 		t.Fatal("New() error = nil, want mismatch error")
 	}

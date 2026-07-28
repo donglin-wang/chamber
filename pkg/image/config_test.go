@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -13,6 +15,9 @@ func TestDefaultConfig(t *testing.T) {
 
 	if cfg.Root != filepath.Join(root, "images") {
 		t.Fatalf("Root = %q, want default image root", cfg.Root)
+	}
+	if cfg.TmpRoot != hostfs.DefaultTmpRoot("images") {
+		t.Fatalf("TmpRoot = %q, want default image temp root", cfg.TmpRoot)
 	}
 	if cfg.BuildKit.BuildctlPath != "" {
 		t.Fatalf("BuildKit.BuildctlPath = %q, want caller-provided local buildctl path unset by default", cfg.BuildKit.BuildctlPath)

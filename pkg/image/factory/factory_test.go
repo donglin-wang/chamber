@@ -58,6 +58,20 @@ func TestNewStoreRejectsMismatchedWorkspaceRoot(t *testing.T) {
 	}
 }
 
+func TestNewStoreRejectsMismatchedWorkspaceTmpRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "images")
+	_, err := NewStore(chamberImage.Config{
+		Root:    root,
+		TmpRoot: filepath.Join(t.TempDir(), "other-tmp"),
+	}, newTestWorkspace(t, root))
+	if err == nil {
+		t.Fatal("NewStore() error = nil, want mismatch error")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("NewStore() error = %v, want invalid request code", err)
+	}
+}
+
 func assertPrivateDir(t *testing.T, path string) {
 	t.Helper()
 

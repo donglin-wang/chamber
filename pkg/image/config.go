@@ -3,6 +3,7 @@ package image
 import (
 	"path/filepath"
 
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
@@ -11,6 +12,11 @@ type Config struct {
 	// Root is the private directory where the image store keeps its shared OCI
 	// image layout, metadata, and temporary operation directories.
 	Root string
+
+	// TmpRoot is the private directory where the image store keeps temporary
+	// operation directories. Empty uses a user-scoped directory below the host
+	// temporary directory.
+	TmpRoot string
 
 	// BuildKit configures Dockerfile builds. A zero value uses managed BuildKit,
 	// RootlessKit, and runc binaries below <Config.Root>/bin.
@@ -114,6 +120,7 @@ func DefaultConfig(rootPath string) Config {
 	imageRoot := filepath.Join(rootPath, "images")
 	return Config{
 		Root:     imageRoot,
+		TmpRoot:  hostfs.DefaultTmpRoot("images"),
 		BuildKit: BuildKitConfig{},
 		Buildah:  BuildahConfig{},
 		Logging:  chamberLogging.Config{},

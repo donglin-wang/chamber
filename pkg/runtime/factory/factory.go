@@ -73,6 +73,9 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 	if filepath.Clean(runtimeRoot) != filepath.Clean(runtimeWorkspace.Root()) {
 		return nil, fmt.Errorf("%w: runtime root %q does not match workspace root %q", chamberErrors.ErrInvalidRequest, config.RuntimeRoot, runtimeWorkspace.Root())
 	}
+	if err := requireWorkspaceTmpRoot("runtime temporary root", config.RuntimeTmpRoot, runtimeWorkspace.TmpRoot()); err != nil {
+		return nil, err
+	}
 	if err := requireWorkspaceCapabilities("runtime workspace", runtimeWorkspace.Capabilities(), hostfs.Capabilities{
 		PrivateDirs:      true,
 		FileFsync:        true,
@@ -81,6 +84,7 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 		return nil, err
 	}
 	config.RuntimeRoot = runtimeWorkspace.Root()
+	config.RuntimeTmpRoot = runtimeWorkspace.TmpRoot()
 	if strings.TrimSpace(config.RuntimePath) == "" {
 		if binaryWorkspace == nil {
 			return nil, fmt.Errorf("%w: runtime binary workspace is required", chamberErrors.ErrInvalidRequest)
@@ -92,6 +96,9 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 		if filepath.Clean(binRoot) != filepath.Clean(binaryWorkspace.Root()) {
 			return nil, fmt.Errorf("%w: runtime bin dir %q does not match binary workspace root %q", chamberErrors.ErrInvalidRequest, config.RuntimeBinDir, binaryWorkspace.Root())
 		}
+		if err := requireWorkspaceTmpRoot("runtime binary temporary root", config.RuntimeBinTmpRoot, binaryWorkspace.TmpRoot()); err != nil {
+			return nil, err
+		}
 		if err := requireWorkspaceCapabilities("runtime binary workspace", binaryWorkspace.Capabilities(), hostfs.Capabilities{
 			PrivateDirs:      true,
 			FileFsync:        true,
@@ -100,6 +107,7 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 			return nil, err
 		}
 		config.RuntimeBinDir = binaryWorkspace.Root()
+		config.RuntimeBinTmpRoot = binaryWorkspace.TmpRoot()
 	}
 
 	switch config.Name {
@@ -145,6 +153,20 @@ func supportsPrivilege(capabilities chamberRuntime.Capabilities, privilege capab
 		}
 	}
 	return false
+}
+
+func requireWorkspaceTmpRoot(label string, configured string, actual string) error {
+	if strings.TrimSpace(configured) == "" {
+		return nil
+	}
+	configuredAbs, err := filepath.Abs(configured)
+	if err != nil {
+		return fmt.Errorf("%w: resolve %s %q: %w", chamberErrors.ErrInvalidRequest, label, configured, err)
+	}
+	if filepath.Clean(configuredAbs) != filepath.Clean(actual) {
+		return fmt.Errorf("%w: %s %q does not match workspace temporary root %q", chamberErrors.ErrInvalidRequest, label, configured, actual)
+	}
+	return nil
 }
 
 func requireWorkspaceCapabilities(label string, observed hostfs.Capabilities, required hostfs.Capabilities) error {

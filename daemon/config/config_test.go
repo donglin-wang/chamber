@@ -15,6 +15,7 @@ import (
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/capability"
+	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
@@ -153,22 +154,26 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 		Privilege:  capability.Rootless,
 		Bundle: chamberBundle.Config{
 			Root:      filepath.Join(root, "bundles"),
+			TmpRoot:   hostfs.DefaultTmpRoot("bundles"),
 			Name:      chamberBundle.ProvisionerNameDirectory,
 			Privilege: capability.Rootless,
 			Logging:   defaultLogging,
 		},
 		Image: chamberImage.Config{
 			Root:     filepath.Join(root, "images"),
+			TmpRoot:  hostfs.DefaultTmpRoot("images"),
 			BuildKit: chamberImage.BuildKitConfig{},
 			Buildah:  chamberImage.BuildahConfig{},
 			Logging:  defaultLogging,
 		},
 		Runtime: chamberRuntime.Config{
-			RuntimeRoot:   filepath.Join(root, "run", "runtime"),
-			RuntimeBinDir: filepath.Join(root, "bin"),
-			Name:          chamberRuntime.RuntimeNameRunc,
-			Privilege:     capability.Rootless,
-			Logging:       defaultLogging,
+			RuntimeRoot:       filepath.Join(root, "run", "runtime"),
+			RuntimeTmpRoot:    hostfs.DefaultTmpRoot("runtime"),
+			RuntimeBinDir:     filepath.Join(root, "bin"),
+			RuntimeBinTmpRoot: hostfs.DefaultTmpRoot("runtime-bin"),
+			Name:              chamberRuntime.RuntimeNameRunc,
+			Privilege:         capability.Rootless,
+			Logging:           defaultLogging,
 		},
 		Metadata: metadata.Config{
 			Root: filepath.Join(root, "metadata"),

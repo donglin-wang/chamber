@@ -67,9 +67,17 @@ func run(ctx context.Context, args []string) error {
 	lifetime, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
+	imageConfig := cfg.Image
+	imageConfig.TmpRoot = filepath.Join(cfg.TmpRoot, "images")
+	bundleConfig := cfg.Bundle
+	bundleConfig.TmpRoot = filepath.Join(cfg.TmpRoot, "bundles")
+	runtimeConfig := cfg.Runtime
+	runtimeConfig.RuntimeTmpRoot = filepath.Join(cfg.TmpRoot, "runtime")
+	runtimeConfig.RuntimeBinTmpRoot = filepath.Join(cfg.TmpRoot, "runtime-bin")
+
 	imageWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    cfg.Image.Root,
-		TmpRoot: filepath.Join(cfg.TmpRoot, "images"),
+		Root:    imageConfig.Root,
+		TmpRoot: imageConfig.TmpRoot,
 		Capabilities: hostfs.Capabilities{
 			PrivateDirs:           true,
 			FileFsync:             true,
@@ -81,8 +89,8 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("create image workspace: %w", err)
 	}
 	bundleWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    cfg.Bundle.Root,
-		TmpRoot: filepath.Join(cfg.TmpRoot, "bundles"),
+		Root:    bundleConfig.Root,
+		TmpRoot: bundleConfig.TmpRoot,
 		Capabilities: hostfs.Capabilities{
 			PrivateDirs:           true,
 			AtomicDirectoryRename: true,
@@ -92,8 +100,8 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("create bundle workspace: %w", err)
 	}
 	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    cfg.Runtime.RuntimeRoot,
-		TmpRoot: filepath.Join(cfg.TmpRoot, "runtime"),
+		Root:    runtimeConfig.RuntimeRoot,
+		TmpRoot: runtimeConfig.RuntimeTmpRoot,
 		Capabilities: hostfs.Capabilities{
 			PrivateDirs:      true,
 			FileFsync:        true,
@@ -104,10 +112,10 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("create runtime workspace: %w", err)
 	}
 	var runtimeBinaryWorkspace *hostfs.Workspace
-	if cfg.Runtime.RuntimePath == "" {
+	if runtimeConfig.RuntimePath == "" {
 		runtimeBinaryWorkspace, err = hostfs.NewWorkspace(hostfs.Config{
-			Root:    cfg.Runtime.RuntimeBinDir,
-			TmpRoot: filepath.Join(cfg.TmpRoot, "runtime-bin"),
+			Root:    runtimeConfig.RuntimeBinDir,
+			TmpRoot: runtimeConfig.RuntimeBinTmpRoot,
 			Capabilities: hostfs.Capabilities{
 				PrivateDirs:      true,
 				FileFsync:        true,
@@ -138,19 +146,19 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer store.Close()
 
-	runtime, err := chamberRuntimeFactory.NewRuntime(lifetime, cfg.Runtime, runtimeWorkspace, runtimeBinaryWorkspace)
+	runtime, err := chamberRuntimeFactory.NewRuntime(lifetime, runtimeConfig, runtimeWorkspace, runtimeBinaryWorkspace)
 	if err != nil {
 		return fmt.Errorf("create runtime: %w", err)
 	}
 
 	mux := newServer()
-	imageStore, err := chamberImageFactory.NewStore(cfg.Image, imageWorkspace)
+	imageStore, err := chamberImageFactory.NewStore(imageConfig, imageWorkspace)
 	if err != nil {
 		return fmt.Errorf("create image store: %w", err)
 	}
 	registerImageRoutes(mux, cfg, store, imageStore)
 	provisioner, err := chamberBundleFactory.NewProvisioner(
-		cfg.Bundle,
+		bundleConfig,
 		bundleWorkspace,
 	)
 	if err != nil {

@@ -62,6 +62,17 @@ func NewWorkspace(config Config) (*Workspace, error) {
 	return newWorkspace(config, defaultFilesystemOps())
 }
 
+// DefaultTmpRoot returns Chamber's user-scoped temporary root below the host
+// temporary directory. Name, when set, selects a package-specific subdirectory.
+func DefaultTmpRoot(name string) string {
+	root := filepath.Join(os.TempDir(), fmt.Sprintf("chamber-%d", os.Geteuid()))
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return root
+	}
+	return filepath.Join(root, name)
+}
+
 func newWorkspace(config Config, ops filesystemOps) (*Workspace, error) {
 	ops = fillFilesystemOps(ops)
 	root, err := absolutePath("workspace root", config.Root)
@@ -70,7 +81,7 @@ func newWorkspace(config Config, ops filesystemOps) (*Workspace, error) {
 	}
 	tmpRoot := strings.TrimSpace(config.TmpRoot)
 	if tmpRoot == "" {
-		tmpRoot = filepath.Join(os.TempDir(), fmt.Sprintf("chamber-%d", os.Geteuid()))
+		tmpRoot = DefaultTmpRoot("")
 	}
 	tmpRoot, err = absolutePath("workspace temporary root", tmpRoot)
 	if err != nil {
