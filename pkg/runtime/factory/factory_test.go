@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
@@ -30,9 +29,6 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Name != chamberRuntime.RuntimeNameRunc {
 		t.Fatalf("Name = %q, want runc", cfg.Name)
 	}
-	if cfg.Privilege != capability.Rootless {
-		t.Fatalf("Privilege = %q, want rootless", cfg.Privilege)
-	}
 }
 
 func TestNewRejectsUnsupportedRuntimeName(t *testing.T) {
@@ -40,7 +36,6 @@ func TestNewRejectsUnsupportedRuntimeName(t *testing.T) {
 		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
 		Name:          "crun",
-		Privilege:     capability.Rootless,
 	}
 	_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, config.RuntimeRoot), newTestWorkspace(t, config.RuntimeBinDir), "linux")
 	if err == nil {
@@ -59,12 +54,6 @@ func TestNewRequiresFinalRuntimeConfig(t *testing.T) {
 		"name": {
 			RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 			RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
-			Privilege:     capability.Rootless,
-		},
-		"privilege": {
-			RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
-			RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
-			Name:          chamberRuntime.RuntimeNameRunc,
 		},
 	}
 
@@ -89,7 +78,6 @@ func TestNewRejectsUnsupportedHostWithErrorCode(t *testing.T) {
 		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
 		Name:          chamberRuntime.RuntimeNameRunc,
-		Privilege:     capability.Rootless,
 	}
 	_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, config.RuntimeRoot), newTestWorkspace(t, config.RuntimeBinDir), "darwin")
 	if err == nil {
@@ -105,7 +93,6 @@ func TestNewRejectsMismatchedRuntimeWorkspaceRoot(t *testing.T) {
 		RuntimeRoot:   filepath.Join(t.TempDir(), "runtime"),
 		RuntimeBinDir: filepath.Join(t.TempDir(), "bin"),
 		Name:          chamberRuntime.RuntimeNameRunc,
-		Privilege:     capability.Rootless,
 	}
 	_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, filepath.Join(t.TempDir(), "other-runtime")), newTestWorkspace(t, config.RuntimeBinDir), "linux")
 	if err == nil {
@@ -124,7 +111,6 @@ func TestNewRejectsMismatchedRuntimeWorkspaceTmpRoot(t *testing.T) {
 		RuntimeTmpRoot: filepath.Join(t.TempDir(), "other-runtime-tmp"),
 		RuntimeBinDir:  binDir,
 		Name:           chamberRuntime.RuntimeNameRunc,
-		Privilege:      capability.Rootless,
 	}
 	_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, runtimeRoot), newTestWorkspace(t, binDir), "linux")
 	if err == nil {
@@ -143,7 +129,6 @@ func TestNewRejectsMismatchedRuntimeBinaryWorkspaceTmpRoot(t *testing.T) {
 		RuntimeBinDir:     binDir,
 		RuntimeBinTmpRoot: filepath.Join(t.TempDir(), "other-bin-tmp"),
 		Name:              chamberRuntime.RuntimeNameRunc,
-		Privilege:         capability.Rootless,
 	}
 	_, err := newRuntimeForOS(context.Background(), config, newTestWorkspace(t, runtimeRoot), newTestWorkspace(t, binDir), "linux")
 	if err == nil {
@@ -159,7 +144,7 @@ func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
 	workspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    root,
 		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:      true,
 			FileFsync:        true,
 			AtomicFileRename: true,

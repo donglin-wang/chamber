@@ -18,7 +18,6 @@ import (
 	"syscall"
 
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
@@ -37,15 +36,6 @@ const (
 
 var _ chamberRuntime.Runtime = (*Runtime)(nil)
 var _ chamberRuntime.Container = (*runcContainer)(nil)
-
-var capabilities = chamberRuntime.Capabilities{
-	Privileges: []capability.Privilege{
-		capability.Rootless,
-	},
-	Isolation: []chamberRuntime.Isolation{
-		chamberRuntime.ProcessIsolation,
-	},
-}
 
 type Runtime struct {
 	config          chamberRuntime.Config
@@ -76,7 +66,7 @@ func newWithOptions(ctx context.Context, config chamberRuntime.Config, workspace
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("%w: runtime construction canceled before start: %w", chamberErrors.ErrCanceled, err)
 	}
-	if err := requireWorkspaceCapabilities("runtime workspace", workspace, hostfs.Capabilities{
+	if err := requireWorkspaceFeatures("runtime workspace", workspace, hostfs.FeatureSet{
 		PrivateDirs:      true,
 		FileFsync:        true,
 		AtomicFileRename: true,
@@ -84,7 +74,7 @@ func newWithOptions(ctx context.Context, config chamberRuntime.Config, workspace
 		return nil, err
 	}
 	if strings.TrimSpace(config.RuntimePath) == "" {
-		if err := requireWorkspaceCapabilities("runtime binary workspace", binaryWorkspace, hostfs.Capabilities{
+		if err := requireWorkspaceFeatures("runtime binary workspace", binaryWorkspace, hostfs.FeatureSet{
 			PrivateDirs:      true,
 			FileFsync:        true,
 			AtomicFileRename: true,
@@ -139,10 +129,9 @@ func (r *Runtime) Descriptor() chamberRuntime.Descriptor {
 		binaryPath = r.binaryPath
 	}
 	return chamberRuntime.Descriptor{
-		Name:         runtimeName,
-		Version:      version,
-		BinaryPath:   binaryPath,
-		Capabilities: chamberRuntime.CloneCapabilities(capabilities),
+		Name:       runtimeName,
+		Version:    version,
+		BinaryPath: binaryPath,
 	}
 }
 
@@ -449,11 +438,11 @@ func defaultRuntimeBinary(arch string) (runtimeBinary, error) {
 	}
 }
 
-func requireWorkspaceCapabilities(label string, workspace *hostfs.Workspace, required hostfs.Capabilities) error {
+func requireWorkspaceFeatures(label string, workspace *hostfs.Workspace, required hostfs.FeatureSet) error {
 	if workspace == nil {
 		return fmt.Errorf("%w: %s is required", chamberErrors.ErrInvalidRequest, label)
 	}
-	observed := workspace.Capabilities()
+	observed := workspace.Features()
 	if required.PrivateDirs && !observed.PrivateDirs {
 		return fmt.Errorf("%w: %s requires private directories", chamberErrors.ErrFilesystemFailed, label)
 	}

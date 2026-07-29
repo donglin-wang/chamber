@@ -1,7 +1,6 @@
 package factory
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -9,23 +8,15 @@ import (
 	"testing"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
-	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
 type provisionerImplementation struct {
-	name       string
-	privilege  capability.Privilege
-	privileges []capability.Privilege
+	name string
 }
 
 var provisionerImplementations = []provisionerImplementation{
 	{
-		name:      chamberBundle.ProvisionerNameDirectory,
-		privilege: capability.Rootless,
-		privileges: []capability.Privilege{
-			capability.Rootless,
-		},
+		name: chamberBundle.ProvisionerNameDirectory,
 	},
 }
 
@@ -35,9 +26,8 @@ func TestProvisionerImplementationsSatisfySharedConstructorContract(t *testing.T
 			root := filepath.Join(t.TempDir(), "bundles")
 
 			provisioner, err := NewProvisioner(chamberBundle.Config{
-				Root:      root,
-				Name:      implementation.name,
-				Privilege: implementation.privilege,
+				Root: root,
+				Name: implementation.name,
 			}, newTestWorkspace(t, root))
 			if err != nil {
 				t.Fatalf("NewProvisioner() error = %v", err)
@@ -50,30 +40,6 @@ func TestProvisionerImplementationsSatisfySharedConstructorContract(t *testing.T
 			descriptor := provisioner.Descriptor()
 			if descriptor.Name != implementation.name {
 				t.Fatalf("Descriptor().Name = %q, want %q", descriptor.Name, implementation.name)
-			}
-			if !slices.Equal(descriptor.Capabilities.Privileges, implementation.privileges) {
-				t.Fatalf("Descriptor().Capabilities.Privileges = %#v, want %#v", descriptor.Capabilities.Privileges, implementation.privileges)
-			}
-		})
-	}
-}
-
-func TestProvisionerImplementationsRejectUnsupportedPrivilege(t *testing.T) {
-	for _, implementation := range provisionerImplementations {
-		t.Run(implementation.name, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "bundles")
-
-			_, err := NewProvisioner(chamberBundle.Config{
-				Root:      root,
-				Name:      implementation.name,
-				Privilege: capability.Rootful,
-			}, newTestWorkspace(t, root))
-
-			if err == nil {
-				t.Fatal("NewProvisioner() error = nil, want unsupported privilege error")
-			}
-			if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
-				t.Fatalf("NewProvisioner() error = %v, want invalid request code", err)
 			}
 		})
 	}
@@ -90,20 +56,6 @@ func TestSupportedProvisionerNamesListsKnownImplementations(t *testing.T) {
 	sort.Strings(want)
 	if !slices.Equal(SupportedProvisionerNames(), want) {
 		t.Fatalf("SupportedProvisionerNames() = %#v, want %#v", SupportedProvisionerNames(), want)
-	}
-}
-
-func TestSupportedProvisionerCapabilitiesListsKnownImplementations(t *testing.T) {
-	for _, implementation := range provisionerImplementations {
-		t.Run(implementation.name, func(t *testing.T) {
-			capabilities, ok := SupportedProvisionerCapabilities(implementation.name)
-			if !ok {
-				t.Fatalf("SupportedProvisionerCapabilities(%q) ok = false, want true", implementation.name)
-			}
-			if !slices.Equal(capabilities.Privileges, implementation.privileges) {
-				t.Fatalf("privileges = %#v, want %#v", capabilities.Privileges, implementation.privileges)
-			}
-		})
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -17,7 +16,6 @@ import (
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
@@ -281,7 +279,7 @@ func TestNewReplacesExistingInvalidBinary(t *testing.T) {
 	assertFileContentAndMode(t, path, newContent, 0755)
 }
 
-func TestDescriptorDeclaresRuncSupport(t *testing.T) {
+func TestDescriptorIdentifiesRuncRuntime(t *testing.T) {
 	runtime := &Runtime{
 		binaryPath: "/tmp/runc",
 		binary: runtimeBinary{
@@ -299,12 +297,6 @@ func TestDescriptorDeclaresRuncSupport(t *testing.T) {
 	}
 	if descriptor.BinaryPath != "/tmp/runc" {
 		t.Fatalf("Descriptor().BinaryPath = %q, want /tmp/runc", descriptor.BinaryPath)
-	}
-	if !slices.Equal(descriptor.Capabilities.Privileges, []capability.Privilege{capability.Rootless}) {
-		t.Fatalf("privileges = %#v, want rootless only", descriptor.Capabilities.Privileges)
-	}
-	if !slices.Equal(descriptor.Capabilities.Isolation, []chamberRuntime.Isolation{chamberRuntime.ProcessIsolation}) {
-		t.Fatalf("isolation = %#v, want process isolation", descriptor.Capabilities.Isolation)
 	}
 }
 
@@ -1146,9 +1138,6 @@ func prepareRuntimeConfig(t testing.TB, config chamberRuntime.Config) (chamberRu
 	if config.Name == "" {
 		config.Name = chamberRuntime.RuntimeNameRunc
 	}
-	if config.Privilege == "" {
-		config.Privilege = capability.Rootless
-	}
 	runtimeWorkspace := newRuntimeWorkspace(t, config.RuntimeRoot)
 	config.RuntimeRoot = runtimeWorkspace.Root()
 	var binaryWorkspace *hostfs.Workspace
@@ -1165,7 +1154,7 @@ func newRuntimeWorkspace(t testing.TB, root string) *hostfs.Workspace {
 	workspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    root,
 		TmpRoot: tmpRoot,
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:      true,
 			FileFsync:        true,
 			AtomicFileRename: true,

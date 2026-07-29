@@ -8,21 +8,16 @@ import (
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/internal/directory"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
-var provisionerCapabilities = map[string]chamberBundle.Capabilities{
-	chamberBundle.ProvisionerNameDirectory: {
-		Privileges: []capability.Privilege{
-			capability.Rootless,
-		},
-	},
+var provisionerNames = map[string]struct{}{
+	chamberBundle.ProvisionerNameDirectory: {},
 }
 
 // NewProvisioner validates config, creates the configured private bundle root,
-// checks the selected implementation capabilities, and returns a ready bundle
+// checks the selected implementation name, and returns a ready bundle
 // provisioner. Callers own bundle-root placement, cleanup, cancellation policy,
 // and recovery.
 func NewProvisioner(config chamberBundle.Config, workspace *hostfs.Workspace) (chamberBundle.Provisioner, error) {
@@ -32,15 +27,8 @@ func NewProvisioner(config chamberBundle.Config, workspace *hostfs.Workspace) (c
 	if config.Name == "" {
 		return nil, fmt.Errorf("%w: bundle provisioner name is required", chamberErrors.ErrInvalidRequest)
 	}
-	if config.Privilege == "" {
-		return nil, fmt.Errorf("%w: bundle privilege is required", chamberErrors.ErrInvalidRequest)
-	}
-	capabilities, ok := provisionerCapabilities[config.Name]
-	if !ok {
+	if !IsSupportedProvisionerName(config.Name) {
 		return nil, fmt.Errorf("%w: unsupported bundle provisioner name %q (supported: %s)", chamberErrors.ErrInvalidRequest, config.Name, strings.Join(SupportedProvisionerNames(), ", "))
-	}
-	if !supportsPrivilege(capabilities, config.Privilege) {
-		return nil, fmt.Errorf("%w: %s bundle provisioner does not support %q privilege", chamberErrors.ErrInvalidRequest, config.Name, config.Privilege)
 	}
 	if config.Root == "" {
 		return nil, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
@@ -55,7 +43,7 @@ func NewProvisioner(config chamberBundle.Config, workspace *hostfs.Workspace) (c
 	if err := requireWorkspaceTmpRoot("bundle temporary root", config.TmpRoot, workspace.TmpRoot()); err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceCapabilities("bundle workspace", workspace.Capabilities(), hostfs.Capabilities{
+	if err := requireWorkspaceFeatures("bundle workspace", workspace.Features(), hostfs.FeatureSet{
 		PrivateDirs:           true,
 		AtomicDirectoryRename: true,
 	}); err != nil {
@@ -75,8 +63,8 @@ func NewProvisioner(config chamberBundle.Config, workspace *hostfs.Workspace) (c
 // SupportedProvisionerNames returns the sorted list of provisioner
 // implementation names accepted by NewProvisioner.
 func SupportedProvisionerNames() []string {
-	names := make([]string, 0, len(provisionerCapabilities))
-	for name := range provisionerCapabilities {
+	names := make([]string, 0, len(provisionerNames))
+	for name := range provisionerNames {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -86,27 +74,8 @@ func SupportedProvisionerNames() []string {
 // IsSupportedProvisionerName reports whether name selects a provisioner
 // implementation known to this package.
 func IsSupportedProvisionerName(name string) bool {
-	_, ok := provisionerCapabilities[name]
+	_, ok := provisionerNames[name]
 	return ok
-}
-
-// SupportedProvisionerCapabilities returns a copy of the static capabilities
-// for name. The boolean is false when name is not a supported provisioner.
-func SupportedProvisionerCapabilities(name string) (chamberBundle.Capabilities, bool) {
-	capabilities, ok := provisionerCapabilities[name]
-	if !ok {
-		return chamberBundle.Capabilities{}, false
-	}
-	return chamberBundle.CloneCapabilities(capabilities), true
-}
-
-func supportsPrivilege(capabilities chamberBundle.Capabilities, privilege capability.Privilege) bool {
-	for _, supported := range capabilities.Privileges {
-		if supported == privilege {
-			return true
-		}
-	}
-	return false
 }
 
 func requireWorkspaceTmpRoot(label string, configured string, actual string) error {
@@ -123,7 +92,7 @@ func requireWorkspaceTmpRoot(label string, configured string, actual string) err
 	return nil
 }
 
-func requireWorkspaceCapabilities(label string, observed hostfs.Capabilities, required hostfs.Capabilities) error {
+func requireWorkspaceFeatures(label string, observed hostfs.FeatureSet, required hostfs.FeatureSet) error {
 	if required.PrivateDirs && !observed.PrivateDirs {
 		return fmt.Errorf("%w: %s requires private directories", chamberErrors.ErrFilesystemFailed, label)
 	}

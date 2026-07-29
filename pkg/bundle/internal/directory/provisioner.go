@@ -17,7 +17,6 @@ import (
 	securejoin "github.com/cyphar/filepath-securejoin"
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
@@ -61,11 +60,6 @@ func New(config chamberBundle.Config, workspace *hostfs.Workspace) (*Provisioner
 func (p *Provisioner) Descriptor() chamberBundle.Descriptor {
 	return chamberBundle.Descriptor{
 		Name: chamberBundle.ProvisionerNameDirectory,
-		Capabilities: chamberBundle.Capabilities{
-			Privileges: []capability.Privilege{
-				capability.Rootless,
-			},
-		},
 	}
 }
 

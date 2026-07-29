@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
@@ -21,8 +20,5 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if cfg.Name != ProvisionerNameDirectory {
 		t.Fatalf("Name = %q, want directory", cfg.Name)
-	}
-	if cfg.Privilege != capability.Rootless {
-		t.Fatalf("Privilege = %q, want rootless", cfg.Privilege)
 	}
 }

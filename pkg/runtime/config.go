@@ -3,7 +3,6 @@ package runtime
 import (
 	"path/filepath"
 
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
@@ -38,9 +37,6 @@ type Config struct {
 	// Name selects the runtime implementation.
 	Name string
 
-	// Privilege selects the host privilege mode the runtime must support.
-	Privilege capability.Privilege
-
 	// Logging configures host-side Chamber logs for runtime operations. A zero
 	// value inherits the package logger.
 	Logging chamberLogging.Config
@@ -54,7 +50,6 @@ func DefaultConfig(rootPath string) Config {
 		RuntimeBinDir:     filepath.Join(rootPath, "bin"),
 		RuntimeBinTmpRoot: hostfs.DefaultTmpRoot("runtime-bin"),
 		Name:              RuntimeNameRunc,
-		Privilege:         capability.Rootless,
 		Logging:           chamberLogging.Config{},
 	}
 }

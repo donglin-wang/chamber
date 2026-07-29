@@ -17,7 +17,6 @@ import (
 	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	"github.com/donglin-wang/chamber/pkg/shared/logging"
@@ -90,7 +89,7 @@ func run(cfg *config) error {
 	ciWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    root,
 		TmpRoot: filepath.Join(root, "tmp", "ci"),
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs: true,
 		},
 	})
@@ -106,11 +105,10 @@ func run(cfg *config) error {
 		Logging: loggingConfig,
 	}
 	bundleConfig := chamberBundle.Config{
-		Root:      paths.bundleRoot,
-		TmpRoot:   filepath.Join(root, "tmp", "bundles"),
-		Name:      chamberBundle.ProvisionerNameDirectory,
-		Privilege: capability.Rootless,
-		Logging:   loggingConfig,
+		Root:    paths.bundleRoot,
+		TmpRoot: filepath.Join(root, "tmp", "bundles"),
+		Name:    chamberBundle.ProvisionerNameDirectory,
+		Logging: loggingConfig,
 	}
 	runtimeConfig := chamberRuntime.Config{
 		RuntimeRoot:       paths.runtimeRoot,
@@ -118,7 +116,6 @@ func run(cfg *config) error {
 		RuntimeBinDir:     paths.runtimeBinDir,
 		RuntimeBinTmpRoot: filepath.Join(root, "tmp", "runtime-bin"),
 		Name:              chamberRuntime.RuntimeNameRunc,
-		Privilege:         capability.Rootless,
 		Logging:           loggingConfig,
 	}
 	for _, path := range []string{
@@ -136,7 +133,7 @@ func run(cfg *config) error {
 	imageWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    imageConfig.Root,
 		TmpRoot: imageConfig.TmpRoot,
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:           true,
 			FileFsync:             true,
 			AtomicFileRename:      true,
@@ -149,7 +146,7 @@ func run(cfg *config) error {
 	bundleWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    bundleConfig.Root,
 		TmpRoot: bundleConfig.TmpRoot,
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:           true,
 			AtomicDirectoryRename: true,
 		},
@@ -160,7 +157,7 @@ func run(cfg *config) error {
 	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    runtimeConfig.RuntimeRoot,
 		TmpRoot: runtimeConfig.RuntimeTmpRoot,
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:      true,
 			FileFsync:        true,
 			AtomicFileRename: true,
@@ -172,7 +169,7 @@ func run(cfg *config) error {
 	runtimeBinaryWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    runtimeConfig.RuntimeBinDir,
 		TmpRoot: runtimeConfig.RuntimeBinTmpRoot,
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:      true,
 			FileFsync:        true,
 			AtomicFileRename: true,

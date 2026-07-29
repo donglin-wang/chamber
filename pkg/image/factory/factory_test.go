@@ -92,7 +92,7 @@ func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
 	workspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    root,
 		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:           true,
 			FileFsync:             true,
 			AtomicFileRename:      true,

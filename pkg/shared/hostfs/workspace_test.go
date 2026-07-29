@@ -18,7 +18,7 @@ func TestNewWorkspaceCreatesRootAndTempRoot(t *testing.T) {
 	workspace, err := NewWorkspace(Config{
 		Root:    root,
 		TmpRoot: tmpRoot,
-		Capabilities: Capabilities{
+		Requirements: FeatureSet{
 			PrivateDirs: true,
 		},
 	})
@@ -65,7 +65,7 @@ func TestNewWorkspaceRejectsUnsafeExistingRoot(t *testing.T) {
 		t.Fatalf("Chmod() error = %v", err)
 	}
 
-	_, err := NewWorkspace(Config{Root: root, Capabilities: Capabilities{PrivateDirs: true}})
+	_, err := NewWorkspace(Config{Root: root, Requirements: FeatureSet{PrivateDirs: true}})
 	if err == nil {
 		t.Fatal("NewWorkspace() error = nil")
 	}
@@ -87,7 +87,7 @@ func TestNewWorkspaceRecordsUnsafeExistingRootWhenPrivateDirsUnrequested(t *test
 	if err != nil {
 		t.Fatalf("NewWorkspace() error = %v", err)
 	}
-	if workspace.Capabilities().PrivateDirs {
+	if workspace.Features().PrivateDirs {
 		t.Fatal("PrivateDirs = true, want false")
 	}
 }
@@ -214,7 +214,7 @@ func TestNewWorkspaceRecordsDirectoryFsyncUnsupportedWhenUnrequested(t *testing.
 	if err != nil {
 		t.Fatalf("newWorkspace() error = %v", err)
 	}
-	if workspace.Capabilities().DirectoryFsync {
+	if workspace.Features().DirectoryFsync {
 		t.Fatal("DirectoryFsync = true, want false")
 	}
 }
@@ -223,7 +223,7 @@ func TestNewWorkspaceFailsWhenDirectoryFsyncRequiredAndUnsupported(t *testing.T)
 	_, err := newWorkspace(Config{
 		Root:    filepath.Join(t.TempDir(), "root"),
 		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
-		Capabilities: Capabilities{
+		Requirements: FeatureSet{
 			DirectoryFsync: true,
 		},
 	}, filesystemOps{
@@ -241,7 +241,7 @@ func TestNewWorkspaceFailsWhenRequiredFileRenameProbeFails(t *testing.T) {
 	_, err := newWorkspace(Config{
 		Root:    filepath.Join(t.TempDir(), "root"),
 		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
-		Capabilities: Capabilities{
+		Requirements: FeatureSet{
 			AtomicFileRename: true,
 		},
 	}, filesystemOps{
@@ -275,7 +275,7 @@ func TestNewWorkspaceDoesNotFailWhenUnrequestedFileRenameProbeFails(t *testing.T
 	if err != nil {
 		t.Fatalf("newWorkspace() error = %v", err)
 	}
-	if workspace.Capabilities().AtomicFileRename {
+	if workspace.Features().AtomicFileRename {
 		t.Fatal("AtomicFileRename = true, want false")
 	}
 }
@@ -284,7 +284,7 @@ func TestNewWorkspaceFailsWhenRequiredDirectoryRenameProbeFails(t *testing.T) {
 	_, err := newWorkspace(Config{
 		Root:    filepath.Join(t.TempDir(), "root"),
 		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
-		Capabilities: Capabilities{
+		Requirements: FeatureSet{
 			AtomicDirectoryRename: true,
 		},
 	}, filesystemOps{

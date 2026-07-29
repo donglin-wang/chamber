@@ -14,7 +14,6 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
@@ -70,7 +69,6 @@ func TestConfigDoesNotImportConcreteImplementations(t *testing.T) {
 		case "github.com/donglin-wang/chamber/pkg/image/factory",
 			"github.com/donglin-wang/chamber/pkg/bundle/factory",
 			"github.com/donglin-wang/chamber/pkg/runtime/factory",
-			"github.com/donglin-wang/chamber/pkg/image/internal/buildah",
 			"github.com/donglin-wang/chamber/pkg/image/internal/buildkit",
 			"github.com/donglin-wang/chamber/pkg/image/internal/metadata",
 			"github.com/donglin-wang/chamber/pkg/image/internal/registry",
@@ -151,19 +149,16 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:8080",
 		SocketPath: filepath.Join(root, "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "run", "tmp"),
-		Privilege:  capability.Rootless,
 		Bundle: chamberBundle.Config{
-			Root:      filepath.Join(root, "bundles"),
-			TmpRoot:   hostfs.DefaultTmpRoot("bundles"),
-			Name:      chamberBundle.ProvisionerNameDirectory,
-			Privilege: capability.Rootless,
-			Logging:   defaultLogging,
+			Root:    filepath.Join(root, "bundles"),
+			TmpRoot: hostfs.DefaultTmpRoot("bundles"),
+			Name:    chamberBundle.ProvisionerNameDirectory,
+			Logging: defaultLogging,
 		},
 		Image: chamberImage.Config{
 			Root:     filepath.Join(root, "images"),
 			TmpRoot:  hostfs.DefaultTmpRoot("images"),
 			BuildKit: chamberImage.BuildKitConfig{},
-			Buildah:  chamberImage.BuildahConfig{},
 			Logging:  defaultLogging,
 		},
 		Runtime: chamberRuntime.Config{
@@ -172,7 +167,6 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 			RuntimeBinDir:     filepath.Join(root, "bin"),
 			RuntimeBinTmpRoot: hostfs.DefaultTmpRoot("runtime-bin"),
 			Name:              chamberRuntime.RuntimeNameRunc,
-			Privilege:         capability.Rootless,
 			Logging:           defaultLogging,
 		},
 		Metadata: metadata.Config{
@@ -239,11 +233,9 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:8080",
 		SocketPath: "default/run/chamber.sock",
 		TmpRoot:    "default/tmp",
-		Privilege:  capability.Rootless,
 		Bundle: chamberBundle.Config{
-			Root:      "default/bundles",
-			Name:      chamberBundle.ProvisionerNameDirectory,
-			Privilege: capability.Rootless,
+			Root: "default/bundles",
+			Name: chamberBundle.ProvisionerNameDirectory,
 		},
 		Image: chamberImage.Config{
 			Root: "default/images",
@@ -266,7 +258,6 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 			RuntimeBinDir: "default/bin",
 			RuntimePath:   "default/bin/runc",
 			Name:          chamberRuntime.RuntimeNameRunc,
-			Privilege:     capability.Rootless,
 		},
 		Metadata: metadata.Config{
 			Root: "default/metadata",
@@ -286,7 +277,6 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		HTTPAddr:   ptr("127.0.0.1:9090"),
 		SocketPath: ptr("input/run/chamber.sock"),
 		TmpRoot:    ptr("input/tmp"),
-		Privilege:  ptr(capability.Rootful),
 		Bundle: bundleInput{
 			Root: ptr("input/bundles"),
 		},
@@ -336,11 +326,9 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:9090",
 		SocketPath: mustAbs(t, "input/run/chamber.sock"),
 		TmpRoot:    mustAbs(t, "input/tmp"),
-		Privilege:  capability.Rootful,
 		Bundle: chamberBundle.Config{
-			Root:      mustAbs(t, "input/bundles"),
-			Name:      chamberBundle.ProvisionerNameDirectory,
-			Privilege: capability.Rootful,
+			Root: mustAbs(t, "input/bundles"),
+			Name: chamberBundle.ProvisionerNameDirectory,
 			Logging: chamberLogging.Config{
 				Level:  "debug",
 				Format: "text",
@@ -371,7 +359,6 @@ func TestApplyInputAppliesInputsAndAbsolutizesPaths(t *testing.T) {
 			RuntimeBinDir: mustAbs(t, "input/bin"),
 			RuntimePath:   mustAbs(t, "input/bin/runc"),
 			Name:          chamberRuntime.RuntimeNameRunc,
-			Privilege:     capability.Rootful,
 			Logging: chamberLogging.Config{
 				Level:  "debug",
 				Format: "text",
@@ -402,11 +389,9 @@ func TestApplyInputLeavesDefaultsWhenInputFieldsAreNil(t *testing.T) {
 		HTTPAddr:   "127.0.0.1:8080",
 		SocketPath: filepath.Join(root, "default", "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "default", "tmp"),
-		Privilege:  capability.Rootless,
 		Bundle: chamberBundle.Config{
-			Root:      filepath.Join(root, "default", "bundles"),
-			Name:      chamberBundle.ProvisionerNameDirectory,
-			Privilege: capability.Rootless,
+			Root: filepath.Join(root, "default", "bundles"),
+			Name: chamberBundle.ProvisionerNameDirectory,
 			Logging: chamberLogging.Config{
 				Level:  "warn",
 				Format: "text",
@@ -423,7 +408,6 @@ func TestApplyInputLeavesDefaultsWhenInputFieldsAreNil(t *testing.T) {
 			RuntimeRoot:   filepath.Join(root, "default", "runtime"),
 			RuntimeBinDir: filepath.Join(root, "default", "bin"),
 			Name:          chamberRuntime.RuntimeNameRunc,
-			Privilege:     capability.Rootless,
 			Logging: chamberLogging.Config{
 				Level:  "warn",
 				Format: "text",
@@ -454,69 +438,13 @@ func TestApplyInputLeavesDefaultsWhenInputFieldsAreNil(t *testing.T) {
 	}
 }
 
-func TestApplyInputProjectsTopLevelPrivilegeToSDKConfigs(t *testing.T) {
-	cfg, err := ApplyInput(Config{
-		Bundle: chamberBundle.Config{
-			Name:      chamberBundle.ProvisionerNameDirectory,
-			Privilege: capability.Rootless,
-		},
-		Runtime: chamberRuntime.Config{
-			Privilege: capability.Rootless,
-		},
-	}, Input{
-		Privilege: ptr(capability.Rootful),
-	})
-	if err != nil {
-		t.Fatalf("ApplyInput returned error: %v", err)
-	}
-
-	if cfg.Privilege != capability.Rootful {
-		t.Fatalf("Privilege = %q, want rootful", cfg.Privilege)
-	}
-	if cfg.Bundle.Privilege != capability.Rootful {
-		t.Fatalf("Bundle.Privilege = %q, want daemon privilege rootful", cfg.Bundle.Privilege)
-	}
-	if cfg.Runtime.Privilege != capability.Rootful {
-		t.Fatalf("Runtime.Privilege = %q, want daemon privilege rootful", cfg.Runtime.Privilege)
-	}
-}
-
-func TestApplyInputRejectsNestedSDKPrivilegeInputs(t *testing.T) {
-	tests := map[string]Input{
-		"bundle": {
-			Bundle: bundleInput{
-				Privilege: ptr(capability.Rootful),
-			},
-		},
-		"runtime": {
-			Runtime: runtimeInput{
-				Privilege: ptr(capability.Rootful),
-			},
-		},
-	}
-
-	for name, input := range tests {
-		t.Run(name, func(t *testing.T) {
-			_, err := ApplyInput(Config{}, input)
-			if err == nil {
-				t.Fatal("ApplyInput() error = nil, want nested privilege input error")
-			}
-			if !strings.Contains(err.Error(), "top-level privilege") {
-				t.Fatalf("ApplyInput() error = %v, want top-level privilege error", err)
-			}
-		})
-	}
-}
-
 func TestApplyInputPreservesImplementationNamesForComposition(t *testing.T) {
 	cfg, err := ApplyInput(Config{
 		Bundle: chamberBundle.Config{
-			Name:      "overlay",
-			Privilege: capability.Rootless,
+			Name: "overlay",
 		},
 		Runtime: chamberRuntime.Config{
-			Name:      "crun",
-			Privilege: capability.Rootless,
+			Name: "crun",
 		},
 	}, Input{})
 	if err != nil {
@@ -535,7 +463,6 @@ func TestLoadFileAppliesConfigFileThenCommandLineInput(t *testing.T) {
 	content := `{
 		"http_addr": "127.0.0.1:9090",
 		"tmp_root": "file/tmp",
-		"privilege": "rootful",
 		"bundle": { "root": "file/bundles" },
 		"image": { "root": "file/images" },
 			"runtime": {
@@ -565,14 +492,8 @@ func TestLoadFileAppliesConfigFileThenCommandLineInput(t *testing.T) {
 	if cfg.TmpRoot != mustAbs(t, "file/tmp") {
 		t.Fatalf("TmpRoot = %q, want config file value", cfg.TmpRoot)
 	}
-	if cfg.Privilege != capability.Rootful {
-		t.Fatalf("Privilege = %q, want config file value", cfg.Privilege)
-	}
 	if cfg.Bundle.Root != mustAbs(t, "file/bundles") {
 		t.Fatalf("Bundle.Root = %q, want config file value", cfg.Bundle.Root)
-	}
-	if cfg.Bundle.Privilege != capability.Rootful {
-		t.Fatalf("Bundle.Privilege = %q, want top-level daemon privilege", cfg.Bundle.Privilege)
 	}
 	if cfg.Image.Root != mustAbs(t, "file/images") {
 		t.Fatalf("Image.Root = %q, want config file value", cfg.Image.Root)
@@ -583,47 +504,11 @@ func TestLoadFileAppliesConfigFileThenCommandLineInput(t *testing.T) {
 	if cfg.Runtime.RuntimePath != mustAbs(t, "file/bin/runc") {
 		t.Fatalf("Runtime.RuntimePath = %q, want config file value", cfg.Runtime.RuntimePath)
 	}
-	if cfg.Runtime.Privilege != capability.Rootful {
-		t.Fatalf("Runtime.Privilege = %q, want top-level daemon privilege", cfg.Runtime.Privilege)
-	}
 	if cfg.OpenTelemetryMetricsExportInterval != 30*time.Second {
 		t.Fatalf("OpenTelemetryMetricsExportInterval = %s, want 30s", cfg.OpenTelemetryMetricsExportInterval)
 	}
 	if cfg.Logging.Level != "debug" {
 		t.Fatalf("Logging.Level = %q, want debug", cfg.Logging.Level)
-	}
-}
-
-func TestMergeInputAppliesPrivilegeOverlays(t *testing.T) {
-	base := Input{
-		Privilege: ptr(capability.Rootless),
-		Bundle: bundleInput{
-			Privilege: ptr(capability.Rootless),
-		},
-		Runtime: runtimeInput{
-			Privilege: ptr(capability.Rootless),
-		},
-	}
-	overlay := Input{
-		Privilege: ptr(capability.Rootful),
-		Bundle: bundleInput{
-			Privilege: ptr(capability.Rootful),
-		},
-		Runtime: runtimeInput{
-			Privilege: ptr(capability.Rootful),
-		},
-	}
-
-	merged := MergeInput(base, overlay)
-
-	if merged.Privilege == nil || *merged.Privilege != capability.Rootful {
-		t.Fatalf("Privilege = %v, want rootful", merged.Privilege)
-	}
-	if merged.Bundle.Privilege == nil || *merged.Bundle.Privilege != capability.Rootful {
-		t.Fatalf("Bundle.Privilege = %v, want rootful", merged.Bundle.Privilege)
-	}
-	if merged.Runtime.Privilege == nil || *merged.Runtime.Privilege != capability.Rootful {
-		t.Fatalf("Runtime.Privilege = %v, want rootful", merged.Runtime.Privilege)
 	}
 }
 

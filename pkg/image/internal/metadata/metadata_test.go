@@ -67,7 +67,7 @@ func newTestMetadata(t *testing.T) *JSONMetadata {
 	workspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    filepath.Dir(root),
 		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:      true,
 			FileFsync:        true,
 			AtomicFileRename: true,

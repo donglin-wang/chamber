@@ -22,12 +22,6 @@ type Config struct {
 	// RootlessKit, and runc binaries below <Config.Root>/bin.
 	BuildKit BuildKitConfig
 
-	// Buildah configures the deprecated Buildah-backed builder. It is retained
-	// for source compatibility; Store.Build uses BuildKit.
-	//
-	// Deprecated: configure BuildKit instead.
-	Buildah BuildahConfig
-
 	// Logging configures host-side Chamber logs for image operations. A zero
 	// value inherits the package logger.
 	Logging chamberLogging.Config
@@ -85,36 +79,6 @@ type BuildKitConfig struct {
 	Snapshotter string
 }
 
-// BuildahConfig configures Buildah-backed image builds.
-//
-// Deprecated: Store.Build uses BuildKitConfig. This type is retained only so
-// older callers can compile while moving to BuildKitConfig.
-type BuildahConfig struct {
-	// Path was an absolute path to an existing buildah-worker executable.
-	Path string
-
-	// Version was the configured Buildah version for logs and diagnostics when
-	// URL and SHA256 were set.
-	Version string
-
-	// URL was the source for a managed buildah-worker binary download.
-	URL string
-
-	// SHA256 was the expected hex-encoded SHA256 digest for a managed
-	// buildah-worker binary.
-	SHA256 string
-
-	// StorageDriver selected the containers/storage graph driver used by
-	// Buildah.
-	StorageDriver string
-
-	// Runtime was passed to Buildah for Dockerfile RUN instructions.
-	Runtime string
-
-	// Isolation was passed to Buildah for Dockerfile RUN instructions.
-	Isolation string
-}
-
 // DefaultConfig returns image configuration rooted below rootPath.
 func DefaultConfig(rootPath string) Config {
 	imageRoot := filepath.Join(rootPath, "images")
@@ -122,7 +86,6 @@ func DefaultConfig(rootPath string) Config {
 		Root:     imageRoot,
 		TmpRoot:  hostfs.DefaultTmpRoot("images"),
 		BuildKit: BuildKitConfig{},
-		Buildah:  BuildahConfig{},
 		Logging:  chamberLogging.Config{},
 	}
 }

@@ -2,9 +2,9 @@ module github.com/donglin-wang/chamber
 
 go 1.26.4
 
-retract v0.1.0-beta.4 // Published with an invalid Buildah worker artifact.
+retract v0.1.0-beta.4 // Published with an invalid builder artifact.
 
-retract v0.1.0-beta.5 // Published with Buildah-backed builds that did not support networking out of the box.
+retract v0.1.0-beta.5 // Published with image builds that did not support networking out of the box.
 
 require (
 	github.com/apex/log v1.9.0

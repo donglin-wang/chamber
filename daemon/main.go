@@ -78,7 +78,7 @@ func run(ctx context.Context, args []string) error {
 	imageWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    imageConfig.Root,
 		TmpRoot: imageConfig.TmpRoot,
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:           true,
 			FileFsync:             true,
 			AtomicFileRename:      true,
@@ -91,7 +91,7 @@ func run(ctx context.Context, args []string) error {
 	bundleWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    bundleConfig.Root,
 		TmpRoot: bundleConfig.TmpRoot,
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:           true,
 			AtomicDirectoryRename: true,
 		},
@@ -102,7 +102,7 @@ func run(ctx context.Context, args []string) error {
 	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    runtimeConfig.RuntimeRoot,
 		TmpRoot: runtimeConfig.RuntimeTmpRoot,
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:      true,
 			FileFsync:        true,
 			AtomicFileRename: true,
@@ -116,7 +116,7 @@ func run(ctx context.Context, args []string) error {
 		runtimeBinaryWorkspace, err = hostfs.NewWorkspace(hostfs.Config{
 			Root:    runtimeConfig.RuntimeBinDir,
 			TmpRoot: runtimeConfig.RuntimeBinTmpRoot,
-			Capabilities: hostfs.Capabilities{
+			Requirements: hostfs.FeatureSet{
 				PrivateDirs:      true,
 				FileFsync:        true,
 				AtomicFileRename: true,
@@ -129,7 +129,7 @@ func run(ctx context.Context, args []string) error {
 	metadataWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    cfg.Metadata.Root,
 		TmpRoot: filepath.Join(cfg.TmpRoot, "metadata"),
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:      true,
 			FileFsync:        true,
 			AtomicFileRename: true,

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 )
 
 // Mount describes one filesystem mount visible inside the container. For
@@ -91,35 +90,18 @@ type ProcessUser struct {
 	AdditionalGIDs []uint32
 }
 
-// Capabilities describes the static support declared by a provisioner
-// implementation.
-type Capabilities struct {
-	// Privileges lists supported host privilege modes.
-	Privileges []capability.Privilege
-}
-
-// CloneCapabilities returns a deep copy of capabilities.
-func CloneCapabilities(capabilities Capabilities) Capabilities {
-	return Capabilities{
-		Privileges: append([]capability.Privilege(nil), capabilities.Privileges...),
-	}
-}
-
-// Descriptor identifies a ready provisioner implementation and its capabilities.
+// Descriptor identifies a ready provisioner implementation.
 type Descriptor struct {
 	// Name is the provisioner implementation name.
 	Name string
 
 	// Version is the implementation version when one is available.
 	Version string
-
-	// Capabilities is a copy of the provisioner's declared support.
-	Capabilities Capabilities
 }
 
 // Provisioner creates OCI runtime bundles from pulled OCI image layouts.
 type Provisioner interface {
-	// Descriptor returns implementation identity and static capabilities.
+	// Descriptor returns implementation identity.
 	Descriptor() Descriptor
 
 	// Provision creates the OCI runtime bundle for one container. It owns image

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
@@ -22,12 +21,7 @@ func TestNewProvisionerRequiresFinalConfig(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "bundles")
 	tests := map[string]chamberBundle.Config{
 		"name": {
-			Root:      root,
-			Privilege: capability.Rootless,
-		},
-		"privilege": {
 			Root: root,
-			Name: chamberBundle.ProvisionerNameDirectory,
 		},
 	}
 
@@ -51,9 +45,8 @@ func TestNewProvisionerRejectsUnsupportedName(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "bundles")
 
 	_, err := NewProvisioner(chamberBundle.Config{
-		Root:      root,
-		Name:      "overlay",
-		Privilege: capability.Rootless,
+		Root: root,
+		Name: "overlay",
 	}, newTestWorkspace(t, root))
 
 	if err == nil {
@@ -69,9 +62,8 @@ func TestNewProvisionerRejectsUnsupportedName(t *testing.T) {
 
 func TestNewProvisionerRejectsMismatchedWorkspaceRoot(t *testing.T) {
 	_, err := NewProvisioner(chamberBundle.Config{
-		Root:      filepath.Join(t.TempDir(), "bundles"),
-		Name:      chamberBundle.ProvisionerNameDirectory,
-		Privilege: capability.Rootless,
+		Root: filepath.Join(t.TempDir(), "bundles"),
+		Name: chamberBundle.ProvisionerNameDirectory,
 	}, newTestWorkspace(t, filepath.Join(t.TempDir(), "other-bundles")))
 	if err == nil {
 		t.Fatal("NewProvisioner() error = nil, want mismatch error")
@@ -84,10 +76,9 @@ func TestNewProvisionerRejectsMismatchedWorkspaceRoot(t *testing.T) {
 func TestNewProvisionerRejectsMismatchedWorkspaceTmpRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "bundles")
 	_, err := NewProvisioner(chamberBundle.Config{
-		Root:      root,
-		TmpRoot:   filepath.Join(t.TempDir(), "other-tmp"),
-		Name:      chamberBundle.ProvisionerNameDirectory,
-		Privilege: capability.Rootless,
+		Root:    root,
+		TmpRoot: filepath.Join(t.TempDir(), "other-tmp"),
+		Name:    chamberBundle.ProvisionerNameDirectory,
 	}, newTestWorkspace(t, root))
 	if err == nil {
 		t.Fatal("NewProvisioner() error = nil, want mismatch error")
@@ -102,7 +93,7 @@ func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
 	workspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    root,
 		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:           true,
 			AtomicDirectoryRename: true,
 		},

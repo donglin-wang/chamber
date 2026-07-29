@@ -10,23 +10,15 @@ import (
 
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRunc "github.com/donglin-wang/chamber/pkg/runtime/internal/runc"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
-var runtimeCapabilities = map[string]chamberRuntime.Capabilities{
-	chamberRuntime.RuntimeNameRunc: {
-		Privileges: []capability.Privilege{
-			capability.Rootless,
-		},
-		Isolation: []chamberRuntime.Isolation{
-			chamberRuntime.ProcessIsolation,
-		},
-	},
+var runtimeNames = map[string]struct{}{
+	chamberRuntime.RuntimeNameRunc: {},
 }
 
-// NewRuntime validates config, checks host and implementation support, creates
+// NewRuntime validates config, checks host and implementation name, creates
 // private runtime directories, installs or reuses runtime artifacts as needed,
 // and returns a ready runtime. The supplied context controls construction work
 // only; container lifecycle is owned by Container values returned from Run.
@@ -47,15 +39,8 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 	if config.Name == "" {
 		return nil, fmt.Errorf("%w: runtime name is required", chamberErrors.ErrInvalidRequest)
 	}
-	if config.Privilege == "" {
-		return nil, fmt.Errorf("%w: runtime privilege is required", chamberErrors.ErrInvalidRequest)
-	}
-	capabilities, ok := runtimeCapabilities[config.Name]
-	if !ok {
+	if !IsSupportedName(config.Name) {
 		return nil, fmt.Errorf("%w: unsupported runtime name %q (supported: %s)", chamberErrors.ErrInvalidRequest, config.Name, strings.Join(SupportedNames(), ", "))
-	}
-	if !supportsPrivilege(capabilities, config.Privilege) {
-		return nil, fmt.Errorf("%w: %s runtime does not support %q privilege", chamberErrors.ErrInvalidRequest, config.Name, config.Privilege)
 	}
 	if osName != "linux" {
 		return nil, fmt.Errorf("%w: Chamber runtime requires a Linux host or Linux VM; current GOOS is %q", chamberErrors.ErrUnsupportedHost, osName)
@@ -76,7 +61,7 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 	if err := requireWorkspaceTmpRoot("runtime temporary root", config.RuntimeTmpRoot, runtimeWorkspace.TmpRoot()); err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceCapabilities("runtime workspace", runtimeWorkspace.Capabilities(), hostfs.Capabilities{
+	if err := requireWorkspaceFeatures("runtime workspace", runtimeWorkspace.Features(), hostfs.FeatureSet{
 		PrivateDirs:      true,
 		FileFsync:        true,
 		AtomicFileRename: true,
@@ -99,7 +84,7 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 		if err := requireWorkspaceTmpRoot("runtime binary temporary root", config.RuntimeBinTmpRoot, binaryWorkspace.TmpRoot()); err != nil {
 			return nil, err
 		}
-		if err := requireWorkspaceCapabilities("runtime binary workspace", binaryWorkspace.Capabilities(), hostfs.Capabilities{
+		if err := requireWorkspaceFeatures("runtime binary workspace", binaryWorkspace.Features(), hostfs.FeatureSet{
 			PrivateDirs:      true,
 			FileFsync:        true,
 			AtomicFileRename: true,
@@ -121,8 +106,8 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 // SupportedNames returns the sorted list of runtime implementation names
 // accepted by NewRuntime.
 func SupportedNames() []string {
-	names := make([]string, 0, len(runtimeCapabilities))
-	for name := range runtimeCapabilities {
+	names := make([]string, 0, len(runtimeNames))
+	for name := range runtimeNames {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -132,27 +117,8 @@ func SupportedNames() []string {
 // IsSupportedName reports whether name selects a runtime implementation known
 // to this package.
 func IsSupportedName(name string) bool {
-	_, ok := runtimeCapabilities[name]
+	_, ok := runtimeNames[name]
 	return ok
-}
-
-// SupportedCapabilities returns a copy of the static capabilities for name. The
-// boolean is false when name is not a supported runtime.
-func SupportedCapabilities(name string) (chamberRuntime.Capabilities, bool) {
-	capabilities, ok := runtimeCapabilities[name]
-	if !ok {
-		return chamberRuntime.Capabilities{}, false
-	}
-	return chamberRuntime.CloneCapabilities(capabilities), true
-}
-
-func supportsPrivilege(capabilities chamberRuntime.Capabilities, privilege capability.Privilege) bool {
-	for _, supported := range capabilities.Privileges {
-		if supported == privilege {
-			return true
-		}
-	}
-	return false
 }
 
 func requireWorkspaceTmpRoot(label string, configured string, actual string) error {
@@ -169,7 +135,7 @@ func requireWorkspaceTmpRoot(label string, configured string, actual string) err
 	return nil
 }
 
-func requireWorkspaceCapabilities(label string, observed hostfs.Capabilities, required hostfs.Capabilities) error {
+func requireWorkspaceFeatures(label string, observed hostfs.FeatureSet, required hostfs.FeatureSet) error {
 	if required.PrivateDirs && !observed.PrivateDirs {
 		return fmt.Errorf("%w: %s requires private directories", chamberErrors.ErrFilesystemFailed, label)
 	}

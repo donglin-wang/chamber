@@ -55,7 +55,7 @@ func Open(ctx context.Context, cfg metadata.Config, workspace *hostfs.Workspace)
 	if filepath.Clean(dataDir) != filepath.Clean(workspace.Root()) {
 		return nil, fmt.Errorf("metadata etcd: root %q does not match workspace root %q", cfg.Root, workspace.Root())
 	}
-	if err := requireWorkspaceCapabilities("metadata workspace", workspace.Capabilities(), hostfs.Capabilities{
+	if err := requireWorkspaceFeatures("metadata workspace", workspace.Features(), hostfs.FeatureSet{
 		PrivateDirs:      true,
 		FileFsync:        true,
 		AtomicFileRename: true,
@@ -127,7 +127,7 @@ func Open(ctx context.Context, cfg metadata.Config, workspace *hostfs.Workspace)
 	}, nil
 }
 
-func requireWorkspaceCapabilities(label string, observed hostfs.Capabilities, required hostfs.Capabilities) error {
+func requireWorkspaceFeatures(label string, observed hostfs.FeatureSet, required hostfs.FeatureSet) error {
 	if required.PrivateDirs && !observed.PrivateDirs {
 		return fmt.Errorf("metadata etcd: %s requires private directories", label)
 	}

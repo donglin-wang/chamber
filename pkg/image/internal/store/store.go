@@ -53,7 +53,7 @@ func New(config chamberImage.Config, workspace *hostfs.Workspace) (*Store, error
 	if err := requireWorkspaceTmpRoot("image temporary root", config.TmpRoot, workspace.TmpRoot()); err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceCapabilities("image workspace", workspace.Capabilities(), hostfs.Capabilities{
+	if err := requireWorkspaceFeatures("image workspace", workspace.Features(), hostfs.FeatureSet{
 		PrivateDirs:           true,
 		FileFsync:             true,
 		AtomicFileRename:      true,
@@ -123,7 +123,7 @@ func requireWorkspaceTmpRoot(label string, configured string, actual string) err
 	return nil
 }
 
-func requireWorkspaceCapabilities(label string, observed hostfs.Capabilities, required hostfs.Capabilities) error {
+func requireWorkspaceFeatures(label string, observed hostfs.FeatureSet, required hostfs.FeatureSet) error {
 	if required.PrivateDirs && !observed.PrivateDirs {
 		return fmt.Errorf("%w: %s requires private directories", chamberErrors.ErrFilesystemFailed, label)
 	}

@@ -6,40 +6,9 @@ import (
 	"os"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 )
 
-// Isolation identifies the runtime isolation mechanism.
-type Isolation string
-
-const (
-	// ProcessIsolation means containers share the host kernel through process
-	// isolation such as runc.
-	ProcessIsolation Isolation = "process"
-
-	// VMIsolation means containers run behind a virtual-machine boundary.
-	VMIsolation Isolation = "vm"
-)
-
-// Capabilities describes the static support declared by a runtime
-// implementation.
-type Capabilities struct {
-	// Privileges lists supported host privilege modes.
-	Privileges []capability.Privilege
-
-	// Isolation lists supported isolation mechanisms.
-	Isolation []Isolation
-}
-
-// CloneCapabilities returns a deep copy of capabilities.
-func CloneCapabilities(capabilities Capabilities) Capabilities {
-	return Capabilities{
-		Privileges: append([]capability.Privilege(nil), capabilities.Privileges...),
-		Isolation:  append([]Isolation(nil), capabilities.Isolation...),
-	}
-}
-
-// Descriptor identifies a ready runtime implementation and its capabilities.
+// Descriptor identifies a ready runtime implementation.
 type Descriptor struct {
 	// Name is the runtime implementation name.
 	Name string
@@ -50,9 +19,6 @@ type Descriptor struct {
 	// BinaryPath is the runtime binary path used by this runtime, when the
 	// implementation uses a host binary.
 	BinaryPath string
-
-	// Capabilities is a copy of the runtime's declared support.
-	Capabilities Capabilities
 }
 
 // ContainerStatus is Chamber's public runtime container-state vocabulary.
@@ -140,8 +106,7 @@ type Container interface {
 
 // Runtime starts provisioned bundles.
 type Runtime interface {
-	// Descriptor returns implementation identity, artifact paths, and static
-	// capabilities.
+	// Descriptor returns implementation identity and artifact paths.
 	Descriptor() Descriptor
 
 	// Run starts the container and returns a Container that owns subsequent

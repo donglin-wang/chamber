@@ -325,7 +325,7 @@ func newTestStoreAtRoot(t *testing.T, cfg chamberImage.Config, root string) (*St
 	workspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    root,
 		TmpRoot: tmpRoot,
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:           true,
 			FileFsync:             true,
 			AtomicFileRename:      true,

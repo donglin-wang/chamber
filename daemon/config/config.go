@@ -14,7 +14,6 @@ import (
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
@@ -25,9 +24,6 @@ type Config struct {
 	// Storage
 	SocketPath string
 	TmpRoot    string
-
-	// Privilege
-	Privilege capability.Privilege
 
 	// OCI Bundles
 	Bundle chamberBundle.Config
@@ -57,8 +53,6 @@ type Input struct {
 	SocketPath *string `json:"socket_path,omitempty"`
 	TmpRoot    *string `json:"tmp_root,omitempty"`
 
-	Privilege *capability.Privilege `json:"privilege,omitempty"`
-
 	Bundle   bundleInput   `json:"bundle,omitempty"`
 	Image    imageInput    `json:"image,omitempty"`
 	Runtime  runtimeInput  `json:"runtime,omitempty"`
@@ -73,16 +67,14 @@ type Input struct {
 }
 
 type bundleInput struct {
-	Root      *string               `json:"root,omitempty"`
-	Name      *string               `json:"name,omitempty"`
-	Privilege *capability.Privilege `json:"privilege,omitempty"`
-	Logging   loggingInput          `json:"logging,omitempty"`
+	Root    *string      `json:"root,omitempty"`
+	Name    *string      `json:"name,omitempty"`
+	Logging loggingInput `json:"logging,omitempty"`
 }
 
 type imageInput struct {
 	Root     *string       `json:"root,omitempty"`
 	BuildKit buildKitInput `json:"buildkit,omitempty"`
-	Buildah  buildahInput  `json:"buildah,omitempty"`
 	Logging  loggingInput  `json:"logging,omitempty"`
 }
 
@@ -100,23 +92,12 @@ type buildKitInput struct {
 	Snapshotter        *string `json:"snapshotter,omitempty"`
 }
 
-type buildahInput struct {
-	Path          *string `json:"path,omitempty"`
-	Version       *string `json:"version,omitempty"`
-	URL           *string `json:"url,omitempty"`
-	SHA256        *string `json:"sha256,omitempty"`
-	StorageDriver *string `json:"storage_driver,omitempty"`
-	Runtime       *string `json:"runtime,omitempty"`
-	Isolation     *string `json:"isolation,omitempty"`
-}
-
 type runtimeInput struct {
-	RuntimeRoot   *string               `json:"runtime_root,omitempty"`
-	RuntimeBinDir *string               `json:"runtime_bin_dir,omitempty"`
-	RuntimePath   *string               `json:"runtime_path,omitempty"`
-	Name          *string               `json:"name,omitempty"`
-	Privilege     *capability.Privilege `json:"privilege,omitempty"`
-	Logging       loggingInput          `json:"logging,omitempty"`
+	RuntimeRoot   *string      `json:"runtime_root,omitempty"`
+	RuntimeBinDir *string      `json:"runtime_bin_dir,omitempty"`
+	RuntimePath   *string      `json:"runtime_path,omitempty"`
+	Name          *string      `json:"name,omitempty"`
+	Logging       loggingInput `json:"logging,omitempty"`
 }
 
 type metadataInput struct {
@@ -162,7 +143,6 @@ func Load(input Input, getenv func(string) string) (Config, error) {
 		HTTPAddr:   defaultHTTPAddr,
 		SocketPath: filepath.Join(rootPath, "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(rootPath, "run", "tmp"),
-		Privilege:  capability.Rootless,
 
 		Bundle:   chamberBundle.DefaultConfig(rootPath),
 		Image:    chamberImage.DefaultConfig(rootPath),
@@ -221,9 +201,6 @@ func ApplyInput(defaultConfig Config, input Input) (Config, error) {
 	if input.TmpRoot != nil {
 		defaultConfig.TmpRoot = *input.TmpRoot
 	}
-	if input.Privilege != nil {
-		defaultConfig.Privilege = *input.Privilege
-	}
 	if input.OpenTelemetryEndpoint != nil {
 		defaultConfig.OpenTelemetryEndpoint = *input.OpenTelemetryEndpoint
 	}
@@ -235,12 +212,6 @@ func ApplyInput(defaultConfig Config, input Input) (Config, error) {
 	}
 	if input.OpenTelemetryMetricsExportInterval != nil {
 		defaultConfig.OpenTelemetryMetricsExportInterval = *input.OpenTelemetryMetricsExportInterval
-	}
-	if input.Bundle.Privilege != nil {
-		return Config{}, fmt.Errorf("bundle privilege must be configured with top-level privilege")
-	}
-	if input.Runtime.Privilege != nil {
-		return Config{}, fmt.Errorf("runtime privilege must be configured with top-level privilege")
 	}
 	defaultConfig.Logging = applyLoggingInput(defaultConfig.Logging, input.Logging)
 	if err := validateLogging(defaultConfig.Logging); err != nil {
@@ -255,11 +226,6 @@ func ApplyInput(defaultConfig Config, input Input) (Config, error) {
 	applyImageInput(&defaultConfig.Image, input.Image)
 	applyRuntimeInput(&defaultConfig.Runtime, input.Runtime)
 	applyMetadataInput(&defaultConfig.Metadata, input.Metadata)
-	if defaultConfig.Privilege == "" {
-		defaultConfig.Privilege = capability.Rootless
-	}
-	defaultConfig.Bundle.Privilege = defaultConfig.Privilege
-	defaultConfig.Runtime.Privilege = defaultConfig.Privilege
 	if err := validateLogging(defaultConfig.Bundle.Logging); err != nil {
 		return Config{}, fmt.Errorf("validate bundle logging: %w", err)
 	}
@@ -283,9 +249,6 @@ func MergeInput(base Input, overlay Input) Input {
 	}
 	if overlay.TmpRoot != nil {
 		base.TmpRoot = overlay.TmpRoot
-	}
-	if overlay.Privilege != nil {
-		base.Privilege = overlay.Privilege
 	}
 	if overlay.OpenTelemetryEndpoint != nil {
 		base.OpenTelemetryEndpoint = overlay.OpenTelemetryEndpoint
@@ -318,7 +281,6 @@ func absolutizePaths(cfg *Config) {
 		&cfg.Image.BuildKit.BuildkitdPath,
 		&cfg.Image.BuildKit.RootlessKitPath,
 		&cfg.Image.BuildKit.RuncPath,
-		&cfg.Image.Buildah.Path,
 		&cfg.Runtime.RuntimeRoot,
 		&cfg.Runtime.RuntimeBinDir,
 		&cfg.Runtime.RuntimePath,
@@ -344,9 +306,6 @@ func mergeBundleInput(base bundleInput, overlay bundleInput) bundleInput {
 	if overlay.Name != nil {
 		base.Name = overlay.Name
 	}
-	if overlay.Privilege != nil {
-		base.Privilege = overlay.Privilege
-	}
 	base.Logging = mergeLoggingInput(base.Logging, overlay.Logging)
 	return base
 }
@@ -356,7 +315,6 @@ func mergeImageInput(base imageInput, overlay imageInput) imageInput {
 		base.Root = overlay.Root
 	}
 	base.BuildKit = mergeBuildKitInput(base.BuildKit, overlay.BuildKit)
-	base.Buildah = mergeBuildahInput(base.Buildah, overlay.Buildah)
 	base.Logging = mergeLoggingInput(base.Logging, overlay.Logging)
 	return base
 }
@@ -398,31 +356,6 @@ func mergeBuildKitInput(base buildKitInput, overlay buildKitInput) buildKitInput
 	return base
 }
 
-func mergeBuildahInput(base buildahInput, overlay buildahInput) buildahInput {
-	if overlay.Path != nil {
-		base.Path = overlay.Path
-	}
-	if overlay.Version != nil {
-		base.Version = overlay.Version
-	}
-	if overlay.URL != nil {
-		base.URL = overlay.URL
-	}
-	if overlay.SHA256 != nil {
-		base.SHA256 = overlay.SHA256
-	}
-	if overlay.StorageDriver != nil {
-		base.StorageDriver = overlay.StorageDriver
-	}
-	if overlay.Runtime != nil {
-		base.Runtime = overlay.Runtime
-	}
-	if overlay.Isolation != nil {
-		base.Isolation = overlay.Isolation
-	}
-	return base
-}
-
 func mergeMetadataInput(base metadataInput, overlay metadataInput) metadataInput {
 	if overlay.Root != nil {
 		base.Root = overlay.Root
@@ -442,9 +375,6 @@ func mergeRuntimeInput(base runtimeInput, overlay runtimeInput) runtimeInput {
 	}
 	if overlay.Name != nil {
 		base.Name = overlay.Name
-	}
-	if overlay.Privilege != nil {
-		base.Privilege = overlay.Privilege
 	}
 	base.Logging = mergeLoggingInput(base.Logging, overlay.Logging)
 	return base
@@ -475,7 +405,6 @@ func applyImageInput(config *chamberImage.Config, input imageInput) {
 		config.Root = *input.Root
 	}
 	applyBuildKitInput(&config.BuildKit, input.BuildKit)
-	applyBuildahInput(&config.Buildah, input.Buildah)
 	config.Logging = applyLoggingInput(config.Logging, input.Logging)
 }
 
@@ -512,30 +441,6 @@ func applyBuildKitInput(config *chamberImage.BuildKitConfig, input buildKitInput
 	}
 	if input.Snapshotter != nil {
 		config.Snapshotter = *input.Snapshotter
-	}
-}
-
-func applyBuildahInput(config *chamberImage.BuildahConfig, input buildahInput) {
-	if input.Path != nil {
-		config.Path = *input.Path
-	}
-	if input.Version != nil {
-		config.Version = *input.Version
-	}
-	if input.URL != nil {
-		config.URL = *input.URL
-	}
-	if input.SHA256 != nil {
-		config.SHA256 = *input.SHA256
-	}
-	if input.StorageDriver != nil {
-		config.StorageDriver = *input.StorageDriver
-	}
-	if input.Runtime != nil {
-		config.Runtime = *input.Runtime
-	}
-	if input.Isolation != nil {
-		config.Isolation = *input.Isolation
 	}
 }
 

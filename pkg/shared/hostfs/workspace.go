@@ -16,10 +16,10 @@ import (
 type Config struct {
 	Root         string
 	TmpRoot      string
-	Capabilities Capabilities
+	Requirements FeatureSet
 }
 
-type Capabilities struct {
+type FeatureSet struct {
 	PrivateDirs           bool
 	FileFsync             bool
 	DirectoryFsync        bool
@@ -28,10 +28,10 @@ type Capabilities struct {
 }
 
 type Workspace struct {
-	root    string
-	tmpRoot string
-	caps    Capabilities
-	ops     filesystemOps
+	root     string
+	tmpRoot  string
+	features FeatureSet
+	ops      filesystemOps
 }
 
 var errDirectorySyncUnsupported = errors.New("directory sync unsupported")
@@ -93,20 +93,20 @@ func newWorkspace(config Config, ops filesystemOps) (*Workspace, error) {
 		tmpRoot: tmpRoot,
 		ops:     ops,
 	}
-	rootPrivate, err := workspace.checkWorkspaceDir(root, "workspace root", config.Capabilities.PrivateDirs)
+	rootPrivate, err := workspace.checkWorkspaceDir(root, "workspace root", config.Requirements.PrivateDirs)
 	if err != nil {
 		return nil, err
 	}
-	tmpPrivate, err := workspace.checkWorkspaceDir(tmpRoot, "workspace temporary root", config.Capabilities.PrivateDirs)
+	tmpPrivate, err := workspace.checkWorkspaceDir(tmpRoot, "workspace temporary root", config.Requirements.PrivateDirs)
 	if err != nil {
 		return nil, err
 	}
-	caps, err := workspace.probeCapabilities(rootPrivate && tmpPrivate)
+	features, err := workspace.probeFeatures(rootPrivate && tmpPrivate)
 	if err != nil {
 		return nil, err
 	}
-	workspace.caps = caps
-	if err := requireCapabilities(config.Capabilities, caps); err != nil {
+	workspace.features = features
+	if err := requireFeatures(config.Requirements, features); err != nil {
 		return nil, err
 	}
 	return workspace, nil
@@ -126,11 +126,11 @@ func (w *Workspace) TmpRoot() string {
 	return w.tmpRoot
 }
 
-func (w *Workspace) Capabilities() Capabilities {
+func (w *Workspace) Features() FeatureSet {
 	if w == nil {
-		return Capabilities{}
+		return FeatureSet{}
 	}
-	return w.caps
+	return w.features
 }
 
 func (w *Workspace) MkdirPrivate(relDir string) (string, error) {
@@ -346,23 +346,23 @@ func privateDirMetadata(path string, info os.FileInfo) error {
 	return nil
 }
 
-func (w *Workspace) probeCapabilities(privateDirs bool) (Capabilities, error) {
+func (w *Workspace) probeFeatures(privateDirs bool) (FeatureSet, error) {
 	probeRoot, err := os.MkdirTemp(w.root, ".hostfs-probe-*")
 	if err != nil {
-		return Capabilities{}, fmt.Errorf("%w: create host filesystem probe directory below %q: %w", chamberErrors.ErrFilesystemFailed, w.root, err)
+		return FeatureSet{}, fmt.Errorf("%w: create host filesystem probe directory below %q: %w", chamberErrors.ErrFilesystemFailed, w.root, err)
 	}
 	defer w.ops.removeAll(probeRoot)
 
-	caps := Capabilities{PrivateDirs: privateDirs}
-	caps.FileFsync = w.probeFileFsync(probeRoot)
-	caps.AtomicFileRename = w.probeFileRename(probeRoot, w.tmpRoot)
-	caps.AtomicDirectoryRename = w.probeDirectoryRename(probeRoot, w.tmpRoot)
+	features := FeatureSet{PrivateDirs: privateDirs}
+	features.FileFsync = w.probeFileFsync(probeRoot)
+	features.AtomicFileRename = w.probeFileRename(probeRoot, w.tmpRoot)
+	features.AtomicDirectoryRename = w.probeDirectoryRename(probeRoot, w.tmpRoot)
 	if err := w.ops.syncDir(probeRoot); err == nil {
-		caps.DirectoryFsync = true
+		features.DirectoryFsync = true
 	} else if !errors.Is(err, errDirectorySyncUnsupported) {
-		return Capabilities{}, fmt.Errorf("%w: probe directory fsync below %q: %w", chamberErrors.ErrFilesystemFailed, probeRoot, err)
+		return FeatureSet{}, fmt.Errorf("%w: probe directory fsync below %q: %w", chamberErrors.ErrFilesystemFailed, probeRoot, err)
 	}
-	return caps, nil
+	return features, nil
 }
 
 func (w *Workspace) probeFileFsync(parent string) bool {
@@ -425,21 +425,21 @@ func (w *Workspace) probeRenameDirectory(srcParent string, dstParent string) boo
 	return w.ops.rename(srcPath, dstPath) == nil
 }
 
-func requireCapabilities(required Capabilities, observed Capabilities) error {
+func requireFeatures(required FeatureSet, observed FeatureSet) error {
 	if required.PrivateDirs && !observed.PrivateDirs {
-		return fmt.Errorf("%w: host filesystem does not provide required private directory capability", chamberErrors.ErrFilesystemFailed)
+		return fmt.Errorf("%w: host filesystem does not provide required private directory support", chamberErrors.ErrFilesystemFailed)
 	}
 	if required.FileFsync && !observed.FileFsync {
-		return fmt.Errorf("%w: host filesystem does not provide required file fsync capability", chamberErrors.ErrFilesystemFailed)
+		return fmt.Errorf("%w: host filesystem does not provide required file fsync support", chamberErrors.ErrFilesystemFailed)
 	}
 	if required.DirectoryFsync && !observed.DirectoryFsync {
-		return fmt.Errorf("%w: host filesystem does not provide required directory fsync capability", chamberErrors.ErrFilesystemFailed)
+		return fmt.Errorf("%w: host filesystem does not provide required directory fsync support", chamberErrors.ErrFilesystemFailed)
 	}
 	if required.AtomicFileRename && !observed.AtomicFileRename {
-		return fmt.Errorf("%w: host filesystem does not provide required atomic file rename capability", chamberErrors.ErrFilesystemFailed)
+		return fmt.Errorf("%w: host filesystem does not provide required atomic file rename support", chamberErrors.ErrFilesystemFailed)
 	}
 	if required.AtomicDirectoryRename && !observed.AtomicDirectoryRename {
-		return fmt.Errorf("%w: host filesystem does not provide required atomic directory rename capability", chamberErrors.ErrFilesystemFailed)
+		return fmt.Errorf("%w: host filesystem does not provide required atomic directory rename support", chamberErrors.ErrFilesystemFailed)
 	}
 	return nil
 }

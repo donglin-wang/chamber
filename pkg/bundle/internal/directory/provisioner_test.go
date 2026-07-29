@@ -13,7 +13,6 @@ import (
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -27,8 +26,7 @@ import (
 func TestNewUsesCurrentUserIDMap(t *testing.T) {
 	root := filepath.Join(privateTempDir(t), "bundles")
 	provisioner, err := New(chamberBundle.Config{
-		Root:      root,
-		Privilege: capability.Rootless,
+		Root: root,
 	}, newTestWorkspace(t, root))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -41,7 +39,7 @@ func TestNewUsesCurrentUserIDMap(t *testing.T) {
 	}
 }
 
-func TestDescriptorDeclaresDirectorySupport(t *testing.T) {
+func TestDescriptorIdentifiesDirectoryProvisioner(t *testing.T) {
 	provisioner := &Provisioner{}
 
 	descriptor := provisioner.Descriptor()
@@ -49,16 +47,12 @@ func TestDescriptorDeclaresDirectorySupport(t *testing.T) {
 	if descriptor.Name != "directory" {
 		t.Fatalf("Descriptor().Name = %q, want directory", descriptor.Name)
 	}
-	if !slices.Equal(descriptor.Capabilities.Privileges, []capability.Privilege{capability.Rootless}) {
-		t.Fatalf("privileges = %#v, want rootless only", descriptor.Capabilities.Privileges)
-	}
 }
 
 func TestProvisionClassifiesMissingImageLayoutAsInvalidRequest(t *testing.T) {
 	root := filepath.Join(privateTempDir(t), "bundles")
 	provisioner, err := New(chamberBundle.Config{
-		Root:      root,
-		Privilege: capability.Rootless,
+		Root: root,
 	}, newTestWorkspace(t, root))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -95,8 +89,7 @@ func TestProvisionCanonicalizesImageRefBeforeUnpack(t *testing.T) {
 
 	root := filepath.Join(privateTempDir(t), "bundles")
 	provisioner, err := New(chamberBundle.Config{
-		Root:      root,
-		Privilege: capability.Rootless,
+		Root: root,
 	}, newTestWorkspace(t, root))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -674,7 +667,7 @@ func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
 	workspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    root,
 		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
-		Capabilities: hostfs.Capabilities{
+		Requirements: hostfs.FeatureSet{
 			PrivateDirs:           true,
 			AtomicDirectoryRename: true,
 		},

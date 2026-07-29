@@ -3,7 +3,6 @@ package bundle
 import (
 	"path/filepath"
 
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
@@ -26,9 +25,6 @@ type Config struct {
 	// Name selects the bundle provisioner implementation.
 	Name string
 
-	// Privilege selects the host privilege mode the provisioner must support.
-	Privilege capability.Privilege
-
 	// Logging configures host-side Chamber logs for bundle operations. A zero
 	// value inherits the package logger.
 	Logging chamberLogging.Config
@@ -41,7 +37,6 @@ func DefaultConfig(rootPath string) Config {
 		Root:      filepath.Join(rootPath, "bundles"),
 		TmpRoot:   hostfs.DefaultTmpRoot("bundles"),
 		Name:      ProvisionerNameDirectory,
-		Privilege: capability.Rootless,
 		Logging:   chamberLogging.Config{},
 	}
 }
