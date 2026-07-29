@@ -14,6 +14,24 @@ The daemon should be the first serious user of the Go SDK. If `chamberd` cannot 
 
 Chamber is still the node-local execution substrate, not a distributed scheduler or a general-purpose container engine. Distributed placement, cluster membership, desired-state reconciliation, secrets distribution, fleet-level policy, and global queues belong above Chamber.
 
+## Platform Support
+
+Chamber's supported execution target is Linux. Rootless containers, BuildKit,
+RootlessKit, runc, namespaces, process death signals, sockets, and cleanup
+semantics should be designed and validated for Linux first and only.
+
+- Do not add non-Linux compatibility shims, no-op fallbacks, or alternate code
+  paths merely to keep native macOS or other host builds green.
+- If code depends on Linux-only behavior, make that dependency explicit with
+  Linux-specific files, Linux validation, and clear `unsupported_host` errors at
+  public construction or preflight boundaries where useful.
+- Native macOS can be a development host, but meaningful runtime/build
+  validation belongs in Linux or Lima. A native macOS failure is not a product
+  regression unless Chamber explicitly adds macOS support later.
+- Future review agents should flag code that hides Linux-only runtime behavior
+  behind cross-platform abstractions, especially for process spawning, cleanup,
+  filesystem ownership, sockets, namespaces, cgroups, and runtime binaries.
+
 ## Product Boundaries
 
 The SDK layer is deliberately lower-level than the daemon:
@@ -54,6 +72,7 @@ Model privilege cleanly:
 - Reuse proven OCI/container libraries and runtimes where practical instead of reimplementing low-level container primitives.
 - Keep persistent and temporary storage inside Chamber-controlled or caller-provided roots; avoid broad reliance on ambient host defaults.
 - Make path ownership explicit. Multiple OS users on the same host must not accidentally share sockets, storage, locks, runtime directories, temp directories, logs, names, network bookkeeping, or cleanup authority.
+- Process spawning under `pkg/` must use Chamber's shared subprocess helper so child processes get Linux `Pdeathsig` parent-death protection. Future review agents should flag raw `exec.Command` or `exec.CommandContext` usage in `pkg/` unless the code has an explicit, documented reason to opt out.
 - Start with narrow, testable packages and invariants before widening into compatibility APIs.
 - Keep code fixes and new implementation as minimal as possible without playing code golf. Prefer the smallest clear change that preserves the contract, tests the behavior at risk, and does not hide complexity behind clever compression.
 - Prefer explicit top-down dependency injection for filesystem, runtime, and backend choices.

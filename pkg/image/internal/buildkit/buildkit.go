@@ -19,6 +19,7 @@ import (
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
+	"github.com/donglin-wang/chamber/pkg/shared/subprocess"
 )
 
 const (
@@ -298,7 +299,7 @@ func (b Builder) waitForReadiness(ctx context.Context, daemon *daemonProcess, di
 }
 
 func (b Builder) runBuildctlDebugWorkers(ctx context.Context, dirs buildDirectories) error {
-	command := exec.CommandContext(ctx, b.paths.buildctl, "--addr", buildkitAddress(dirs), "debug", "workers")
+	command := subprocess.CommandContext(ctx, b.paths.buildctl, "--addr", buildkitAddress(dirs), "debug", "workers")
 	command.Env = b.buildEnvironment(dirs)
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -344,9 +345,9 @@ func (b Builder) buildkitdCommand(ctx context.Context, dirs buildDirectories) (*
 		"--oci-worker-binary", b.paths.runc,
 		"--oci-worker-snapshotter", b.snapshotter,
 	}
-	command := exec.CommandContext(ctx, b.paths.rootlesskit, args...)
+	command := subprocess.CommandContext(ctx, b.paths.rootlesskit, args...)
 	command.Env = b.buildEnvironment(dirs)
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	subprocess.SetProcessGroup(command)
 	command.Cancel = func() error {
 		if command.Process == nil {
 			return os.ErrProcessDone
@@ -383,7 +384,7 @@ func (b Builder) buildctlBuildCommand(ctx context.Context, build resolvedRequest
 	for _, key := range keys {
 		args = append(args, "--opt", "build-arg:"+key+"="+build.buildArgs[key])
 	}
-	command := exec.CommandContext(ctx, b.paths.buildctl, args...)
+	command := subprocess.CommandContext(ctx, b.paths.buildctl, args...)
 	command.Dir = build.contextPath
 	command.Env = b.buildEnvironment(dirs)
 	return command, nil

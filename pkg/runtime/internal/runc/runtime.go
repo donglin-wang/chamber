@@ -22,6 +22,7 @@ import (
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
+	"github.com/donglin-wang/chamber/pkg/shared/subprocess"
 )
 
 const (
@@ -253,7 +254,7 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 		return nil, err
 	}
 
-	cmd := exec.Command(binaryPath, "--root", stateRoot, "run", containerID)
+	cmd := subprocess.Command(binaryPath, "--root", stateRoot, "run", containerID)
 	cmd.Dir = request.Bundle.BundlePath
 	cmd.Stdin = request.Stdin
 	cmd.Stdout = outputWriter(stdout, request.Stdout)
@@ -567,7 +568,7 @@ func (c *runcContainer) Signal(ctx context.Context, signal os.Signal) error {
 		"container_id", c.id,
 		"signal", signal,
 	)
-	cmd := exec.CommandContext(ctx, c.binaryPath, "--root", c.stateRoot, "kill", c.id, signalArg)
+	cmd := subprocess.CommandContext(ctx, c.binaryPath, "--root", c.stateRoot, "kill", c.id, signalArg)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("%w: runtime signal canceled while running control command: %w", chamberErrors.ErrCanceled, ctxErr)
@@ -610,7 +611,7 @@ func (c *runcContainer) Delete(ctx context.Context, force bool) error {
 		"container_id", c.id,
 		"force", force,
 	)
-	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
+	cmd := subprocess.CommandContext(ctx, c.binaryPath, args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("%w: runtime delete canceled while running control command: %w", chamberErrors.ErrCanceled, ctxErr)
@@ -686,7 +687,7 @@ type runcState struct {
 }
 
 func readRuncState(ctx context.Context, binaryPath string, stateRoot string, containerID string) (runcState, error) {
-	cmd := exec.CommandContext(ctx, binaryPath, "--root", stateRoot, "state", containerID)
+	cmd := subprocess.CommandContext(ctx, binaryPath, "--root", stateRoot, "state", containerID)
 	output, err := cmd.Output()
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {

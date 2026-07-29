@@ -11,12 +11,12 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
+	"github.com/donglin-wang/chamber/pkg/shared/subprocess"
 )
 
 const (
@@ -518,7 +518,7 @@ func probeTool(ctx context.Context, path string) error {
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("tool path is required")
 	}
-	command := exec.CommandContext(ctx, path, "--version")
+	command := subprocess.CommandContext(ctx, path, "--version")
 	if output, err := command.CombinedOutput(); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("%w: probe canceled: %w", chamberErrors.ErrCanceled, ctxErr)
