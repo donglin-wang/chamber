@@ -196,6 +196,7 @@ func (s *server) runCIForPush(parent context.Context, record runRecord, dirs run
 		return
 	}
 	result, err := s.runCI(ctx, chamberCI.Config{
+		Root:    filepath.Join(s.cfg.Root, "ci"),
 		Workdir: dirs.checkout,
 		Image:   chamberCI.DefaultImage,
 		Timeout: s.cfg.RunTimeout,

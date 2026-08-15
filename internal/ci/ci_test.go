@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -18,7 +19,12 @@ func TestRunDogfoodIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve repo root: %v", err)
 	}
+	cacheRoot, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatalf("resolve user cache root: %v", err)
+	}
 	exitCode, err := Run(context.Background(), Config{
+		Root:    filepath.Join(cacheRoot, "chamber", "ci-integration"),
 		Workdir: repoRoot,
 		Image:   DefaultImage,
 		Timeout: 30 * time.Minute,
@@ -29,6 +35,38 @@ func TestRunDogfoodIntegration(t *testing.T) {
 	}
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, want 0", exitCode)
+	}
+}
+
+func TestRunRequiresRoot(t *testing.T) {
+	exitCode, err := Run(context.Background(), Config{
+		Workdir: t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("Run() error = nil, want missing root error")
+	}
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", exitCode)
+	}
+	if !strings.Contains(err.Error(), "CI root is required") {
+		t.Fatalf("Run() error = %v, want missing root error", err)
+	}
+}
+
+func TestRunRejectsRootInsideWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	exitCode, err := Run(context.Background(), Config{
+		Root:    filepath.Join(workspace, ".chamber-ci"),
+		Workdir: workspace,
+	})
+	if err == nil {
+		t.Fatal("Run() error = nil, want workspace-contained root error")
+	}
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", exitCode)
+	}
+	if !strings.Contains(err.Error(), "must be outside workspace") {
+		t.Fatalf("Run() error = %v, want outside workspace error", err)
 	}
 }
 

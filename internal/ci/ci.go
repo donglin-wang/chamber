@@ -30,6 +30,9 @@ var testCommand = []string{"go", "test", "./..."}
 
 // Config controls one Chamber CI run.
 type Config struct {
+	// Root is the caller-owned parent directory for per-run CI image, bundle,
+	// runtime, and temporary state.
+	Root    string
 	Workdir string
 	Image   string
 	Timeout time.Duration
@@ -52,18 +55,34 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	if strings.TrimSpace(cfg.Workdir) == "" {
 		cfg.Workdir = "."
 	}
+	if strings.TrimSpace(cfg.Root) == "" {
+		return 1, fmt.Errorf("CI root is required")
+	}
 
 	workspace, err := filepath.Abs(cfg.Workdir)
 	if err != nil {
 		return 1, fmt.Errorf("resolve workspace: %w", err)
 	}
-	root, err := os.MkdirTemp("", "chamber-ci-*")
+	rootParent, err := filepath.Abs(cfg.Root)
+	if err != nil {
+		return 1, fmt.Errorf("resolve CI root: %w", err)
+	}
+	if pathContains(workspace, rootParent) {
+		return 1, fmt.Errorf("CI root %q must be outside workspace %q", rootParent, workspace)
+	}
+	ciWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    rootParent,
+		TmpRoot: filepath.Join(rootParent, "tmp"),
+		Requirements: hostfs.FeatureSet{
+			PrivateDirs: true,
+		},
+	})
+	if err != nil {
+		return 1, fmt.Errorf("create CI workspace: %w", err)
+	}
+	root, err := ciWorkspace.MkdirTemp("runs", "chamber-ci-*")
 	if err != nil {
 		return 1, fmt.Errorf("create CI root: %w", err)
-	}
-	if pathContains(workspace, root) {
-		_ = os.RemoveAll(root)
-		return 1, fmt.Errorf("CI root %q must be outside workspace %q", root, workspace)
 	}
 	if !cfg.Keep {
 		defer func() {

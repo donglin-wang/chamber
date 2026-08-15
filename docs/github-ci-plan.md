@@ -131,13 +131,12 @@ Mutable runner state:
 ```text
 /var/lib/chamber-ci/runs/<run-id>/checkout
 /var/lib/chamber-ci/runs/<run-id>/logs
-/var/lib/chamber-ci/chamber-root/images
-/var/lib/chamber-ci/chamber-root/bundles
-/var/lib/chamber-ci/chamber-root/run/runtime
-/var/lib/chamber-ci/chamber-root/bin
-/var/lib/chamber-ci/chamber-root/cache/go-build
-/var/lib/chamber-ci/chamber-root/cache/go-mod
-/var/lib/chamber-ci/chamber-root/tmp
+/var/lib/chamber-ci/ci/tmp/runs/chamber-ci-*/images
+/var/lib/chamber-ci/ci/tmp/runs/chamber-ci-*/bundles
+/var/lib/chamber-ci/ci/tmp/runs/chamber-ci-*/run/runtime
+/var/lib/chamber-ci/ci/tmp/runs/chamber-ci-*/bin
+/var/lib/chamber-ci/ci/tmp/runs/chamber-ci-*/tmp
+/var/lib/chamber-ci/chamber-root          # startup preflight state
 ```
 
 Keep all Chamber package roots, temp roots, logs, and checkouts below
@@ -365,7 +364,7 @@ docker.io/library/golang:1.26.4-bookworm
 The runner should call the extracted `internal/ci` package with:
 
 ```text
-root:    /var/lib/chamber-ci/chamber-root
+root:    /var/lib/chamber-ci/ci
 workdir: /var/lib/chamber-ci/runs/<run-id>/checkout
 image:   docker.io/library/golang:1.26.4-bookworm
 timeout: 30m
