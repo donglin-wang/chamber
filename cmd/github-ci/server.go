@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	chamberCI "github.com/donglin-wang/chamber/internal/ci"
 	"github.com/donglin-wang/chamber/pkg/shared/logging"
 	"github.com/google/uuid"
 )
@@ -20,7 +19,7 @@ type statusUpdater interface {
 	CreateStatus(context.Context, string, githubStatus) error
 }
 
-type ciRunner func(context.Context, chamberCI.Config) (int, error)
+type ciRunner func(context.Context, ciConfig) (int, error)
 
 type checkoutFunc func(context.Context, string, string, string) error
 
@@ -47,7 +46,7 @@ func newWebhookServer(cfg config) *server {
 		cfg:          cfg,
 		runSlots:     make(chan struct{}, cfg.MaxParallel),
 		statusClient: newGitHubStatusClient(cfg),
-		runCI:        chamberCI.Run,
+		runCI:        runCI,
 		checkout:     checkoutExactSHA,
 		now:          time.Now,
 	}
@@ -195,10 +194,10 @@ func (s *server) runCIForPush(parent context.Context, record runRecord, dirs run
 		s.completeRun(ctx, record)
 		return
 	}
-	result, err := s.runCI(ctx, chamberCI.Config{
+	result, err := s.runCI(ctx, ciConfig{
 		Root:    filepath.Join(s.cfg.Root, "ci"),
 		Workdir: dirs.checkout,
-		Image:   chamberCI.DefaultImage,
+		Image:   defaultCIImage,
 		Timeout: s.cfg.RunTimeout,
 		Keep:    false,
 	})

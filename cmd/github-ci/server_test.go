@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	chamberCI "github.com/donglin-wang/chamber/internal/ci"
 	"github.com/google/uuid"
 )
 
@@ -58,7 +57,7 @@ func TestWebhookReturnsTooManyRequestsWhenSlotBusy(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	done := make(chan struct{})
-	server.runCI = func(ctx context.Context, cfg chamberCI.Config) (int, error) {
+	server.runCI = func(ctx context.Context, cfg ciConfig) (int, error) {
 		close(started)
 		<-release
 		return 0, nil
@@ -111,7 +110,7 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 		}
 		return nil
 	}
-	server.runCI = func(ctx context.Context, cfg chamberCI.Config) (int, error) {
+	server.runCI = func(ctx context.Context, cfg ciConfig) (int, error) {
 		close(ran)
 		return 0, nil
 	}
@@ -154,7 +153,7 @@ func testServer(t *testing.T) *server {
 	server.checkout = func(context.Context, string, string, string) error {
 		return nil
 	}
-	server.runCI = func(context.Context, chamberCI.Config) (int, error) {
+	server.runCI = func(context.Context, ciConfig) (int, error) {
 		return 0, nil
 	}
 	server.statusClient = &recordingStatusClient{}

@@ -1,5 +1,4 @@
-// Package ci runs Chamber's own container-backed CI command.
-package ci
+package main
 
 import (
 	"context"
@@ -21,17 +20,11 @@ import (
 	"github.com/google/uuid"
 )
 
-const (
-	// DefaultImage is the Go image used by Chamber's dogfood CI.
-	DefaultImage = "docker.io/library/golang:1.26.4-bookworm"
-)
+const defaultCIImage = "docker.io/library/golang:1.26.4-bookworm"
 
-var testCommand = []string{"go", "test", "./..."}
+var testCommand = []string{"go", "test", "-modcacherw", "./..."}
 
-// Config controls one Chamber CI run.
-type Config struct {
-	// Root is the caller-owned parent directory for per-run CI image, bundle,
-	// runtime, and temporary state.
+type ciConfig struct {
 	Root    string
 	Workdir string
 	Image   string
@@ -39,8 +32,7 @@ type Config struct {
 	Keep    bool
 }
 
-// Run executes Chamber CI using Chamber's SDK image, bundle, and runtime primitives.
-func Run(ctx context.Context, cfg Config) (int, error) {
+func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -50,7 +42,7 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 		defer cancel()
 	}
 	if strings.TrimSpace(cfg.Image) == "" {
-		cfg.Image = DefaultImage
+		cfg.Image = defaultCIImage
 	}
 	if strings.TrimSpace(cfg.Workdir) == "" {
 		cfg.Workdir = "."
@@ -70,6 +62,7 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	if pathContains(workspace, rootParent) {
 		return 1, fmt.Errorf("CI root %q must be outside workspace %q", rootParent, workspace)
 	}
+
 	ciWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    rootParent,
 		TmpRoot: filepath.Join(rootParent, "tmp"),

@@ -24,7 +24,7 @@ Chamber validation inside Linux with Lima:
 
 ```sh
 limactl shell <linux-instance> --workdir /Users/donglinwang/Projects/chamber -- env GOCACHE=/tmp/chamber-go-cache go test ./pkg/... ./cmd/...
-limactl shell <linux-instance> --workdir /Users/donglinwang/Projects/chamber -- env CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./internal/ci -run TestRunDogfoodIntegration
+limactl shell <linux-instance> --workdir /Users/donglinwang/Projects/chamber -- env CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./cmd/github-ci -run TestRunDogfoodIntegration
 ```
 
 Do not add macOS compatibility shims to make this CI path run natively on
@@ -75,12 +75,6 @@ Add one new binary:
 
 ```text
 cmd/github-ci
-```
-
-Keep reusable CI runner code in:
-
-```text
-internal/ci
 ```
 
 There is no separate `cmd/ci` CLI in V1. The dogfood runner is exercised by the
@@ -348,20 +342,19 @@ Do not run arbitrary git refs as shell text. The worker must treat the payload's
 
 ## Chamber CI Flow
 
-After checkout, run the same logical jobs as `internal/ci`:
+After checkout, run the Chamber dogfood test command:
 
 ```text
-pkg:  go test ./pkg/...
-full: go test ./...
+go test -modcacherw ./...
 ```
 
-Use the existing Go image default from `internal/ci`:
+Use the fixed Go image default from `cmd/github-ci`:
 
 ```text
 docker.io/library/golang:1.26.4-bookworm
 ```
 
-The runner should call the extracted `internal/ci` package with:
+The runner should call the command-local CI function with:
 
 ```text
 root:    /var/lib/chamber-ci/ci
@@ -462,15 +455,16 @@ Do not add macOS compatibility shims for this CI path. If a developer is on
 macOS, they should validate this plan through `limactl shell` into a Linux
 guest.
 
-### 2. Keep the reusable runner in `internal/ci`
+### 2. Keep the runner local to `cmd/github-ci`
 
-`internal/ci` owns config assembly, image pull, bundle provisioning, runtime
-execution, logging, and result aggregation.
+`cmd/github-ci` owns config assembly, image pull, bundle provisioning, runtime
+execution, logging, and result aggregation. The runner is not a public SDK
+boundary; it exists to serve the webhook command.
 
-The reusable runner shape is:
+The runner shape is:
 
 ```go
-type Config struct {
+type ciConfig struct {
     Root    string
     Workdir string
     Image   string
@@ -478,25 +472,7 @@ type Config struct {
     Keep    bool
 }
 
-type Job struct {
-    Name string
-    Args []string
-}
-
-type Result struct {
-    ExitCode int
-    Jobs     []JobResult
-}
-
-type JobResult struct {
-    Name     string
-    ExitCode int
-    Stdout   []byte
-    Stderr   []byte
-    Err      error
-}
-
-func Run(ctx context.Context, cfg Config) (Result, error)
+func runCI(ctx context.Context, cfg ciConfig) (int, error)
 ```
 
 The dogfood end-to-end path is an opt-in integration test, not a parameterized
@@ -551,12 +527,12 @@ secret-isolation model.
 ## Implementation Order
 
 1. Keep Chamber CI validation Linux-only; use Lima from macOS.
-2. Keep `internal/ci` as the reusable runner and gate dogfood execution behind `CHAMBER_INTEGRATION=1`.
+2. Keep the command-local runner gated behind `CHAMBER_INTEGRATION=1`.
 3. Add `cmd/github-ci` with config loading, health endpoint, and
    signature validation.
 4. Add the in-memory `MAX_PARALLEL` admission gate.
 5. Add checkout logic using `git` through `pkg/shared/subprocess`.
-6. Wire `internal/ci.Run` into the worker.
+6. Wire `runCI` into the worker.
 7. Add GitHub commit status updates.
 8. Add run/log HTTP endpoints.
 9. Deploy to OCI and run the manual validation checklist.
@@ -594,7 +570,7 @@ OCI Linux VM checks:
 
 ```sh
 GOCACHE=/tmp/chamber-go-cache go test ./pkg/... ./cmd/...
-CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./internal/ci -run TestRunDogfoodIntegration
+CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./cmd/github-ci -run TestRunDogfoodIntegration
 ```
 
 End-to-end checks:
