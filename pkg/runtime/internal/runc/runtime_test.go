@@ -466,7 +466,7 @@ esac
 	if err := os.WriteFile(filepath.Join(logDir, "release"), []byte("ok"), 0600); err != nil {
 		t.Fatalf("WriteFile(release) error = %v", err)
 	}
-	result, err := container.Wait()
+	result, err := container.Wait(context.Background())
 	if err != nil {
 		t.Fatalf("Container.Wait() error = %v", err)
 	}
@@ -531,7 +531,7 @@ esac
 	}
 
 	for i := 0; i < 2; i++ {
-		result, err := container.Wait()
+		result, err := container.Wait(context.Background())
 		if err != nil {
 			t.Fatalf("Container.Wait() call %d error = %v", i+1, err)
 		}
@@ -543,6 +543,52 @@ esac
 	if _, err := os.Stat(filepath.Join(logDir, "unused")); !os.IsNotExist(err) {
 		t.Fatalf("unused marker stat error = %v, want not exist", err)
 	}
+}
+
+func TestWaitContextCancellationForceDeletesContainer(t *testing.T) {
+	logDir := privateTempDir(t)
+	binaryPath := writeFakeRunc(t, logDir, `
+case "$cmd" in
+run)
+	touch "$logdir/run-started"
+	while [ ! -f "$logdir/release" ]; do
+		sleep 0.01
+	done
+	exit 137
+	;;
+delete)
+	write_args "$logdir/delete-args" "$@"
+	touch "$logdir/release"
+	;;
+*)
+	exit 64
+	;;
+esac
+`)
+
+	stateRoot := privateTempDir(t)
+	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
+	container, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
+		Bundle: chamberBundle.ProvisionedBundle{
+			ContainerID: "timeout",
+			BundlePath:  runtimeBundlePath(t),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	waitForFile(t, filepath.Join(logDir, "run-started"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result, err := container.Wait(ctx)
+	if !errors.Is(err, chamberErrors.ErrCanceled) {
+		t.Fatalf("Wait(canceled) error = %v, want canceled code", err)
+	}
+	if result.ExitCode != 137 {
+		t.Fatalf("Wait(canceled) exit code = %d, want 137", result.ExitCode)
+	}
+	assertLines(t, filepath.Join(logDir, "delete-args"), []string{"--root", stateRoot, "delete", "--force", "timeout"})
 }
 
 func TestRunStartFailureHasErrorCodeAndRemovesLogs(t *testing.T) {
@@ -701,7 +747,7 @@ esac
 		t.Fatalf("Signal() error = %v", err)
 	}
 	assertLines(t, filepath.Join(logDir, "kill-args"), []string{"--root", stateRoot, "kill", "cancelled", "15"})
-	result, err := container.Wait()
+	result, err := container.Wait(context.Background())
 	if err != nil {
 		t.Fatalf("Wait() error = %v", err)
 	}

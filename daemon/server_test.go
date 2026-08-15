@@ -420,7 +420,7 @@ func (c fakeContainer) StdoutPath() string { return c.stdoutPath }
 
 func (c fakeContainer) StderrPath() string { return c.stderrPath }
 
-func (fakeContainer) Wait() (chamberRuntime.ContainerResult, error) {
+func (fakeContainer) Wait(context.Context) (chamberRuntime.ContainerResult, error) {
 	return chamberRuntime.ContainerResult{}, nil
 }
 

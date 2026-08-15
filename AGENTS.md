@@ -154,6 +154,10 @@ When asked for a code review, lead with correctness and boundary findings:
 When asked to clean up or simplify code:
 
 - Look for "helper for helper" chains: private helpers that are used once, merely forward to another helper, or make the call path harder to read without hiding real complexity. Inline them when doing so makes the owning function clearer.
+- Treat the file's function list as a readability surface. A fresh reader should be able to skim function names and understand the process stages, not feel dropped into a bag of vague utilities.
+- Keep helpers only when they name a real domain step, hide meaningful complexity, isolate a hazardous invariant, or provide a narrow test seam. Do not keep helpers that merely wrap a one-line literal, pass through to another helper, or exist only to make another helper look smaller.
+- Name helpers by behavior, output, and side effect. Prefer names such as `createRunDirectories`, `reportGitHubCommitStatus`, or `requireSubordinateIDMapping` over vague names such as `prepare`, `handle`, `patch`, `normalize`, `targets`, or `fileContainsUser`.
+- Organize high-level control flow in lifecycle order and extract only concrete process steps. If a helper's purpose and place in that lifecycle are not immediately clear from its name and nearby context, rename it, inline it, or remove it.
 - Look for structs, config types, interfaces, or fields with dual responsibilities. A field should not both select an implementation and describe implementation-private behavior; an interface should not include lifecycle/setup methods if constructors already return ready values.
 - If a file is roughly 500 lines or longer, scan it for obvious simplifications. Prefer small local simplifications inside the file. Do not create a new abstraction or a new file merely because the file is long.
 - Preserve behavior unless the user explicitly asked for a behavior change. Keep diffs small, testable, and easy to review.

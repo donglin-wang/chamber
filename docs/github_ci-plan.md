@@ -24,7 +24,7 @@ Chamber validation inside Linux with Lima:
 
 ```sh
 limactl shell <linux-instance> --workdir /Users/donglinwang/Projects/chamber -- env GOCACHE=/tmp/chamber-go-cache go test ./pkg/... ./cmd/...
-limactl shell <linux-instance> --workdir /Users/donglinwang/Projects/chamber -- env GOCACHE=/tmp/chamber-go-cache go run ./cmd/ci -workdir /Users/donglinwang/Projects/chamber -root /var/tmp/chamber-ci-$(id -u)
+limactl shell <linux-instance> --workdir /Users/donglinwang/Projects/chamber -- env CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./internal/ci -run TestRunDogfoodIntegration
 ```
 
 Do not add macOS compatibility shims to make this CI path run natively on
@@ -74,14 +74,17 @@ Sources checked while writing this plan:
 Add one new binary:
 
 ```text
-cmd/chamber-ci-webhook
+cmd/github_ci
 ```
 
-Extract reusable CI runner code from `cmd/ci/main.go` into:
+Keep reusable CI runner code in:
 
 ```text
 internal/ci
 ```
+
+There is no separate `cmd/ci` CLI in V1. The dogfood runner is exercised by the
+opt-in `TestRunDogfoodIntegration` test with fixed defaults.
 
 Keep public `pkg/` APIs unchanged for V1. The webhook worker should compose the
 existing SDK primitives:
@@ -117,7 +120,7 @@ Use these paths:
 
 ```text
 /opt/chamber-ci/src                 # deployed source checkout for the receiver binary
-/usr/local/bin/chamber-ci-webhook   # built webhook receiver
+/usr/local/bin/github_ci            # built webhook receiver
 /etc/chamber-ci/webhook.env         # secrets and config
 /var/lib/chamber-ci                 # all mutable CI state
 /var/log/chamber-ci                 # systemd-accessible service logs if needed
@@ -186,10 +189,10 @@ sudo -iu chamberci
 cd /opt/chamber-ci
 git clone https://github.com/donglin-wang/chamber.git src
 cd src
-GOCACHE=/var/lib/chamber-ci/go-build-host /usr/local/go/bin/go build -o /tmp/chamber-ci-webhook ./cmd/chamber-ci-webhook
+GOCACHE=/var/lib/chamber-ci/go-build-host /usr/local/go/bin/go build -o /tmp/github_ci ./cmd/github_ci
 exit
 
-sudo install -o root -g root -m 0755 /tmp/chamber-ci-webhook /usr/local/bin/chamber-ci-webhook
+sudo install -o root -g root -m 0755 /tmp/github_ci /usr/local/bin/github_ci
 ```
 
 ## Receiver Configuration
@@ -198,13 +201,10 @@ Create `/etc/chamber-ci/webhook.env`:
 
 ```sh
 CHAMBER_CI_ADDR=0.0.0.0:8080
-CHAMBER_CI_PUBLIC_BASE_URL=http://<vm-public-ip>:8080
+CHAMBER_CI_STATUS_TARGET_BASE_URL=http://<vm-public-ip>:8080
 CHAMBER_CI_ROOT=/var/lib/chamber-ci
 CHAMBER_CI_REPOSITORY=donglin-wang/chamber
-CHAMBER_CI_GIT_REMOTE=https://github.com/donglin-wang/chamber.git
-CHAMBER_CI_WEBHOOK_SECRET=<long-random-secret>
 CHAMBER_CI_GITHUB_TOKEN=<fine-grained-token-with-commit-status-write>
-CHAMBER_CI_STATUS_CONTEXT=chamber-ci/oci-a1-arm64
 MAX_PARALLEL=1
 CHAMBER_CI_RUN_TIMEOUT=30m
 CHAMBER_CI_RETENTION=168h
@@ -217,13 +217,16 @@ sudo chown root:chamberci /etc/chamber-ci/webhook.env
 sudo chmod 0640 /etc/chamber-ci/webhook.env
 ```
 
-The GitHub token needs only commit status write permission for the Chamber
-repository. The webhook secret must be configured in both GitHub and
-`webhook.env`.
+`CHAMBER_CI_STATUS_TARGET_BASE_URL` is the externally reachable base URL used
+for the clickable `target_url` on GitHub commit statuses. It points back to this
+receiver, not to GitHub.
+
+`CHAMBER_CI_GITHUB_TOKEN` is used both as the GitHub webhook secret and as the
+Bearer token for commit status writes.
 
 ## Systemd Service
 
-Create `/etc/systemd/system/chamber-ci-webhook.service`:
+Create `/etc/systemd/system/github_ci.service`:
 
 ```ini
 [Unit]
@@ -236,7 +239,7 @@ User=chamberci
 Group=chamberci
 WorkingDirectory=/var/lib/chamber-ci
 EnvironmentFile=/etc/chamber-ci/webhook.env
-ExecStart=/usr/local/bin/chamber-ci-webhook -addr ${CHAMBER_CI_ADDR}
+ExecStart=/usr/local/bin/github_ci -addr ${CHAMBER_CI_ADDR}
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
@@ -253,8 +256,8 @@ Start it:
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable --now chamber-ci-webhook
-sudo systemctl status chamber-ci-webhook
+sudo systemctl enable --now github_ci
+sudo systemctl status github_ci
 ```
 
 ## GitHub Webhook Setup
@@ -264,7 +267,7 @@ In the GitHub repository:
 1. Go to Settings -> Webhooks -> Add webhook.
 2. Payload URL: `http://<vm-public-ip>:8080/github/webhook`.
 3. Content type: `application/json`.
-4. Secret: the exact value from `CHAMBER_CI_WEBHOOK_SECRET`.
+4. Secret: the exact value from `CHAMBER_CI_GITHUB_TOKEN`.
 5. Events: select only `push`.
 6. Active: enabled.
 
@@ -346,14 +349,14 @@ Do not run arbitrary git refs as shell text. The worker must treat the payload's
 
 ## Chamber CI Flow
 
-After checkout, run the same logical jobs as `cmd/ci`:
+After checkout, run the same logical jobs as `internal/ci`:
 
 ```text
 pkg:  go test ./pkg/...
 full: go test ./...
 ```
 
-Use the existing Go image default from `cmd/ci`:
+Use the existing Go image default from `internal/ci`:
 
 ```text
 docker.io/library/golang:1.26.4-bookworm
@@ -396,7 +399,7 @@ POST /repos/donglin-wang/chamber/statuses/<sha>
 Context:
 
 ```text
-chamber-ci/oci-a1-arm64
+chamber-ci
 ```
 
 Transitions:
@@ -460,12 +463,12 @@ Do not add macOS compatibility shims for this CI path. If a developer is on
 macOS, they should validate this plan through `limactl shell` into a Linux
 guest.
 
-### 2. Extract `cmd/ci` before adding the webhook binary
+### 2. Keep the reusable runner in `internal/ci`
 
-`cmd/ci/main.go` currently owns flag parsing, config assembly, image pull,
-bundle provisioning, runtime execution, logging, and result aggregation.
+`internal/ci` owns config assembly, image pull, bundle provisioning, runtime
+execution, logging, and result aggregation.
 
-Extract the reusable runner into `internal/ci`:
+The reusable runner shape is:
 
 ```go
 type Config struct {
@@ -497,14 +500,23 @@ type JobResult struct {
 func Run(ctx context.Context, cfg Config) (Result, error)
 ```
 
-Keep `cmd/ci` as a thin CLI wrapper over `internal/ci.Run`.
+The dogfood end-to-end path is an opt-in integration test, not a parameterized
+CLI. It uses:
+
+```text
+root:    /var/tmp/chamber-ci-<uid>
+workdir: repository root
+image:   docker.io/library/golang:1.26.4-bookworm
+timeout: 30m
+keep:    false
+```
 
 ### 3. Add a host preflight before exposing the webhook
 
 The repo has `docs/host-assumption-validator-plan.md`, but no implemented
 validator yet.
 
-For V1, add a small runner-local preflight in `cmd/chamber-ci-webhook`:
+For V1, add a small runner-local preflight in `cmd/github_ci`:
 
 - host is Linux;
 - current user is not root;
@@ -540,8 +552,8 @@ secret-isolation model.
 ## Implementation Order
 
 1. Keep Chamber CI validation Linux-only; use Lima from macOS.
-2. Extract `internal/ci` from `cmd/ci/main.go`; keep `cmd/ci` behavior the same.
-3. Add `cmd/chamber-ci-webhook` with config loading, health endpoint, and
+2. Keep `internal/ci` as the reusable runner and gate dogfood execution behind `CHAMBER_INTEGRATION=1`.
+3. Add `cmd/github_ci` with config loading, health endpoint, and
    signature validation.
 4. Add the in-memory `MAX_PARALLEL` admission gate.
 5. Add checkout logic using `git` through `pkg/shared/subprocess`.
@@ -583,12 +595,12 @@ OCI Linux VM checks:
 
 ```sh
 GOCACHE=/tmp/chamber-go-cache go test ./pkg/... ./cmd/...
-GOCACHE=/tmp/chamber-go-cache go run ./cmd/ci -workdir /opt/chamber-ci/src -root /var/lib/chamber-ci/chamber-root
+CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./internal/ci -run TestRunDogfoodIntegration
 ```
 
 End-to-end checks:
 
-1. Start `chamber-ci-webhook` under systemd.
+1. Start `github_ci` under systemd.
 2. Confirm `GET http://<vm-public-ip>:8080/healthz` returns `200`.
 3. Send GitHub's webhook redelivery from the repository settings page.
 4. Confirm the receiver returns `202 Accepted`.
@@ -609,9 +621,9 @@ End-to-end checks:
   available.
 - The worker checks out the exact `after` SHA and refuses to run if HEAD differs.
 - The worker runs the Chamber CI jobs inside Chamber-launched containers.
-- The GitHub commit receives a `chamber-ci/oci-a1-arm64` status.
+- The GitHub commit receives a `chamber-ci` status.
 - All mutable state stays under `/var/lib/chamber-ci`.
-- The webhook secret is required and verified before payload parsing is trusted.
+- `CHAMBER_CI_GITHUB_TOKEN` is required and verified before payload parsing is trusted.
 - The plan treats Chamber as Linux-only; macOS validation goes through Lima.
 
 ## Future Milestones
