@@ -25,10 +25,10 @@ const preflightImage = "docker.io/library/busybox:1.36.1"
 
 func runPreflight(ctx context.Context, cfg config) error {
 	if goruntime.GOOS != "linux" {
-		return fmt.Errorf("github_ci requires Linux; current GOOS is %q", goruntime.GOOS)
+		return fmt.Errorf("github-ci requires Linux; current GOOS is %q", goruntime.GOOS)
 	}
 	if os.Geteuid() == 0 {
-		return fmt.Errorf("github_ci must run as an unprivileged user")
+		return fmt.Errorf("github-ci must run as an unprivileged user")
 	}
 	current, err := user.Current()
 	if err != nil {

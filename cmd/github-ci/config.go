@@ -86,7 +86,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		SkipPreflight:       envBool("CHAMBER_CI_SKIP_PREFLIGHT", false),
 	}
 
-	flags := flag.NewFlagSet("github_ci", flag.ContinueOnError)
+	flags := flag.NewFlagSet("github-ci", flag.ContinueOnError)
 	flags.StringVar(&cfg.Addr, "addr", cfg.Addr, "HTTP listen address")
 	flags.StringVar(&cfg.StatusTargetBaseURL, "status-target-base-url", cfg.StatusTargetBaseURL, "base URL for GitHub commit status target links")
 	flags.StringVar(&cfg.Root, "root", cfg.Root, "root directory for all GitHub CI mutable state")

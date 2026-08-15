@@ -74,7 +74,7 @@ Sources checked while writing this plan:
 Add one new binary:
 
 ```text
-cmd/github_ci
+cmd/github-ci
 ```
 
 Keep reusable CI runner code in:
@@ -120,7 +120,7 @@ Use these paths:
 
 ```text
 /opt/chamber-ci/src                 # deployed source checkout for the receiver binary
-/usr/local/bin/github_ci            # built webhook receiver
+/usr/local/bin/github-ci            # built webhook receiver
 /etc/chamber-ci/webhook.env         # secrets and config
 /var/lib/chamber-ci                 # all mutable CI state
 /var/log/chamber-ci                 # systemd-accessible service logs if needed
@@ -189,10 +189,10 @@ sudo -iu chamberci
 cd /opt/chamber-ci
 git clone https://github.com/donglin-wang/chamber.git src
 cd src
-GOCACHE=/var/lib/chamber-ci/go-build-host /usr/local/go/bin/go build -o /tmp/github_ci ./cmd/github_ci
+GOCACHE=/var/lib/chamber-ci/go-build-host /usr/local/go/bin/go build -o /tmp/github-ci ./cmd/github-ci
 exit
 
-sudo install -o root -g root -m 0755 /tmp/github_ci /usr/local/bin/github_ci
+sudo install -o root -g root -m 0755 /tmp/github-ci /usr/local/bin/github-ci
 ```
 
 ## Receiver Configuration
@@ -226,7 +226,7 @@ Bearer token for commit status writes.
 
 ## Systemd Service
 
-Create `/etc/systemd/system/github_ci.service`:
+Create `/etc/systemd/system/github-ci.service`:
 
 ```ini
 [Unit]
@@ -239,7 +239,7 @@ User=chamberci
 Group=chamberci
 WorkingDirectory=/var/lib/chamber-ci
 EnvironmentFile=/etc/chamber-ci/webhook.env
-ExecStart=/usr/local/bin/github_ci -addr ${CHAMBER_CI_ADDR}
+ExecStart=/usr/local/bin/github-ci -addr ${CHAMBER_CI_ADDR}
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
@@ -256,8 +256,8 @@ Start it:
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable --now github_ci
-sudo systemctl status github_ci
+sudo systemctl enable --now github-ci
+sudo systemctl status github-ci
 ```
 
 ## GitHub Webhook Setup
@@ -516,7 +516,7 @@ keep:    false
 The repo has `docs/host-assumption-validator-plan.md`, but no implemented
 validator yet.
 
-For V1, add a small runner-local preflight in `cmd/github_ci`:
+For V1, add a small runner-local preflight in `cmd/github-ci`:
 
 - host is Linux;
 - current user is not root;
@@ -553,7 +553,7 @@ secret-isolation model.
 
 1. Keep Chamber CI validation Linux-only; use Lima from macOS.
 2. Keep `internal/ci` as the reusable runner and gate dogfood execution behind `CHAMBER_INTEGRATION=1`.
-3. Add `cmd/github_ci` with config loading, health endpoint, and
+3. Add `cmd/github-ci` with config loading, health endpoint, and
    signature validation.
 4. Add the in-memory `MAX_PARALLEL` admission gate.
 5. Add checkout logic using `git` through `pkg/shared/subprocess`.
@@ -600,7 +600,7 @@ CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./internal/
 
 End-to-end checks:
 
-1. Start `github_ci` under systemd.
+1. Start `github-ci` under systemd.
 2. Confirm `GET http://<vm-public-ip>:8080/healthz` returns `200`.
 3. Send GitHub's webhook redelivery from the repository settings page.
 4. Confirm the receiver returns `202 Accepted`.

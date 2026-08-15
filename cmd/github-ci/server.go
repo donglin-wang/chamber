@@ -76,31 +76,39 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleWebhook(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("X-GitHub-Event") != "push" {
+	ctx := r.Context()
+	event := r.Header.Get("X-GitHub-Event")
+	if event != "push" {
+		logging.Info(ctx, "rejected GitHub webhook", "event", event, "reason", "unsupported event")
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported GitHub event"})
 		return
 	}
 	deliveryID := strings.TrimSpace(r.Header.Get("X-GitHub-Delivery"))
 	if deliveryID == "" {
+		logging.Info(ctx, "rejected GitHub webhook", "event", event, "reason", "missing delivery ID")
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing X-GitHub-Delivery"})
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
+		logging.Info(ctx, "rejected GitHub webhook", "event", event, "delivery_id", deliveryID, "reason", "read body", "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "read webhook body"})
 		return
 	}
 	if !validateSignature(s.cfg.GitHubToken, body, r.Header.Get("X-Hub-Signature-256")) {
+		logging.Info(ctx, "rejected GitHub webhook", "event", event, "delivery_id", deliveryID, "reason", "invalid signature")
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid webhook signature"})
 		return
 	}
 
 	var payload pushPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
+		logging.Info(ctx, "rejected GitHub webhook", "event", event, "delivery_id", deliveryID, "content_type", r.Header.Get("Content-Type"), "reason", "invalid payload", "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid webhook payload"})
 		return
 	}
 	if payload.Repository.FullName != s.cfg.Repository {
+		logging.Info(ctx, "rejected GitHub webhook", "event", event, "delivery_id", deliveryID, "repository", payload.Repository.FullName, "reason", "repository not allowed")
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "repository is not allowed"})
 		return
 	}
