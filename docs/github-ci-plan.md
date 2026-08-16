@@ -201,6 +201,7 @@ CHAMBER_CI_STATUS_TARGET_BASE_URL=http://<vm-public-ip>:8080
 CHAMBER_CI_ROOT=/var/lib/chamber-ci
 CHAMBER_CI_REPOSITORY=donglin-wang/chamber
 CHAMBER_CI_GITHUB_TOKEN=<fine-grained-token-with-commit-status-write>
+CHAMBER_CI_GITHUB_WEBHOOK_SECRET=<random-webhook-secret>
 MAX_PARALLEL=1
 CHAMBER_CI_RUN_TIMEOUT=30m
 CHAMBER_CI_RETENTION=168h
@@ -217,8 +218,9 @@ sudo chmod 0640 /etc/chamber-ci/webhook.env
 for the clickable `target_url` on GitHub commit statuses. It points back to this
 receiver, not to GitHub.
 
-`CHAMBER_CI_GITHUB_TOKEN` is used both as the GitHub webhook secret and as the
-Bearer token for commit status writes.
+`CHAMBER_CI_GITHUB_TOKEN` is the Bearer token for commit status writes.
+`CHAMBER_CI_GITHUB_WEBHOOK_SECRET` is the separate HMAC secret used to verify
+incoming GitHub webhook signatures.
 
 ## Systemd Service
 
@@ -263,7 +265,7 @@ In the GitHub repository:
 1. Go to Settings -> Webhooks -> Add webhook.
 2. Payload URL: `http://<vm-public-ip>:8080/github/webhook`.
 3. Content type: `application/json`.
-4. Secret: the exact value from `CHAMBER_CI_GITHUB_TOKEN`.
+4. Secret: the exact value from `CHAMBER_CI_GITHUB_WEBHOOK_SECRET`.
 5. Events: select only `push`.
 6. Active: enabled.
 
@@ -603,7 +605,7 @@ End-to-end checks:
 - The worker runs the Chamber CI jobs inside Chamber-launched containers.
 - The GitHub commit receives a `chamber-ci` status.
 - All mutable state stays under `/var/lib/chamber-ci`.
-- `CHAMBER_CI_GITHUB_TOKEN` is required and verified before payload parsing is trusted.
+- `CHAMBER_CI_GITHUB_WEBHOOK_SECRET` is required and verified before payload parsing is trusted.
 - The plan treats Chamber as Linux-only; macOS validation goes through Lima.
 
 ## Future Milestones

@@ -24,6 +24,7 @@ type config struct {
 	Root                string
 	Repository          string
 	GitHubToken         string
+	GitHubWebhookSecret string
 	MaxParallel         int
 	RunTimeout          time.Duration
 	Retention           time.Duration
@@ -80,6 +81,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		Root:                envString("CHAMBER_CI_ROOT", defaultRoot),
 		Repository:          envString("CHAMBER_CI_REPOSITORY", defaultRepository),
 		GitHubToken:         getenv("CHAMBER_CI_GITHUB_TOKEN"),
+		GitHubWebhookSecret: getenv("CHAMBER_CI_GITHUB_WEBHOOK_SECRET"),
 		MaxParallel:         envInt("MAX_PARALLEL", defaultMaxParallel),
 		RunTimeout:          envDuration("CHAMBER_CI_RUN_TIMEOUT", defaultRunTimeout),
 		Retention:           envDuration("CHAMBER_CI_RETENTION", defaultRetention),
@@ -91,7 +93,8 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	flags.StringVar(&cfg.StatusTargetBaseURL, "status-target-base-url", cfg.StatusTargetBaseURL, "base URL for GitHub commit status target links")
 	flags.StringVar(&cfg.Root, "root", cfg.Root, "root directory for all GitHub CI mutable state")
 	flags.StringVar(&cfg.Repository, "repository", cfg.Repository, "allowed GitHub repository full name")
-	flags.StringVar(&cfg.GitHubToken, "github-token", cfg.GitHubToken, "GitHub token used for webhook verification and commit statuses")
+	flags.StringVar(&cfg.GitHubToken, "github-token", cfg.GitHubToken, "GitHub token used for commit status writes")
+	flags.StringVar(&cfg.GitHubWebhookSecret, "github-webhook-secret", cfg.GitHubWebhookSecret, "GitHub webhook secret used for signature verification")
 	flags.IntVar(&cfg.MaxParallel, "max-parallel", cfg.MaxParallel, "maximum admitted CI runs in this process")
 	flags.DurationVar(&cfg.RunTimeout, "run-timeout", cfg.RunTimeout, "timeout for one CI run")
 	flags.DurationVar(&cfg.Retention, "retention", cfg.Retention, "duration to keep run directories")
@@ -108,10 +111,11 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 
 func (cfg config) validate() error {
 	for label, value := range map[string]string{
-		"addr":         cfg.Addr,
-		"root":         cfg.Root,
-		"repository":   cfg.Repository,
-		"GitHub token": cfg.GitHubToken,
+		"addr":                  cfg.Addr,
+		"root":                  cfg.Root,
+		"repository":            cfg.Repository,
+		"GitHub token":          cfg.GitHubToken,
+		"GitHub webhook secret": cfg.GitHubWebhookSecret,
 	} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s is required", label)

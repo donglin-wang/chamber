@@ -21,7 +21,7 @@ func TestWebhookRejectsNonPushEvents(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/github/webhook", bytes.NewReader(body))
 	request.Header.Set("X-GitHub-Event", "pull_request")
 	request.Header.Set("X-GitHub-Delivery", "delivery-1")
-	request.Header.Set("X-Hub-Signature-256", signedBody(server.cfg.GitHubToken, body))
+	request.Header.Set("X-Hub-Signature-256", signedBody(server.cfg.GitHubWebhookSecret, body))
 
 	recorder := httptest.NewRecorder()
 	server.routes().ServeHTTP(recorder, request)
@@ -37,6 +37,22 @@ func TestWebhookRejectsWrongRepository(t *testing.T) {
 
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
+	}
+}
+
+func TestWebhookRejectsSignatureMadeWithGitHubToken(t *testing.T) {
+	server := testServer(t)
+	body := []byte(pushPayloadJSON(server.cfg.Repository, false, testSHA()))
+	request := httptest.NewRequest(http.MethodPost, "/github/webhook", bytes.NewReader(body))
+	request.Header.Set("X-GitHub-Event", "push")
+	request.Header.Set("X-GitHub-Delivery", "delivery-1")
+	request.Header.Set("X-Hub-Signature-256", signedBody(server.cfg.GitHubToken, body))
+
+	recorder := httptest.NewRecorder()
+	server.routes().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
 	}
 }
 
@@ -139,12 +155,13 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 func testServer(t *testing.T) *server {
 	t.Helper()
 	cfg := config{
-		Root:        t.TempDir(),
-		Repository:  "donglin-wang/chamber",
-		GitHubToken: "secret",
-		MaxParallel: 1,
-		RunTimeout:  time.Minute,
-		Retention:   time.Hour,
+		Root:                t.TempDir(),
+		Repository:          "donglin-wang/chamber",
+		GitHubToken:         "status-token",
+		GitHubWebhookSecret: "webhook-secret",
+		MaxParallel:         1,
+		RunTimeout:          time.Minute,
+		Retention:           time.Hour,
 	}
 	server := newWebhookServer(cfg)
 	server.now = func() time.Time {
@@ -166,7 +183,7 @@ func postWebhook(t *testing.T, server *server, payload string) *httptest.Respons
 	request := httptest.NewRequest(http.MethodPost, "/github/webhook", bytes.NewReader(body))
 	request.Header.Set("X-GitHub-Event", "push")
 	request.Header.Set("X-GitHub-Delivery", "delivery-1")
-	request.Header.Set("X-Hub-Signature-256", signedBody(server.cfg.GitHubToken, body))
+	request.Header.Set("X-Hub-Signature-256", signedBody(server.cfg.GitHubWebhookSecret, body))
 	recorder := httptest.NewRecorder()
 	server.routes().ServeHTTP(recorder, request)
 	return recorder

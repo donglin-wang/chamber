@@ -94,7 +94,7 @@ func (s *server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "read webhook body"})
 		return
 	}
-	if !validateSignature(s.cfg.GitHubToken, body, r.Header.Get("X-Hub-Signature-256")) {
+	if !validateSignature(s.cfg.GitHubWebhookSecret, body, r.Header.Get("X-Hub-Signature-256")) {
 		logging.Info(ctx, "rejected GitHub webhook", "event", event, "delivery_id", deliveryID, "reason", "invalid signature")
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid webhook signature"})
 		return
