@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -127,6 +128,12 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 		return nil
 	}
 	server.runCI = func(ctx context.Context, cfg ciConfig) (int, error) {
+		for _, writer := range cfg.Stdout {
+			_, _ = writer.Write([]byte("go test stdout\n"))
+		}
+		for _, writer := range cfg.Stderr {
+			_, _ = writer.Write([]byte("go test stderr\n"))
+		}
 		close(ran)
 		return 0, nil
 	}
@@ -150,12 +157,44 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 	if statuses.statuses[0].State != statusPending || statuses.statuses[1].State != statusSuccess {
 		t.Fatalf("statuses = %#v, want pending then success", statuses.statuses)
 	}
+	wantTargetURL := "https://ci.example.test/runs/" + admitted.RunID + "/logs"
+	if statuses.statuses[0].TargetURL != wantTargetURL || statuses.statuses[1].TargetURL != wantTargetURL {
+		t.Fatalf("target URLs = %q, %q; want %q", statuses.statuses[0].TargetURL, statuses.statuses[1].TargetURL, wantTargetURL)
+	}
+
+	logRequest := httptest.NewRequest(http.MethodGet, "/runs/"+admitted.RunID+"/logs", nil)
+	logRecorder := httptest.NewRecorder()
+	server.routes().ServeHTTP(logRecorder, logRequest)
+	if logRecorder.Code != http.StatusOK {
+		t.Fatalf("whole log status = %d, want %d", logRecorder.Code, http.StatusOK)
+	}
+	wholeLog := logRecorder.Body.String()
+	for _, want := range []string{
+		"Chamber CI run " + admitted.RunID,
+		"Status: succeeded",
+		"===== ci stdout =====",
+		"go test stdout",
+		"===== ci stderr =====",
+		"go test stderr",
+	} {
+		if !strings.Contains(wholeLog, want) {
+			t.Fatalf("whole log missing %q:\n%s", want, wholeLog)
+		}
+	}
+
+	stdoutRequest := httptest.NewRequest(http.MethodGet, "/runs/"+admitted.RunID+"/logs/ci/stdout", nil)
+	stdoutRecorder := httptest.NewRecorder()
+	server.routes().ServeHTTP(stdoutRecorder, stdoutRequest)
+	if stdoutRecorder.Code != http.StatusOK || stdoutRecorder.Body.String() != "go test stdout\n" {
+		t.Fatalf("stdout log status/body = %d/%q, want 200/go test stdout", stdoutRecorder.Code, stdoutRecorder.Body.String())
+	}
 }
 
 func testServer(t *testing.T) *server {
 	t.Helper()
 	cfg := config{
 		Root:                t.TempDir(),
+		StatusTargetBaseURL: "https://ci.example.test",
 		Repository:          "donglin-wang/chamber",
 		GitHubToken:         "status-token",
 		GitHubWebhookSecret: "webhook-secret",

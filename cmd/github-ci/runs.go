@@ -16,6 +16,8 @@ const (
 	runStatusSucceeded runStatus = "succeeded"
 	runStatusFailed    runStatus = "failed"
 	runStatusErrored   runStatus = "errored"
+
+	runLogJobCI = "ci"
 )
 
 type runRecord struct {

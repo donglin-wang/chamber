@@ -57,6 +57,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("POST /github/webhook", s.handleWebhook)
 	mux.HandleFunc("GET /runs/{runID}", s.handleRun)
+	mux.HandleFunc("GET /runs/{runID}/logs", s.handleRunLog)
 	mux.HandleFunc("GET /runs/{runID}/logs/{job}/{stream}", s.handleLog)
 	return mux
 }
@@ -142,7 +143,7 @@ func (s *server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		Repository: payload.Repository.FullName,
 		Status:     runStatusRunning,
 		StartedAt:  s.now().UTC(),
-		Logs:       map[string]string{},
+		Logs:       runLogLinks(runID),
 	}
 	if err := writeRunRecord(s.cfg.Root, record); err != nil {
 		s.releaseRunSlot()
@@ -187,6 +188,45 @@ func (s *server) runCIForPush(parent context.Context, record runRecord, dirs run
 	defer cancel()
 	s.reportGitHubCommitStatus(ctx, record, runStatusRunning)
 
+	stdoutPath, err := runLogPath(s.cfg.Root, record.RunID, runLogJobCI, "stdout")
+	if err != nil {
+		record.Status = runStatusErrored
+		record.Error = err.Error()
+		s.completeRun(ctx, record)
+		return
+	}
+	stderrPath, err := runLogPath(s.cfg.Root, record.RunID, runLogJobCI, "stderr")
+	if err != nil {
+		record.Status = runStatusErrored
+		record.Error = err.Error()
+		s.completeRun(ctx, record)
+		return
+	}
+	stdout, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		record.Status = runStatusErrored
+		record.Error = fmt.Errorf("open stdout log: %w", err).Error()
+		s.completeRun(ctx, record)
+		return
+	}
+	defer func() {
+		if err := stdout.Close(); err != nil {
+			logging.Error(ctx, "close CI stdout log failed", "run_id", record.RunID, "error", err)
+		}
+	}()
+	stderr, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		record.Status = runStatusErrored
+		record.Error = fmt.Errorf("open stderr log: %w", err).Error()
+		s.completeRun(ctx, record)
+		return
+	}
+	defer func() {
+		if err := stderr.Close(); err != nil {
+			logging.Error(ctx, "close CI stderr log failed", "run_id", record.RunID, "error", err)
+		}
+	}()
+
 	gitRemote := "https://github.com/" + s.cfg.Repository + ".git"
 	if err := s.checkout(ctx, dirs.checkout, gitRemote, record.SHA); err != nil {
 		record.Status = runStatusErrored
@@ -200,6 +240,8 @@ func (s *server) runCIForPush(parent context.Context, record runRecord, dirs run
 		Image:   defaultCIImage,
 		Timeout: s.cfg.RunTimeout,
 		Keep:    false,
+		Stdout:  []io.Writer{stdout},
+		Stderr:  []io.Writer{stderr},
 	})
 	if err != nil {
 		record.Status = runStatusErrored
@@ -235,7 +277,7 @@ func (s *server) reportGitHubCommitStatus(ctx context.Context, record runRecord,
 	payload := githubStatusForOutcome(status)
 	payload.Context = githubStatusContext
 	if s.cfg.StatusTargetBaseURL != "" {
-		payload.TargetURL = s.cfg.StatusTargetBaseURL + "/runs/" + record.RunID
+		payload.TargetURL = s.cfg.StatusTargetBaseURL + "/runs/" + record.RunID + "/logs"
 	}
 	statusCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -258,6 +300,39 @@ func (s *server) handleRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, record)
 }
 
+func (s *server) handleRunLog(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("runID")
+	record, err := readRunRecord(s.cfg.Root, runID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if os.IsNotExist(err) || strings.Contains(err.Error(), "invalid run ID") {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": "run not found"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, "Chamber CI run %s\n", record.RunID)
+	_, _ = fmt.Fprintf(w, "Repository: %s\n", record.Repository)
+	_, _ = fmt.Fprintf(w, "Ref: %s\n", record.Ref)
+	_, _ = fmt.Fprintf(w, "SHA: %s\n", record.SHA)
+	_, _ = fmt.Fprintf(w, "Status: %s\n", record.Status)
+	_, _ = fmt.Fprintf(w, "Started: %s\n", record.StartedAt.Format(time.RFC3339))
+	if record.CompletedAt != nil {
+		_, _ = fmt.Fprintf(w, "Completed: %s\n", record.CompletedAt.Format(time.RFC3339))
+	}
+	if record.ExitCode != 0 {
+		_, _ = fmt.Fprintf(w, "Exit code: %d\n", record.ExitCode)
+	}
+	if record.Error != "" {
+		_, _ = fmt.Fprintf(w, "Error: %s\n", record.Error)
+	}
+	writeJobLog(w, s.cfg.Root, runID, runLogJobCI, "stdout")
+	writeJobLog(w, s.cfg.Root, runID, runLogJobCI, "stderr")
+}
+
 func (s *server) handleLog(w http.ResponseWriter, r *http.Request) {
 	path, err := runLogPath(s.cfg.Root, r.PathValue("runID"), r.PathValue("job"), r.PathValue("stream"))
 	if err != nil {
@@ -276,6 +351,40 @@ func (s *server) handleLog(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+func runLogLinks(runID string) map[string]string {
+	return map[string]string{
+		"run":       "/runs/" + runID + "/logs",
+		"ci.stdout": "/runs/" + runID + "/logs/" + runLogJobCI + "/stdout",
+		"ci.stderr": "/runs/" + runID + "/logs/" + runLogJobCI + "/stderr",
+	}
+}
+
+func writeJobLog(w io.Writer, root string, runID string, job string, stream string) {
+	_, _ = fmt.Fprintf(w, "\n===== %s %s =====\n", job, stream)
+	path, err := runLogPath(root, runID, job, stream)
+	if err != nil {
+		_, _ = fmt.Fprintf(w, "log unavailable: %v\n", err)
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			_, _ = fmt.Fprintln(w, "log not written yet")
+			return
+		}
+		_, _ = fmt.Fprintf(w, "log unavailable: %v\n", err)
+		return
+	}
+	if len(data) == 0 {
+		_, _ = fmt.Fprintln(w, "log is empty")
+		return
+	}
+	_, _ = w.Write(data)
+	if data[len(data)-1] != '\n' {
+		_, _ = fmt.Fprintln(w)
+	}
 }
 
 func (s *server) tryAcquireRunSlot() bool {

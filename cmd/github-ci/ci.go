@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +40,8 @@ type ciConfig struct {
 	Image   string
 	Timeout time.Duration
 	Keep    bool
+	Stdout  []io.Writer
+	Stderr  []io.Writer
 }
 
 func runCI(ctx context.Context, cfg ciConfig) (int, error) {
@@ -164,7 +167,11 @@ func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 		}()
 	}
 
-	container, err := runtime.Run(ctx, chamberRuntime.RunRequest{Bundle: provisioned})
+	container, err := runtime.Run(ctx, chamberRuntime.RunRequest{
+		Bundle: provisioned,
+		Stdout: cfg.Stdout,
+		Stderr: cfg.Stderr,
+	})
 	if err != nil {
 		return 1, fmt.Errorf("run CI container: %w", err)
 	}
