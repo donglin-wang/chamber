@@ -108,4 +108,9 @@ type Provisioner interface {
 	// unpacking, spec generation or patching, temporary staging, and the atomic
 	// move into the final bundle directory.
 	Provision(ctx context.Context, request ProvisionRequest) (ProvisionedBundle, error)
+
+	// Remove deletes a provisioned bundle and any runtime-mutated rootfs
+	// contents owned by this provisioner. Missing bundles are treated as already
+	// removed.
+	Remove(ctx context.Context, bundle ProvisionedBundle) error
 }

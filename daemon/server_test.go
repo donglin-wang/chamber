@@ -386,6 +386,10 @@ func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundle.Pr
 	}, nil
 }
 
+func (p fakeProvisioner) Remove(ctx context.Context, bundle chamberBundle.ProvisionedBundle) error {
+	return ctx.Err()
+}
+
 type fakeRuntime struct {
 	err error
 }

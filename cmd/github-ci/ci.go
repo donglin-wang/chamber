@@ -22,7 +22,7 @@ import (
 
 const defaultCIImage = "docker.io/library/golang:1.26.4-bookworm"
 
-var testCommand = []string{"go", "test", "-modcacherw", "./..."}
+var testCommand = []string{"go", "test", "./..."}
 
 type ciConfig struct {
 	Root    string
@@ -150,7 +150,7 @@ func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 	}
 	if !cfg.Keep {
 		defer func() {
-			if err := os.RemoveAll(provisioned.BundlePath); err != nil {
+			if err := provisioner.Remove(context.Background(), provisioned); err != nil {
 				logging.Error(ctx, "remove CI bundle failed", "bundle", provisioned.BundlePath, "error", err)
 			}
 		}()

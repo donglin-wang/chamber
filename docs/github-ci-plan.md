@@ -345,7 +345,7 @@ Do not run arbitrary git refs as shell text. The worker must treat the payload's
 After checkout, run the Chamber dogfood test command:
 
 ```text
-go test -modcacherw ./...
+go test ./...
 ```
 
 Use the fixed Go image default from `cmd/github-ci`:

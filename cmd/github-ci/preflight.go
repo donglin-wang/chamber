@@ -19,6 +19,7 @@ import (
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
+	"github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
 const preflightImage = "docker.io/library/busybox:1.36.1"
@@ -170,7 +171,11 @@ func runTinyContainerPreflight(ctx context.Context, cfg config) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(provisioned.BundlePath)
+	defer func() {
+		if err := provisioner.Remove(context.Background(), provisioned); err != nil {
+			logging.Error(ctx, "remove preflight bundle failed", "bundle", provisioned.BundlePath, "error", err)
+		}
+	}()
 	container, err := runtime.Run(ctx, chamberRuntime.RunRequest{Bundle: provisioned})
 	if err != nil {
 		return err
