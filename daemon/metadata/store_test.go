@@ -87,15 +87,16 @@ func TestStoreContract(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			t.Cleanup(cancel)
-			dataDir, err := os.MkdirTemp("/tmp", "chamber-etcd-*")
+			testRoot, err := os.MkdirTemp(".", ".chamber-etcd-*")
 			if err != nil {
 				t.Fatalf("MkdirTemp() error = %v", err)
 			}
-			t.Cleanup(func() { _ = os.RemoveAll(dataDir) })
+			t.Cleanup(func() { _ = os.RemoveAll(testRoot) })
 
+			dataDir := filepath.Join(testRoot, "data")
 			store, err := metadataetcd.Open(ctx, metadata.Config{
 				Root: dataDir,
-			}, newTestWorkspace(t, dataDir))
+			}, newTestWorkspace(t, dataDir, filepath.Join(testRoot, "tmp")))
 			if err != nil {
 				t.Fatalf("Open() error = %v", err)
 			}
@@ -121,11 +122,11 @@ func TestStoreContract(t *testing.T) {
 	}
 }
 
-func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
+func newTestWorkspace(t *testing.T, root string, tmpRoot string) *hostfs.Workspace {
 	t.Helper()
 	workspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    root,
-		TmpRoot: filepath.Join(t.TempDir(), "tmp"),
+		TmpRoot: tmpRoot,
 		Requirements: hostfs.FeatureSet{
 			PrivateDirs:      true,
 			FileFsync:        true,

@@ -4,15 +4,20 @@
 package directory
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
+	"time"
 
 	securejoin "github.com/cyphar/filepath-securejoin"
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
@@ -167,6 +172,174 @@ func (p *Provisioner) Provision(
 		"bundle_path", provisioned.BundlePath,
 	)
 	return provisioned, nil
+}
+
+func (p *Provisioner) Remove(ctx context.Context, bundle chamberBundle.ProvisionedBundle) error {
+	if ctx == nil {
+		return fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: bundle removal canceled before start: %w", chamberErrors.ErrCanceled, err)
+	}
+	if p == nil {
+		return fmt.Errorf("%w: bundle provisioner is required", chamberErrors.ErrInvalidRequest)
+	}
+	if strings.TrimSpace(p.config.Root) == "" {
+		return fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
+	}
+	if err := containerid.Validate(bundle.ContainerID); err != nil {
+		return err
+	}
+	bundlePath := filepath.Join(p.config.Root, bundle.ContainerID)
+	if strings.TrimSpace(bundle.BundlePath) != "" {
+		expected, err := filepath.Abs(bundlePath)
+		if err != nil {
+			return fmt.Errorf("%w: resolve bundle path: %w", chamberErrors.ErrInvalidRequest, err)
+		}
+		actual, err := filepath.Abs(bundle.BundlePath)
+		if err != nil {
+			return fmt.Errorf("%w: resolve provisioned bundle path: %w", chamberErrors.ErrInvalidRequest, err)
+		}
+		if filepath.Clean(actual) != filepath.Clean(expected) {
+			return fmt.Errorf("%w: provisioned bundle path %q is not owned by bundle root %q", chamberErrors.ErrInvalidRequest, bundle.BundlePath, p.config.Root)
+		}
+	}
+
+	chamberLogging.InfoWith(p.logger, ctx, "removing bundle",
+		"container_id", bundle.ContainerID,
+		"bundle_path", bundlePath,
+	)
+	if err := removeRuntimeMutatedBundle(ctx, bundlePath); err != nil {
+		return err
+	}
+	chamberLogging.InfoWith(p.logger, ctx, "removed bundle",
+		"container_id", bundle.ContainerID,
+		"bundle_path", bundlePath,
+	)
+	return nil
+}
+
+func removeRuntimeMutatedBundle(ctx context.Context, dir string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: bundle removal canceled: %w", chamberErrors.ErrCanceled, err)
+	}
+	if err := os.RemoveAll(dir); err == nil {
+		return nil
+	}
+
+	_ = unmountNestedMounts(dir)
+	notExistErr := map[string]bool{}
+	busyRetries := map[string]int{}
+	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("%w: bundle removal canceled: %w", chamberErrors.ErrCanceled, err)
+		}
+		err := os.RemoveAll(dir)
+		if err == nil {
+			return nil
+		}
+		if os.IsPermission(err) {
+			if chmodErr := makeBundleDirectoriesWritable(dir); chmodErr != nil {
+				return fmt.Errorf("%w: make bundle removable %q: %w", chamberErrors.ErrFilesystemFailed, dir, chmodErr)
+			}
+			err = os.RemoveAll(dir)
+			if err == nil {
+				return nil
+			}
+		}
+
+		pathErr, ok := err.(*os.PathError)
+		if !ok {
+			return fmt.Errorf("%w: remove bundle %q: %w", chamberErrors.ErrFilesystemFailed, dir, err)
+		}
+		if os.IsNotExist(err) {
+			if notExistErr[pathErr.Path] {
+				return fmt.Errorf("%w: remove bundle %q: %w", chamberErrors.ErrFilesystemFailed, dir, err)
+			}
+			notExistErr[pathErr.Path] = true
+			if pathErr.Path == dir {
+				return nil
+			}
+			continue
+		}
+		if !errors.Is(pathErr.Err, syscall.EBUSY) {
+			return fmt.Errorf("%w: remove bundle %q: %w", chamberErrors.ErrFilesystemFailed, dir, err)
+		}
+		if unmountErr := syscall.Unmount(pathErr.Path, syscall.MNT_DETACH); unmountErr != nil && !errors.Is(unmountErr, syscall.EINVAL) && !errors.Is(unmountErr, syscall.ENOENT) {
+			return fmt.Errorf("%w: unmount busy bundle path %q: %w", chamberErrors.ErrFilesystemFailed, pathErr.Path, unmountErr)
+		}
+		if busyRetries[pathErr.Path] == 50 {
+			return fmt.Errorf("%w: remove bundle %q: %w", chamberErrors.ErrFilesystemFailed, dir, err)
+		}
+		busyRetries[pathErr.Path]++
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func unmountNestedMounts(root string) error {
+	file, err := os.Open("/proc/self/mountinfo")
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	root = filepath.Clean(root)
+	mounts := []string{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 5 {
+			continue
+		}
+		mountPoint := unescapeMountInfoPath(fields[4])
+		if pathIsWithin(root, mountPoint) {
+			mounts = append(mounts, mountPoint)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	slices.SortFunc(mounts, func(a string, b string) int {
+		return len(b) - len(a)
+	})
+	for _, mountPoint := range mounts {
+		err := syscall.Unmount(mountPoint, syscall.MNT_DETACH)
+		if err != nil && !errors.Is(err, syscall.EINVAL) && !errors.Is(err, syscall.ENOENT) {
+			return err
+		}
+	}
+	return nil
+}
+
+func makeBundleDirectoriesWritable(root string) error {
+	if err := os.Chmod(root, 0700); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return os.Chmod(path, 0700)
+		}
+		return nil
+	})
+}
+
+func unescapeMountInfoPath(path string) string {
+	path = strings.ReplaceAll(path, `\040`, " ")
+	path = strings.ReplaceAll(path, `\011`, "\t")
+	path = strings.ReplaceAll(path, `\012`, "\n")
+	path = strings.ReplaceAll(path, `\134`, `\`)
+	return path
+}
+
+func pathIsWithin(parent string, child string) bool {
+	relative, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	return relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)))
 }
 
 func imageManifestInLayout(

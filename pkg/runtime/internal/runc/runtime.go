@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
@@ -28,6 +29,8 @@ import (
 const (
 	runtimeName    = chamberRuntime.RuntimeNameRunc
 	defaultVersion = "v1.5.0"
+
+	forcedDeleteWait = 10 * time.Second
 
 	defaultAMD64URL    = "https://github.com/opencontainers/runc/releases/download/v1.5.0/runc.amd64"
 	defaultAMD64SHA256 = "0363e69bebd3a027d1239364ab9b4f4873f6bc4e7a7878e94b4ea59f08551297"
@@ -520,8 +523,32 @@ func (c *runcContainer) StderrPath() string {
 	return c.stderrPath
 }
 
-func (c *runcContainer) Wait() (chamberRuntime.ContainerResult, error) {
-	<-c.done
+func (c *runcContainer) Wait(ctx context.Context) (chamberRuntime.ContainerResult, error) {
+	if ctx == nil {
+		return chamberRuntime.ContainerResult{}, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
+	}
+	if c == nil {
+		return chamberRuntime.ContainerResult{}, fmt.Errorf("%w: runtime container is required", chamberErrors.ErrInvalidRequest)
+	}
+	select {
+	case <-c.done:
+		return c.containerResult()
+	case <-ctx.Done():
+		timeoutErr := fmt.Errorf("%w: runtime wait canceled: %w", chamberErrors.ErrCanceled, ctx.Err())
+		if deleteErr := c.Delete(context.Background(), true); deleteErr != nil && !looksAlreadyDeleted(deleteErr) {
+			return chamberRuntime.ContainerResult{ExitCode: 1}, errors.Join(timeoutErr, fmt.Errorf("force-delete runtime container: %w", deleteErr))
+		}
+		select {
+		case <-c.done:
+			result, waitErr := c.containerResult()
+			return result, errors.Join(timeoutErr, waitErr)
+		case <-time.After(forcedDeleteWait):
+			return chamberRuntime.ContainerResult{ExitCode: 1}, fmt.Errorf("%w: timed out waiting for forced-delete runtime container to exit", timeoutErr)
+		}
+	}
+}
+
+func (c *runcContainer) containerResult() (chamberRuntime.ContainerResult, error) {
 	return chamberRuntime.ContainerResult{
 		ExitCode: c.result.exitCode,
 	}, c.result.err
@@ -645,6 +672,16 @@ func (c *runcContainer) DeleteLog(stream chamberRuntime.LogStream) error {
 		return fmt.Errorf("%w: delete runtime log %q: %w", chamberErrors.ErrRuntimeControlFailed, path, err)
 	}
 	return nil
+}
+
+func looksAlreadyDeleted(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return errors.Is(err, os.ErrNotExist) ||
+		strings.Contains(message, "does not exist") ||
+		strings.Contains(message, "container does not exist")
 }
 
 func (c *runcContainer) logPath(stream chamberRuntime.LogStream) (string, error) {

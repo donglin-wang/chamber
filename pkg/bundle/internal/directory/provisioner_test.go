@@ -117,6 +117,79 @@ func TestProvisionCanonicalizesImageRefBeforeUnpack(t *testing.T) {
 	}
 }
 
+func TestRemoveTreatsMissingBundleAsRemoved(t *testing.T) {
+	root := filepath.Join(privateTempDir(t), "bundles")
+	provisioner, err := New(chamberBundle.Config{
+		Root: root,
+	}, newTestWorkspace(t, root))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	bundlePath := filepath.Join(root, "container-1")
+	err = provisioner.Remove(context.Background(), chamberBundle.ProvisionedBundle{
+		ContainerID: "container-1",
+		BundlePath:  bundlePath,
+	})
+	if err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+}
+
+func TestRemoveDeletesRuntimeMutatedReadOnlyBundle(t *testing.T) {
+	root := filepath.Join(privateTempDir(t), "bundles")
+	provisioner, err := New(chamberBundle.Config{
+		Root: root,
+	}, newTestWorkspace(t, root))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	bundlePath := filepath.Join(root, "container-1")
+	moduleDir := filepath.Join(bundlePath, "rootfs", "go", "pkg", "mod", "go.yaml.in", "yaml", "v2@v2.4.3")
+	if err := os.MkdirAll(moduleDir, 0700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "yamlh.go"), []byte("package yaml"), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.Chmod(moduleDir, 0555); err != nil {
+		t.Fatalf("Chmod() error = %v", err)
+	}
+
+	err = provisioner.Remove(context.Background(), chamberBundle.ProvisionedBundle{
+		ContainerID: "container-1",
+		BundlePath:  bundlePath,
+	})
+	if err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	if _, err := os.Stat(bundlePath); !os.IsNotExist(err) {
+		t.Fatalf("Stat() error = %v, want bundle removed", err)
+	}
+}
+
+func TestRemoveRejectsBundleOutsideProvisionerRoot(t *testing.T) {
+	root := filepath.Join(privateTempDir(t), "bundles")
+	provisioner, err := New(chamberBundle.Config{
+		Root: root,
+	}, newTestWorkspace(t, root))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	err = provisioner.Remove(context.Background(), chamberBundle.ProvisionedBundle{
+		ContainerID: "container-1",
+		BundlePath:  filepath.Join(t.TempDir(), "container-1"),
+	})
+	if err == nil {
+		t.Fatal("Remove() error = nil, want root ownership error")
+	}
+	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("Remove() error = %v, want invalid request code", err)
+	}
+}
+
 func TestSetupRootlessRuntimeSpec(t *testing.T) {
 	resources := &specs.LinuxResources{}
 	spec := &specs.Spec{

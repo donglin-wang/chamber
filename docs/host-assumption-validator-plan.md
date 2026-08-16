@@ -56,6 +56,9 @@ Validator checks:
 
 - `/proc/sys/kernel/unprivileged_userns_clone` when present;
 - `/proc/sys/user/max_user_namespaces` when present;
+- Ubuntu AppArmor user namespace restriction sysctls when present:
+  `/proc/sys/kernel/apparmor_restrict_unprivileged_userns` and
+  `/proc/sys/kernel/apparmor_restrict_unprivileged_unconfined`;
 - `/etc/subuid` and `/etc/subgid` entries for the current user;
 - `newuidmap` and `newgidmap` availability when multiple ID ranges are needed;
 - whether a minimal user namespace probe can map root inside the namespace;
@@ -68,6 +71,15 @@ The minimum viable validator can distinguish:
 - subordinate-ID mode: better default for Dockerfile builds and general OCI
   images;
 - unavailable: Chamber should fail before build/run with a clear diagnostic.
+
+On Ubuntu hosts, AppArmor can deny unprivileged user namespace creation even
+when the generic namespace limits look usable. If either AppArmor restriction
+is enabled for an unconfined Chamber process, rootless BuildKit or runc may
+fail later with `Operation not permitted` during `unshare` or `runc init`. The
+validator should report this as unsupported host policy and suggest either an
+appropriate AppArmor profile for the Chamber entrypoint or an operator-owned
+sysctl change, instead of treating it as an image, bundle, or runtime binary
+problem.
 
 ## BuildKit Builder Assumptions
 
@@ -138,6 +150,10 @@ Validator checks:
 - Chamber can download/install runc into the configured runtime bin directory
   when that path is managed;
 - user namespaces are available for rootless specs;
+- host policy permits the final `runc init` process to unshare the required
+  namespaces; `Operation not permitted` at this stage usually means user
+  namespaces, Ubuntu AppArmor userns restrictions, or another LSM/seccomp
+  policy blocked rootless execution;
 - cgroup mode is compatible with the selected runtime profile;
 - cgroup v2 delegation is available if Chamber intends to set cgroup limits
   rootlessly;

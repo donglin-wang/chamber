@@ -360,7 +360,7 @@ func finishExitedProcess(ctx context.Context, store metadata.Store, operationID 
 		return failedContainer, failedOperation, failErr
 	}
 
-	result, waitErr := runtimeContainer.Wait()
+	result, waitErr := runtimeContainer.Wait(ctx)
 	exitCodePtr := &result.ExitCode
 	code := chamberErrors.Code("")
 	operationState := metadata.OperationSucceeded

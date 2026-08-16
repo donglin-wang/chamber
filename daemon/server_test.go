@@ -386,6 +386,10 @@ func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundle.Pr
 	}, nil
 }
 
+func (p fakeProvisioner) Remove(ctx context.Context, bundle chamberBundle.ProvisionedBundle) error {
+	return ctx.Err()
+}
+
 type fakeRuntime struct {
 	err error
 }
@@ -420,7 +424,7 @@ func (c fakeContainer) StdoutPath() string { return c.stdoutPath }
 
 func (c fakeContainer) StderrPath() string { return c.stderrPath }
 
-func (fakeContainer) Wait() (chamberRuntime.ContainerResult, error) {
+func (fakeContainer) Wait(context.Context) (chamberRuntime.ContainerResult, error) {
 	return chamberRuntime.ContainerResult{}, nil
 }
 

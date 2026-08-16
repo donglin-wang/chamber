@@ -84,8 +84,9 @@ type Container interface {
 	StderrPath() string
 
 	// Wait waits for the container process to exit and releases launch-time
-	// resources owned by Chamber.
-	Wait() (ContainerResult, error)
+	// resources owned by Chamber. If ctx is canceled before the process exits,
+	// the runtime may terminate the container before returning.
+	Wait(ctx context.Context) (ContainerResult, error)
 
 	// State reads the current runtime state for the container.
 	State(ctx context.Context) (ContainerState, error)
