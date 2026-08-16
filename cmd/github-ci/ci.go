@@ -21,8 +21,17 @@ import (
 )
 
 const defaultCIImage = "docker.io/library/golang:1.26.4-bookworm"
+const containerGoCacheRoot = "/chamber-go-cache"
 
 var testCommand = []string{"go", "test", "./..."}
+var testEnvironment = []string{
+	"PATH=/usr/local/go/bin:/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	"HOME=/root",
+	"GOPATH=/go",
+	"GOCACHE=" + containerGoCacheRoot + "/build",
+	"GOMODCACHE=" + containerGoCacheRoot + "/mod",
+	"GOTMPDIR=" + containerGoCacheRoot + "/tmp",
+}
 
 type ciConfig struct {
 	Root    string
@@ -61,6 +70,10 @@ func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 	}
 	if pathContains(workspace, rootParent) {
 		return 1, fmt.Errorf("CI root %q must be outside workspace %q", rootParent, workspace)
+	}
+	goCacheRoot, err := prepareGoCache(rootParent)
+	if err != nil {
+		return 1, err
 	}
 
 	ciWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
@@ -138,11 +151,13 @@ func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 		ImagePlatform: image.Platform,
 		Process: chamberBundle.ProcessSpec{
 			Args:     testCommand,
+			Env:      testEnvironment,
 			Cwd:      "/workspace",
 			Terminal: &terminal,
 		},
 		Mounts: []chamberBundle.Mount{
 			{Source: workspace, Target: "/workspace"},
+			{Source: goCacheRoot, Target: containerGoCacheRoot},
 		},
 	})
 	if err != nil {
@@ -191,6 +206,25 @@ func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 		logging.Error(ctx, "CI failed", "exit_code", result.ExitCode)
 	}
 	return result.ExitCode, nil
+}
+
+func prepareGoCache(root string) (string, error) {
+	goCacheWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    filepath.Join(root, "go-cache"),
+		TmpRoot: filepath.Join(root, "tmp", "go-cache"),
+		Requirements: hostfs.FeatureSet{
+			PrivateDirs: true,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("create Go cache workspace: %w", err)
+	}
+	for _, dir := range []string{"build", "mod", "tmp"} {
+		if _, err := goCacheWorkspace.MkdirPrivate(dir); err != nil {
+			return "", fmt.Errorf("create Go cache directory %q: %w", dir, err)
+		}
+	}
+	return goCacheWorkspace.Root(), nil
 }
 
 func imageStoreConfig(root string) (chamberImage.Config, *hostfs.Workspace, error) {

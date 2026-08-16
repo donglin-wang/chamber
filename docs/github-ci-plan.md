@@ -130,6 +130,9 @@ Mutable runner state:
 /var/lib/chamber-ci/ci/tmp/runs/chamber-ci-*/run/runtime
 /var/lib/chamber-ci/ci/tmp/runs/chamber-ci-*/bin
 /var/lib/chamber-ci/ci/tmp/runs/chamber-ci-*/tmp
+/var/lib/chamber-ci/ci/go-cache/build # container GOCACHE
+/var/lib/chamber-ci/ci/go-cache/mod   # container GOMODCACHE
+/var/lib/chamber-ci/ci/go-cache/tmp   # container GOTMPDIR / go-build work
 /var/lib/chamber-ci/chamber-root          # startup preflight state
 ```
 
@@ -369,6 +372,8 @@ The current CI spine already:
 - creates package-specific `hostfs.Workspace` values;
 - pulls the Go image with `image.Store`;
 - provisions bundles with workspace and Go cache bind mounts;
+- points `GOCACHE`, `GOMODCACHE`, and `GOTMPDIR` at `/chamber-go-cache`
+  inside the container, backed by `/var/lib/chamber-ci/ci/go-cache`;
 - runs containers through runc;
 - reads stdout and stderr logs after completion;
 - deletes runtime containers and logs when `keep=false`.
