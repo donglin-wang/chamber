@@ -1,10 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -23,6 +24,7 @@ type config struct {
 	StatusTargetBaseURL string
 	Root                string
 	Repository          string
+	SecretsFile         string
 	GitHubToken         string
 	GitHubWebhookSecret string
 	MaxParallel         int
@@ -31,61 +33,19 @@ type config struct {
 	SkipPreflight       bool
 }
 
-func parseConfig(args []string, getenv func(string) string) (config, error) {
-	if getenv == nil {
-		getenv = os.Getenv
-	}
-	envString := func(key string, fallback string) string {
-		if value := strings.TrimSpace(getenv(key)); value != "" {
-			return value
-		}
-		return fallback
-	}
-	envInt := func(key string, fallback int) int {
-		value := strings.TrimSpace(getenv(key))
-		if value == "" {
-			return fallback
-		}
-		parsed, err := strconv.Atoi(value)
-		if err != nil {
-			return fallback
-		}
-		return parsed
-	}
-	envDuration := func(key string, fallback time.Duration) time.Duration {
-		value := strings.TrimSpace(getenv(key))
-		if value == "" {
-			return fallback
-		}
-		parsed, err := time.ParseDuration(value)
-		if err != nil {
-			return fallback
-		}
-		return parsed
-	}
-	envBool := func(key string, fallback bool) bool {
-		value := strings.TrimSpace(getenv(key))
-		if value == "" {
-			return fallback
-		}
-		parsed, err := strconv.ParseBool(value)
-		if err != nil {
-			return fallback
-		}
-		return parsed
-	}
+type githubCISecrets struct {
+	GitHubToken         string `json:"github_token"`
+	GitHubWebhookSecret string `json:"github_webhook_secret"`
+}
 
+func parseConfig(args []string) (config, error) {
 	cfg := config{
-		Addr:                envString("CHAMBER_CI_ADDR", defaultAddr),
-		StatusTargetBaseURL: strings.TrimRight(getenv("CHAMBER_CI_STATUS_TARGET_BASE_URL"), "/"),
-		Root:                envString("CHAMBER_CI_ROOT", defaultRoot),
-		Repository:          envString("CHAMBER_CI_REPOSITORY", defaultRepository),
-		GitHubToken:         getenv("CHAMBER_CI_GITHUB_TOKEN"),
-		GitHubWebhookSecret: getenv("CHAMBER_CI_GITHUB_WEBHOOK_SECRET"),
-		MaxParallel:         envInt("MAX_PARALLEL", defaultMaxParallel),
-		RunTimeout:          envDuration("CHAMBER_CI_RUN_TIMEOUT", defaultRunTimeout),
-		Retention:           envDuration("CHAMBER_CI_RETENTION", defaultRetention),
-		SkipPreflight:       envBool("CHAMBER_CI_SKIP_PREFLIGHT", false),
+		Addr:        defaultAddr,
+		Root:        defaultRoot,
+		Repository:  defaultRepository,
+		MaxParallel: defaultMaxParallel,
+		RunTimeout:  defaultRunTimeout,
+		Retention:   defaultRetention,
 	}
 
 	flags := flag.NewFlagSet("github-ci", flag.ContinueOnError)
@@ -93,8 +53,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	flags.StringVar(&cfg.StatusTargetBaseURL, "status-target-base-url", cfg.StatusTargetBaseURL, "base URL for GitHub commit status target links")
 	flags.StringVar(&cfg.Root, "root", cfg.Root, "root directory for all GitHub CI mutable state")
 	flags.StringVar(&cfg.Repository, "repository", cfg.Repository, "allowed GitHub repository full name")
-	flags.StringVar(&cfg.GitHubToken, "github-token", cfg.GitHubToken, "GitHub token used for commit status writes")
-	flags.StringVar(&cfg.GitHubWebhookSecret, "github-webhook-secret", cfg.GitHubWebhookSecret, "GitHub webhook secret used for signature verification")
+	flags.StringVar(&cfg.SecretsFile, "secrets-file", cfg.SecretsFile, "JSON file containing GitHub CI secrets")
 	flags.IntVar(&cfg.MaxParallel, "max-parallel", cfg.MaxParallel, "maximum admitted CI runs in this process")
 	flags.DurationVar(&cfg.RunTimeout, "run-timeout", cfg.RunTimeout, "timeout for one CI run")
 	flags.DurationVar(&cfg.Retention, "retention", cfg.Retention, "duration to keep run directories")
@@ -103,10 +62,37 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		return config{}, err
 	}
 	cfg.StatusTargetBaseURL = strings.TrimRight(cfg.StatusTargetBaseURL, "/")
+	if err := cfg.loadSecrets(); err != nil {
+		return config{}, err
+	}
 	if err := cfg.validate(); err != nil {
 		return config{}, err
 	}
 	return cfg, nil
+}
+
+func (cfg *config) loadSecrets() error {
+	if strings.TrimSpace(cfg.SecretsFile) == "" {
+		return fmt.Errorf("secrets file is required")
+	}
+	file, err := os.Open(cfg.SecretsFile)
+	if err != nil {
+		return fmt.Errorf("open secrets file: %w", err)
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	var secrets githubCISecrets
+	if err := decoder.Decode(&secrets); err != nil {
+		return fmt.Errorf("decode secrets file: %w", err)
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		return fmt.Errorf("decode secrets file: secrets file must contain one JSON object")
+	}
+	cfg.GitHubToken = secrets.GitHubToken
+	cfg.GitHubWebhookSecret = secrets.GitHubWebhookSecret
+	return nil
 }
 
 func (cfg config) validate() error {

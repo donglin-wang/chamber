@@ -11,7 +11,7 @@ import (
 
 func main() {
 	logging.SetLogger(logging.NewJSONLogger(os.Stderr, slog.LevelInfo))
-	cfg, err := parseConfig(os.Args[1:], os.Getenv)
+	cfg, err := parseConfig(os.Args[1:])
 	if err != nil {
 		logging.Error(context.Background(), "invalid webhook configuration", "error", err)
 		os.Exit(1)
