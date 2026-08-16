@@ -109,7 +109,7 @@ func githubStatusForOutcome(outcome runStatus) githubStatus {
 	default:
 		return githubStatus{
 			State:       statusPending,
-			Description: "Chamber CI is running on OCI A1 ARM64",
+			Description: "Chamber CI is running",
 		}
 	}
 }
