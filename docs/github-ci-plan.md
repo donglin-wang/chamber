@@ -130,9 +130,6 @@ Mutable runner state:
 /var/lib/chamber-ci/ci/tmp/runs/chamber-ci-*/run/runtime
 /var/lib/chamber-ci/ci/tmp/runs/chamber-ci-*/bin
 /var/lib/chamber-ci/ci/tmp/runs/chamber-ci-*/tmp
-/var/lib/chamber-ci/ci/go-cache/build # container GOCACHE
-/var/lib/chamber-ci/ci/go-cache/mod   # container GOMODCACHE
-/var/lib/chamber-ci/ci/go-cache/tmp   # container GOTMPDIR / go-build work
 /var/lib/chamber-ci/chamber-root          # startup preflight state
 ```
 
@@ -353,6 +350,18 @@ After checkout, run the Chamber dogfood test command:
 go test ./...
 ```
 
+Before invoking `go test`, the container process creates command-local Go state
+directories under `/go/chamber-ci` and sets:
+
+```text
+GOCACHE=/go/chamber-ci/build
+GOMODCACHE=/go/chamber-ci/mod
+GOTMPDIR=/go/chamber-ci/work
+```
+
+These paths are inside the test container filesystem. They are not host bind
+mounts and do not use `/tmp`.
+
 Use the fixed Go image default from `cmd/github-ci`:
 
 ```text
@@ -373,9 +382,9 @@ The current CI spine already:
 
 - creates package-specific `hostfs.Workspace` values;
 - pulls the Go image with `image.Store`;
-- provisions bundles with workspace and Go cache bind mounts;
-- points `GOCACHE`, `GOMODCACHE`, and `GOTMPDIR` at `/chamber-go-cache`
-  inside the container, backed by `/var/lib/chamber-ci/ci/go-cache`;
+- provisions bundles with the checkout bind-mounted at `/workspace`;
+- leaves Go cache, module cache, and temporary build work inside the test
+  container filesystem;
 - runs containers through runc;
 - reads stdout and stderr logs after completion;
 - deletes runtime containers and logs when `keep=false`.

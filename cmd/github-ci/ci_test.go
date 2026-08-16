@@ -70,39 +70,22 @@ func TestRunRejectsRootInsideWorkspace(t *testing.T) {
 	}
 }
 
-func TestPrepareGoCacheCreatesCacheDirectories(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "ci")
-
-	cacheRoot, err := prepareGoCache(root)
-	if err != nil {
-		t.Fatalf("prepareGoCache() error = %v", err)
-	}
-	if cacheRoot != filepath.Join(root, "go-cache") {
-		t.Fatalf("cache root = %q, want configured root cache", cacheRoot)
-	}
-	for _, dir := range []string{"build", "mod", "tmp"} {
-		path := filepath.Join(cacheRoot, dir)
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatalf("Stat(%q) error = %v", path, err)
-		}
-		if !info.IsDir() {
-			t.Fatalf("%q is not a directory", path)
+func TestGoTestCommandUsesContainerLocalGoState(t *testing.T) {
+	command := strings.Join(testCommand, " ")
+	for _, want := range []string{
+		"GOCACHE=" + containerGoStateRoot + "/build",
+		"GOMODCACHE=" + containerGoStateRoot + "/mod",
+		"GOTMPDIR=" + containerGoStateRoot + "/work",
+		"exec go test ./...",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("testCommand = %q, want %q", command, want)
 		}
 	}
-}
-
-func TestGoTestEnvironmentUsesMountedCache(t *testing.T) {
-	want := map[string]bool{
-		"GOCACHE=" + containerGoCacheRoot + "/build":  true,
-		"GOMODCACHE=" + containerGoCacheRoot + "/mod": true,
-		"GOTMPDIR=" + containerGoCacheRoot + "/tmp":   true,
-	}
-	for _, env := range testEnvironment {
-		delete(want, env)
-	}
-	for env := range want {
-		t.Fatalf("testEnvironment missing %q", env)
+	for _, forbidden := range []string{"/tmp", "/chamber-go-cache"} {
+		if strings.Contains(command, forbidden) {
+			t.Fatalf("testCommand = %q, must not use %q", command, forbidden)
+		}
 	}
 }
 
