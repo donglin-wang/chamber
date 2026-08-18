@@ -52,11 +52,18 @@ func runLogPath(root string, runID string, job string, stream string) (string, e
 	return filepath.Join(root, "runs", runID, "logs", job+"."+stream), nil
 }
 
-func writeRunRecord(root string, record runRecord) error {
-	if !isSafePathComponent(record.RunID) {
-		return fmt.Errorf("invalid run ID %q", record.RunID)
+func runRecordPath(root string, runID string) (string, error) {
+	if !isSafePathComponent(runID) {
+		return "", fmt.Errorf("invalid run ID %q", runID)
 	}
-	path := filepath.Join(root, "runs", record.RunID, "status.json")
+	return filepath.Join(root, "runs", runID, "status.json"), nil
+}
+
+func writeRunRecord(root string, record runRecord) error {
+	path, err := runRecordPath(root, record.RunID)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("create run directory: %w", err)
 	}
@@ -90,10 +97,10 @@ func writeRunRecord(root string, record runRecord) error {
 }
 
 func readRunRecord(root string, runID string) (runRecord, error) {
-	if !isSafePathComponent(runID) {
-		return runRecord{}, fmt.Errorf("invalid run ID %q", runID)
+	path, err := runRecordPath(root, runID)
+	if err != nil {
+		return runRecord{}, err
 	}
-	path := filepath.Join(root, "runs", runID, "status.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return runRecord{}, err

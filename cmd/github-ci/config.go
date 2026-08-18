@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -62,6 +63,9 @@ func parseConfig(args []string) (config, error) {
 		return config{}, err
 	}
 	cfg.StatusTargetBaseURL = strings.TrimRight(cfg.StatusTargetBaseURL, "/")
+	if err := cfg.validatePaths(); err != nil {
+		return config{}, err
+	}
 	if err := cfg.loadSecrets(); err != nil {
 		return config{}, err
 	}
@@ -95,10 +99,27 @@ func (cfg *config) loadSecrets() error {
 	return nil
 }
 
+func (cfg config) validatePaths() error {
+	for _, path := range []struct {
+		label string
+		value string
+	}{
+		{label: "root", value: cfg.Root},
+		{label: "secrets file", value: cfg.SecretsFile},
+	} {
+		if strings.TrimSpace(path.value) == "" {
+			return fmt.Errorf("%s is required", path.label)
+		}
+		if !filepath.IsAbs(path.value) {
+			return fmt.Errorf("%s must be an absolute path", path.label)
+		}
+	}
+	return nil
+}
+
 func (cfg config) validate() error {
 	for label, value := range map[string]string{
 		"addr":                  cfg.Addr,
-		"root":                  cfg.Root,
 		"repository":            cfg.Repository,
 		"GitHub token":          cfg.GitHubToken,
 		"GitHub webhook secret": cfg.GitHubWebhookSecret,

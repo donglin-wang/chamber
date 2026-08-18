@@ -83,6 +83,34 @@ func TestParseConfigRequiresSecretsFile(t *testing.T) {
 	}
 }
 
+func TestParseConfigRequiresAbsoluteRoot(t *testing.T) {
+	secretsFile := writeSecretsFile(t, `{
+		"github_token": "status-token",
+		"github_webhook_secret": "webhook-secret"
+	}`)
+
+	_, err := parseConfig([]string{
+		"-root=%h/.local/state/chamber-ci",
+		"-secrets-file=" + secretsFile,
+	})
+	if err == nil {
+		t.Fatal("parseConfig() error = nil, want absolute root error")
+	}
+	if !strings.Contains(err.Error(), "root must be an absolute path") {
+		t.Fatalf("parseConfig() error = %v, want absolute root error", err)
+	}
+}
+
+func TestParseConfigRequiresAbsoluteSecretsFile(t *testing.T) {
+	_, err := parseConfig([]string{"-secrets-file=github-ci-secrets.json"})
+	if err == nil {
+		t.Fatal("parseConfig() error = nil, want absolute secrets file error")
+	}
+	if !strings.Contains(err.Error(), "secrets file must be an absolute path") {
+		t.Fatalf("parseConfig() error = %v, want absolute secrets file error", err)
+	}
+}
+
 func TestParseConfigRejectsUnknownSecretFields(t *testing.T) {
 	secretsFile := writeSecretsFile(t, `{
 		"github_token": "status-token",
