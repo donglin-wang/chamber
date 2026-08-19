@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	goruntime "runtime"
 	"sort"
 	"strings"
 
@@ -12,21 +11,68 @@ import (
 	chamberRunc "github.com/donglin-wang/chamber/pkg/runtime/internal/runc"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostprobe"
 )
 
 var runtimeNames = map[string]struct{}{
 	chamberRuntime.RuntimeNameRunc: {},
 }
 
-// NewRuntime validates config, checks host and implementation name, creates
-// private runtime directories, installs or reuses runtime artifacts as needed,
-// and returns a ready runtime. The supplied context controls construction work
-// only; container lifecycle is owned by Container values returned from Run.
-func NewRuntime(ctx context.Context, config chamberRuntime.Config, runtimeWorkspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace) (chamberRuntime.Runtime, error) {
-	return newRuntimeForOS(ctx, config, runtimeWorkspace, binaryWorkspace, goruntime.GOOS)
+var runtimeHostRules = []hostprobe.Rule{
+	hostprobe.RequireLinux,
+	hostprobe.RequireRootlessUser,
+	hostprobe.RequireUserNamespacesEnabled,
+	hostprobe.RequireAppArmorAllowsUserNamespaces,
+	hostprobe.ProbeUserNamespace,
 }
 
-func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeWorkspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace, osName string) (chamberRuntime.Runtime, error) {
+var checkRuntimeHostRules = requireRuntimeHostRules
+
+var runtimeWorkspaceRequirements = hostfs.FeatureSet{
+	PrivateDirs:      true,
+	FileFsync:        true,
+	AtomicFileRename: true,
+}
+
+// NewRuntime validates config, checks host and implementation name, creates
+// private runtime directories and package workspaces, installs or reuses
+// runtime artifacts as needed, and returns a ready runtime. The supplied context
+// controls construction work only; container lifecycle is owned by Container
+// values returned from Run.
+func NewRuntime(ctx context.Context, config chamberRuntime.Config) (chamberRuntime.Runtime, error) {
+	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:         config.RuntimeRoot,
+		TmpRoot:      config.RuntimeTmpRoot,
+		Requirements: runtimeWorkspaceRequirements,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var binaryWorkspace *hostfs.Workspace
+	if strings.TrimSpace(config.RuntimePath) == "" {
+		binaryWorkspace, err = hostfs.NewWorkspace(hostfs.Config{
+			Root:         config.RuntimeBinDir,
+			TmpRoot:      config.RuntimeBinTmpRoot,
+			Requirements: runtimeWorkspaceRequirements,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return NewRuntimeWithWorkspace(ctx, config, runtimeWorkspace, binaryWorkspace)
+}
+
+// NewRuntimeWithWorkspace validates config and the supplied package
+// workspaces, checks host and implementation name, creates private runtime
+// directories, installs or reuses runtime artifacts as needed, and returns a
+// ready runtime. The supplied context controls construction work only;
+// container lifecycle is owned by Container values returned from Run.
+func NewRuntimeWithWorkspace(ctx context.Context, config chamberRuntime.Config, runtimeWorkspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace) (chamberRuntime.Runtime, error) {
+	return newRuntime(ctx, config, runtimeWorkspace, binaryWorkspace)
+}
+
+func newRuntime(ctx context.Context, config chamberRuntime.Config, runtimeWorkspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace) (chamberRuntime.Runtime, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -41,9 +87,6 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 	}
 	if !IsSupportedName(config.Name) {
 		return nil, fmt.Errorf("%w: unsupported runtime name %q (supported: %s)", chamberErrors.ErrInvalidRequest, config.Name, strings.Join(SupportedNames(), ", "))
-	}
-	if osName != "linux" {
-		return nil, fmt.Errorf("%w: Chamber runtime requires a Linux host or Linux VM; current GOOS is %q", chamberErrors.ErrUnsupportedHost, osName)
 	}
 	if config.RuntimeRoot == "" {
 		return nil, fmt.Errorf("%w: runtime root is required", chamberErrors.ErrInvalidRequest)
@@ -61,11 +104,7 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 	if err := requireWorkspaceTmpRoot("runtime temporary root", config.RuntimeTmpRoot, runtimeWorkspace.TmpRoot()); err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceFeatures("runtime workspace", runtimeWorkspace.Features(), hostfs.FeatureSet{
-		PrivateDirs:      true,
-		FileFsync:        true,
-		AtomicFileRename: true,
-	}); err != nil {
+	if err := requireWorkspaceFeatures("runtime workspace", runtimeWorkspace.Features(), runtimeWorkspaceRequirements); err != nil {
 		return nil, err
 	}
 	config.RuntimeRoot = runtimeWorkspace.Root()
@@ -84,15 +123,14 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 		if err := requireWorkspaceTmpRoot("runtime binary temporary root", config.RuntimeBinTmpRoot, binaryWorkspace.TmpRoot()); err != nil {
 			return nil, err
 		}
-		if err := requireWorkspaceFeatures("runtime binary workspace", binaryWorkspace.Features(), hostfs.FeatureSet{
-			PrivateDirs:      true,
-			FileFsync:        true,
-			AtomicFileRename: true,
-		}); err != nil {
+		if err := requireWorkspaceFeatures("runtime binary workspace", binaryWorkspace.Features(), runtimeWorkspaceRequirements); err != nil {
 			return nil, err
 		}
 		config.RuntimeBinDir = binaryWorkspace.Root()
 		config.RuntimeBinTmpRoot = binaryWorkspace.TmpRoot()
+	}
+	if err := checkRuntimeHostRules(ctx); err != nil {
+		return nil, err
 	}
 
 	switch config.Name {
@@ -101,6 +139,17 @@ func newRuntimeForOS(ctx context.Context, config chamberRuntime.Config, runtimeW
 	default:
 		return nil, fmt.Errorf("%w: unsupported runtime name %q (supported: %s)", chamberErrors.ErrInvalidRequest, config.Name, strings.Join(SupportedNames(), ", "))
 	}
+}
+
+func requireRuntimeHostRules(ctx context.Context) error {
+	var messages []string
+	for _, rule := range runtimeHostRules {
+		messages = append(messages, rule.Check(ctx)...)
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: runtime host probe failed: %s", chamberErrors.ErrUnsupportedHost, strings.Join(messages, "; "))
 }
 
 // SupportedNames returns the sorted list of runtime implementation names

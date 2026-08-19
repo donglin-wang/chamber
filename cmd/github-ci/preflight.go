@@ -133,7 +133,7 @@ func runTinyContainerPreflight(ctx context.Context, cfg config) error {
 	if err != nil {
 		return err
 	}
-	imageStore, err := chamberImageFactory.NewStore(imageConfig, imageWorkspace)
+	imageStore, err := chamberImageFactory.NewStoreWithWorkspace(imageConfig, imageWorkspace)
 	if err != nil {
 		return err
 	}
@@ -148,11 +148,11 @@ func runTinyContainerPreflight(ctx context.Context, cfg config) error {
 	if err != nil {
 		return err
 	}
-	provisioner, err := chamberBundleFactory.NewProvisioner(bundleConfig, bundleWorkspace)
+	provisioner, err := chamberBundleFactory.NewProvisionerWithWorkspace(bundleConfig, bundleWorkspace)
 	if err != nil {
 		return err
 	}
-	runtime, err := chamberRuntimeFactory.NewRuntime(ctx, runtimeConfig, runtimeWorkspace, binaryWorkspace)
+	runtime, err := chamberRuntimeFactory.NewRuntimeWithWorkspace(ctx, runtimeConfig, runtimeWorkspace, binaryWorkspace)
 	if err != nil {
 		return err
 	}

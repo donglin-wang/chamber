@@ -146,18 +146,18 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer store.Close()
 
-	runtime, err := chamberRuntimeFactory.NewRuntime(lifetime, runtimeConfig, runtimeWorkspace, runtimeBinaryWorkspace)
+	runtime, err := chamberRuntimeFactory.NewRuntimeWithWorkspace(lifetime, runtimeConfig, runtimeWorkspace, runtimeBinaryWorkspace)
 	if err != nil {
 		return fmt.Errorf("create runtime: %w", err)
 	}
 
 	mux := newServer()
-	imageStore, err := chamberImageFactory.NewStore(imageConfig, imageWorkspace)
+	imageStore, err := chamberImageFactory.NewStoreWithWorkspace(imageConfig, imageWorkspace)
 	if err != nil {
 		return fmt.Errorf("create image store: %w", err)
 	}
 	registerImageRoutes(mux, cfg, store, imageStore)
-	provisioner, err := chamberBundleFactory.NewProvisioner(
+	provisioner, err := chamberBundleFactory.NewProvisionerWithWorkspace(
 		bundleConfig,
 		bundleWorkspace,
 	)

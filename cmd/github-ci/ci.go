@@ -101,7 +101,7 @@ func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	imageStore, err := chamberImageFactory.NewStore(imageConfig, imageWorkspace)
+	imageStore, err := chamberImageFactory.NewStoreWithWorkspace(imageConfig, imageWorkspace)
 	if err != nil {
 		return 1, fmt.Errorf("create image store: %w", err)
 	}
@@ -124,7 +124,7 @@ func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	provisioner, err := chamberBundleFactory.NewProvisioner(bundleConfig, bundleWorkspace)
+	provisioner, err := chamberBundleFactory.NewProvisionerWithWorkspace(bundleConfig, bundleWorkspace)
 	if err != nil {
 		return 1, fmt.Errorf("create bundle provisioner: %w", err)
 	}
@@ -133,7 +133,7 @@ func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	runtime, err := chamberRuntimeFactory.NewRuntime(ctx, runtimeConfig, runtimeWorkspace, runtimeBinaryWorkspace)
+	runtime, err := chamberRuntimeFactory.NewRuntimeWithWorkspace(ctx, runtimeConfig, runtimeWorkspace, runtimeBinaryWorkspace)
 	if err != nil {
 		return 1, fmt.Errorf("create runtime: %w", err)
 	}

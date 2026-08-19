@@ -193,44 +193,20 @@ validator should validate host capability and optionally run probes.
 Suggested public shape:
 
 ```go
-type CheckScope string
-
-const (
-    CheckBuild     CheckScope = "build"
-    CheckProvision CheckScope = "provision"
-    CheckRun       CheckScope = "run"
-)
-
-type CheckMode string
-
-const (
-    CheckStatic CheckMode = "static"
-    CheckProbe  CheckMode = "probe"
-)
-
-type Finding struct {
-    Scope       CheckScope
-    Code        string
-    Severity    string
-    Message     string
-    Remediation string
+type Rule struct {
+    // private host dependencies may be stubbed by same-package tests
 }
 
-type Validator interface {
-    Check(ctx context.Context, request CheckRequest) (Report, error)
-}
+func (r Rule) Name() string
+func (r Rule) Check(context.Context) []string
 ```
 
-Static checks should not mutate the host beyond reading files and inspecting
-configured binaries. Probe checks may create temporary Chamber-owned directories,
-build tiny images, provision temporary bundles, and run short-lived containers.
-
-## Severity Model
-
-- `fatal`: Chamber cannot perform the requested scope.
-- `warning`: Chamber can try, but some Dockerfiles/images/runtime profiles may
-  fail.
-- `info`: host detail worth reporting for debugging.
+The shared `hostprobe` package should provide public rule values, not
+package-scope orchestration or a validator framework. Each package should decide
+which rules match its operation and run those rules itself. Static rules should
+not mutate the host beyond reading files and inspecting configured binaries.
+Active probe rules may create temporary Chamber-owned directories, build tiny
+images, provision temporary bundles, and run short-lived containers.
 
 The goal is not to hide platform complexity. The goal is to fail before the user
 has to reverse-engineer a BuildKit, RootlessKit, or runc error.

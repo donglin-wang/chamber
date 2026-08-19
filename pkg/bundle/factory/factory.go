@@ -1,6 +1,7 @@
 package factory
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -10,17 +11,47 @@ import (
 	chamberDirectoryProvisioner "github.com/donglin-wang/chamber/pkg/bundle/internal/directory"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
+	"github.com/donglin-wang/chamber/pkg/shared/hostprobe"
 )
 
 var provisionerNames = map[string]struct{}{
 	chamberBundle.ProvisionerNameDirectory: {},
 }
 
+var provisionerHostRules = []hostprobe.Rule{
+	hostprobe.RequireLinux,
+	hostprobe.RequireRootlessUser,
+}
+
+var checkProvisionerHostRules = requireProvisionerHostRules
+
+var provisionerWorkspaceRequirements = hostfs.FeatureSet{
+	PrivateDirs:           true,
+	AtomicDirectoryRename: true,
+}
+
 // NewProvisioner validates config, creates the configured private bundle root,
+// creates the package workspace, checks the selected implementation name, and
+// returns a ready bundle provisioner. Callers own bundle-root placement,
+// cleanup, cancellation policy, and recovery.
+func NewProvisioner(config chamberBundle.Config) (chamberBundle.Provisioner, error) {
+	workspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:         config.Root,
+		TmpRoot:      config.TmpRoot,
+		Requirements: provisionerWorkspaceRequirements,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return NewProvisionerWithWorkspace(config, workspace)
+}
+
+// NewProvisionerWithWorkspace validates config and the supplied package
+// workspace, creates the configured private bundle root,
 // checks the selected implementation name, and returns a ready bundle
 // provisioner. Callers own bundle-root placement, cleanup, cancellation policy,
 // and recovery.
-func NewProvisioner(config chamberBundle.Config, workspace *hostfs.Workspace) (chamberBundle.Provisioner, error) {
+func NewProvisionerWithWorkspace(config chamberBundle.Config, workspace *hostfs.Workspace) (chamberBundle.Provisioner, error) {
 	if workspace == nil {
 		return nil, fmt.Errorf("%w: bundle workspace is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -43,10 +74,10 @@ func NewProvisioner(config chamberBundle.Config, workspace *hostfs.Workspace) (c
 	if err := requireWorkspaceTmpRoot("bundle temporary root", config.TmpRoot, workspace.TmpRoot()); err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceFeatures("bundle workspace", workspace.Features(), hostfs.FeatureSet{
-		PrivateDirs:           true,
-		AtomicDirectoryRename: true,
-	}); err != nil {
+	if err := requireWorkspaceFeatures("bundle workspace", workspace.Features(), provisionerWorkspaceRequirements); err != nil {
+		return nil, err
+	}
+	if err := checkProvisionerHostRules(context.Background()); err != nil {
 		return nil, err
 	}
 	config.Root = workspace.Root()
@@ -58,6 +89,17 @@ func NewProvisioner(config chamberBundle.Config, workspace *hostfs.Workspace) (c
 	default:
 		return nil, fmt.Errorf("%w: unsupported bundle provisioner name %q (supported: %s)", chamberErrors.ErrInvalidRequest, config.Name, strings.Join(SupportedProvisionerNames(), ", "))
 	}
+}
+
+func requireProvisionerHostRules(ctx context.Context) error {
+	var messages []string
+	for _, rule := range provisionerHostRules {
+		messages = append(messages, rule.Check(ctx)...)
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: bundle provisioner host probe failed: %s", chamberErrors.ErrUnsupportedHost, strings.Join(messages, "; "))
 }
 
 // SupportedProvisionerNames returns the sorted list of provisioner
