@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/donglin-wang/chamber/pkg/shared/logging"
@@ -30,6 +31,9 @@ type server struct {
 	runCI        ciRunner
 	checkout     checkoutFunc
 	now          func() time.Time
+	mu           sync.Mutex
+	activeRuns   map[string]context.CancelFunc
+	runWG        sync.WaitGroup
 }
 
 type pushPayload struct {
@@ -49,6 +53,7 @@ func newWebhookServer(cfg config) *server {
 		runCI:        runCI,
 		checkout:     checkoutExactSHA,
 		now:          time.Now,
+		activeRuns:   map[string]context.CancelFunc{},
 	}
 }
 
@@ -150,7 +155,8 @@ func (s *server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "write run record"})
 		return
 	}
-	go s.runCIForPush(context.Background(), record, dirs)
+	logging.Info(ctx, "accepted GitHub CI run", "run_id", runID, "sha", record.SHA, "ref", record.Ref, "repository", record.Repository, "root", s.cfg.Root)
+	s.startRun(record, dirs)
 
 	writeJSON(w, http.StatusAccepted, map[string]string{
 		"status":      "accepted",
@@ -181,11 +187,23 @@ func (s *server) createRunDirectories(runID string) (runDirectories, error) {
 	return dirs, nil
 }
 
+func (s *server) startRun(record runRecord, dirs runDirectories) {
+	s.runWG.Add(1)
+	go func() {
+		defer s.runWG.Done()
+		s.runCIForPush(context.Background(), record, dirs)
+	}()
+}
+
 func (s *server) runCIForPush(parent context.Context, record runRecord, dirs runDirectories) {
 	defer s.releaseRunSlot()
 
 	ctx, cancel := context.WithTimeout(parent, s.cfg.RunTimeout)
 	defer cancel()
+	s.registerActiveRun(record.RunID, cancel)
+	defer s.unregisterActiveRun(record.RunID)
+
+	logging.Info(ctx, "GitHub CI run started", "run_id", record.RunID, "sha", record.SHA, "ref", record.Ref, "root", s.cfg.Root)
 	s.reportGitHubCommitStatus(ctx, record, runStatusRunning)
 
 	stdoutPath, err := runLogPath(s.cfg.Root, record.RunID, runLogJobCI, "stdout")
@@ -259,6 +277,44 @@ func (s *server) runCIForPush(parent context.Context, record runRecord, dirs run
 	s.completeRun(ctx, record)
 }
 
+func (s *server) registerActiveRun(runID string, cancel context.CancelFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeRuns[runID] = cancel
+}
+
+func (s *server) unregisterActiveRun(runID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.activeRuns, runID)
+}
+
+func (s *server) cancelActiveRuns() {
+	s.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(s.activeRuns))
+	for _, cancel := range s.activeRuns {
+		cancels = append(cancels, cancel)
+	}
+	s.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+
+func (s *server) waitForRuns(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.runWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (s *server) completeRun(ctx context.Context, record runRecord) {
 	completedAt := s.now().UTC()
 	record.CompletedAt = &completedAt
@@ -274,6 +330,10 @@ func (s *server) completeRun(ctx context.Context, record runRecord) {
 }
 
 func (s *server) reportGitHubCommitStatus(ctx context.Context, record runRecord, status runStatus) {
+	if !validGitCommitSHA(record.SHA) {
+		logging.Error(ctx, "GitHub status update skipped", "run_id", record.RunID, "sha", record.SHA, "state", githubStatusForOutcome(status).State, "error", "invalid or missing SHA")
+		return
+	}
 	payload := githubStatusForOutcome(status)
 	payload.Context = githubStatusContext
 	if s.cfg.StatusTargetBaseURL != "" {
@@ -284,6 +344,51 @@ func (s *server) reportGitHubCommitStatus(ctx context.Context, record runRecord,
 	if err := s.statusClient.CreateStatus(statusCtx, record.SHA, payload); err != nil {
 		logging.Error(ctx, "GitHub status update failed", "run_id", record.RunID, "sha", record.SHA, "state", payload.State, "error", err)
 	}
+}
+
+func (s *server) recoverIncompleteRuns(ctx context.Context) error {
+	runsRoot := filepath.Join(s.cfg.Root, "runs")
+	entries, err := os.ReadDir(runsRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read CI runs: %w", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !isSafePathComponent(entry.Name()) {
+			continue
+		}
+		record, err := readRunRecord(s.cfg.Root, entry.Name())
+		if err == nil && record.Status != runStatusRunning {
+			continue
+		}
+		now := s.now().UTC()
+		record.RunID = entry.Name()
+		if record.StartedAt.IsZero() {
+			record.StartedAt = now
+		}
+		if record.Logs == nil {
+			record.Logs = runLogLinks(record.RunID)
+		}
+		record.Status = runStatusErrored
+		record.ExitCode = 1
+		record.Error = "CI run did not complete before startup recovery"
+		record.CompletedAt = &now
+		if err != nil {
+			record.Error = fmt.Sprintf("%s: %v", record.Error, err)
+		}
+		if err == nil {
+			logging.Info(ctx, "recovered incomplete CI run", "run_id", record.RunID, "sha", record.SHA)
+		} else {
+			logging.Info(ctx, "recovered incomplete CI run", "run_id", record.RunID, "error", err)
+		}
+		if err := writeRunRecord(s.cfg.Root, record); err != nil {
+			return fmt.Errorf("recover incomplete run %s: %w", record.RunID, err)
+		}
+		s.reportGitHubCommitStatus(ctx, record, record.Status)
+	}
+	return nil
 }
 
 func (s *server) handleRun(w http.ResponseWriter, r *http.Request) {
@@ -439,6 +544,10 @@ func pruneOldRuns(root string, olderThan time.Time) error {
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() || !isSafePathComponent(entry.Name()) {
+			continue
+		}
+		record, err := readRunRecord(root, entry.Name())
+		if err != nil || record.Status == runStatusRunning {
 			continue
 		}
 		info, err := entry.Info()

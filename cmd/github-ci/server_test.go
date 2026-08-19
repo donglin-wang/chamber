@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -109,6 +110,46 @@ func TestWebhookReturnsTooManyRequestsWhenSlotBusy(t *testing.T) {
 	}
 }
 
+func TestCancelActiveRunsMarksRunErrored(t *testing.T) {
+	server := testServer(t)
+	statuses := &recordingStatusClient{}
+	server.statusClient = statuses
+	started := make(chan struct{})
+	server.runCI = func(ctx context.Context, cfg ciConfig) (int, error) {
+		close(started)
+		<-ctx.Done()
+		return 1, ctx.Err()
+	}
+
+	recorder := postWebhook(t, server, pushPayloadJSON(server.cfg.Repository, false, testSHA()))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body = %s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	<-started
+	server.cancelActiveRuns()
+	waitForStatuses(t, statuses, 2)
+
+	var admitted struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &admitted); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	record, err := readRunRecord(server.cfg.Root, admitted.RunID)
+	if err != nil {
+		t.Fatalf("read run record: %v", err)
+	}
+	if record.Status != runStatusErrored {
+		t.Fatalf("Status = %q, want errored", record.Status)
+	}
+	if record.CompletedAt == nil {
+		t.Fatal("CompletedAt = nil, want timestamp")
+	}
+	if statuses.statuses[0].State != statusPending || statuses.statuses[1].State != statusError {
+		t.Fatalf("statuses = %#v, want pending then error", statuses.statuses)
+	}
+}
+
 func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 	server := testServer(t)
 	statuses := &recordingStatusClient{}
@@ -187,6 +228,138 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 	server.routes().ServeHTTP(stdoutRecorder, stdoutRequest)
 	if stdoutRecorder.Code != http.StatusOK || stdoutRecorder.Body.String() != "go test stdout\n" {
 		t.Fatalf("stdout log status/body = %d/%q, want 200/go test stdout", stdoutRecorder.Code, stdoutRecorder.Body.String())
+	}
+}
+
+func TestRecoverIncompleteRunsMarksRunningRecordErrored(t *testing.T) {
+	server := testServer(t)
+	statuses := &recordingStatusClient{}
+	server.statusClient = statuses
+	runID := uuid.NewString()
+	startedAt := time.Unix(50, 0).UTC()
+	if err := writeRunRecord(server.cfg.Root, runRecord{
+		RunID:      runID,
+		SHA:        testSHA(),
+		Ref:        "refs/heads/main",
+		Repository: server.cfg.Repository,
+		Status:     runStatusRunning,
+		StartedAt:  startedAt,
+		Logs:       runLogLinks(runID),
+	}); err != nil {
+		t.Fatalf("write run record: %v", err)
+	}
+
+	if err := server.recoverIncompleteRuns(context.Background()); err != nil {
+		t.Fatalf("recoverIncompleteRuns() error = %v", err)
+	}
+
+	record, err := readRunRecord(server.cfg.Root, runID)
+	if err != nil {
+		t.Fatalf("read run record: %v", err)
+	}
+	if record.Status != runStatusErrored {
+		t.Fatalf("Status = %q, want errored", record.Status)
+	}
+	if record.ExitCode != 1 {
+		t.Fatalf("ExitCode = %d, want 1", record.ExitCode)
+	}
+	if record.CompletedAt == nil || !record.CompletedAt.Equal(time.Unix(100, 0).UTC()) {
+		t.Fatalf("CompletedAt = %v, want fixed recovery time", record.CompletedAt)
+	}
+	if !strings.Contains(record.Error, "startup recovery") {
+		t.Fatalf("Error = %q, want recovery message", record.Error)
+	}
+	if len(statuses.statuses) != 1 || statuses.statuses[0].State != statusError {
+		t.Fatalf("statuses = %#v, want one error status", statuses.statuses)
+	}
+	wantTargetURL := "https://ci.example.test/runs/" + runID + "/logs"
+	if statuses.statuses[0].TargetURL != wantTargetURL {
+		t.Fatalf("TargetURL = %q, want %q", statuses.statuses[0].TargetURL, wantTargetURL)
+	}
+}
+
+func TestRecoverIncompleteRunsCreatesErroredRecordForUnreadableRecord(t *testing.T) {
+	server := testServer(t)
+	statuses := &recordingStatusClient{}
+	server.statusClient = statuses
+	runID := uuid.NewString()
+	runDir := filepath.Join(server.cfg.Root, "runs", runID)
+	if err := os.MkdirAll(runDir, 0700); err != nil {
+		t.Fatalf("create run dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "status.json"), []byte("{"), 0600); err != nil {
+		t.Fatalf("write unreadable status: %v", err)
+	}
+
+	if err := server.recoverIncompleteRuns(context.Background()); err != nil {
+		t.Fatalf("recoverIncompleteRuns() error = %v", err)
+	}
+
+	record, err := readRunRecord(server.cfg.Root, runID)
+	if err != nil {
+		t.Fatalf("read recovered run record: %v", err)
+	}
+	if record.Status != runStatusErrored {
+		t.Fatalf("Status = %q, want errored", record.Status)
+	}
+	if !strings.Contains(record.Error, "did not complete before startup recovery") {
+		t.Fatalf("Error = %q, want incomplete recovery message", record.Error)
+	}
+	if len(statuses.statuses) != 0 {
+		t.Fatalf("statuses = %#v, want no GitHub status without SHA", statuses.statuses)
+	}
+}
+
+func TestPruneOldRunsSkipsRunningAndUnreadableRecords(t *testing.T) {
+	root := t.TempDir()
+	old := time.Unix(10, 0)
+	olderThan := time.Unix(20, 0)
+	completedID := uuid.NewString()
+	runningID := uuid.NewString()
+	unreadableID := uuid.NewString()
+	completedAt := old.UTC()
+	for _, record := range []runRecord{
+		{
+			RunID:       completedID,
+			SHA:         testSHA(),
+			Status:      runStatusSucceeded,
+			StartedAt:   old.UTC(),
+			CompletedAt: &completedAt,
+		},
+		{
+			RunID:     runningID,
+			SHA:       testSHA(),
+			Status:    runStatusRunning,
+			StartedAt: old.UTC(),
+		},
+	} {
+		if err := writeRunRecord(root, record); err != nil {
+			t.Fatalf("write run record %s: %v", record.RunID, err)
+		}
+	}
+	unreadableDir := filepath.Join(root, "runs", unreadableID)
+	if err := os.MkdirAll(unreadableDir, 0700); err != nil {
+		t.Fatalf("create unreadable run dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(unreadableDir, "status.json"), []byte("{"), 0600); err != nil {
+		t.Fatalf("write unreadable status: %v", err)
+	}
+	for _, runID := range []string{completedID, runningID, unreadableID} {
+		if err := os.Chtimes(filepath.Join(root, "runs", runID), old, old); err != nil {
+			t.Fatalf("set run dir time: %v", err)
+		}
+	}
+
+	if err := pruneOldRuns(root, olderThan); err != nil {
+		t.Fatalf("pruneOldRuns() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "runs", completedID)); !os.IsNotExist(err) {
+		t.Fatalf("completed run exists error = %v, want removed", err)
+	}
+	for _, runID := range []string{runningID, unreadableID} {
+		if _, err := os.Stat(filepath.Join(root, "runs", runID)); err != nil {
+			t.Fatalf("run %s stat error = %v, want retained", runID, err)
+		}
 	}
 }
 

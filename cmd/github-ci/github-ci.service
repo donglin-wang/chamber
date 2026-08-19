@@ -1,0 +1,14 @@
+[Unit]
+Description=Chamber GitHub CI webhook receiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/github-ci -addr=0.0.0.0:8080 -root=%h/.local/state/chamber-ci -repository=donglin-wang/chamber -status-target-base-url=http://ec2-44-200-57-243.compute-1.amazonaws.com:8080 -run-timeout=30m -retention=168h -max-parallel=5 -secrets-file=%h/.config/chamber/github-ci-secrets.json
+Restart=on-failure
+RestartSec=5s
+WorkingDirectory=%h
+
+[Install]
+WantedBy=default.target
