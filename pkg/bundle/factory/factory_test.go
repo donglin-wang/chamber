@@ -1,7 +1,9 @@
 package factory
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,9 +13,32 @@ import (
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
+func init() {
+	checkProvisionerHostRules = func(context.Context) error { return nil }
+}
+
 func TestNewProvisionerRequiresWorkspace(t *testing.T) {
-	if _, err := NewProvisioner(chamberBundle.Config{Root: t.TempDir()}, nil); err == nil {
+	if _, err := NewProvisionerWithWorkspace(chamberBundle.Config{Root: t.TempDir()}, nil); err == nil {
 		t.Fatal("NewProvisioner() error = nil, want workspace error")
+	}
+}
+
+func TestNewProvisionerRejectsHostProbeFailure(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "bundles")
+	restore := replaceProvisionerHostRules(func(context.Context) error {
+		return fmt.Errorf("%w: host probe failed", chamberErrors.ErrUnsupportedHost)
+	})
+	defer restore()
+
+	_, err := NewProvisioner(chamberBundle.Config{
+		Root: root,
+		Name: chamberBundle.ProvisionerNameDirectory,
+	})
+	if err == nil {
+		t.Fatal("NewProvisioner() error = nil, want host probe error")
+	}
+	if !errors.Is(err, chamberErrors.ErrUnsupportedHost) {
+		t.Fatalf("NewProvisioner() error = %v, want unsupported host code", err)
 	}
 }
 
@@ -27,7 +52,7 @@ func TestNewProvisionerRequiresFinalConfig(t *testing.T) {
 
 	for name, config := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := NewProvisioner(config, newTestWorkspace(t, root))
+			_, err := NewProvisionerWithWorkspace(config, newTestWorkspace(t, root))
 			if err == nil {
 				t.Fatal("NewProvisioner() error = nil, want final config validation error")
 			}
@@ -47,7 +72,7 @@ func TestNewProvisionerRejectsUnsupportedName(t *testing.T) {
 	_, err := NewProvisioner(chamberBundle.Config{
 		Root: root,
 		Name: "overlay",
-	}, newTestWorkspace(t, root))
+	})
 
 	if err == nil {
 		t.Fatal("NewProvisioner() error = nil, want unsupported name error")
@@ -61,7 +86,7 @@ func TestNewProvisionerRejectsUnsupportedName(t *testing.T) {
 }
 
 func TestNewProvisionerRejectsMismatchedWorkspaceRoot(t *testing.T) {
-	_, err := NewProvisioner(chamberBundle.Config{
+	_, err := NewProvisionerWithWorkspace(chamberBundle.Config{
 		Root: filepath.Join(t.TempDir(), "bundles"),
 		Name: chamberBundle.ProvisionerNameDirectory,
 	}, newTestWorkspace(t, filepath.Join(t.TempDir(), "other-bundles")))
@@ -75,7 +100,7 @@ func TestNewProvisionerRejectsMismatchedWorkspaceRoot(t *testing.T) {
 
 func TestNewProvisionerRejectsMismatchedWorkspaceTmpRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "bundles")
-	_, err := NewProvisioner(chamberBundle.Config{
+	_, err := NewProvisionerWithWorkspace(chamberBundle.Config{
 		Root:    root,
 		TmpRoot: filepath.Join(t.TempDir(), "other-tmp"),
 		Name:    chamberBundle.ProvisionerNameDirectory,
@@ -102,4 +127,12 @@ func newTestWorkspace(t *testing.T, root string) *hostfs.Workspace {
 		t.Fatalf("NewWorkspace() error = %v", err)
 	}
 	return workspace
+}
+
+func replaceProvisionerHostRules(check func(context.Context) error) func() {
+	previous := checkProvisionerHostRules
+	checkProvisionerHostRules = check
+	return func() {
+		checkProvisionerHostRules = previous
+	}
 }

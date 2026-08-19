@@ -113,10 +113,8 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
@@ -124,66 +122,13 @@ import (
 	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
-	"github.com/donglin-wang/chamber/pkg/shared/capability"
-	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 )
 
 func main() {
 	ctx := context.Background()
 	root := "/tmp/chamber-sdk-demo"
 
-	imageWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    filepath.Join(root, "images"),
-		TmpRoot: filepath.Join(root, "tmp", "images"),
-		Capabilities: hostfs.Capabilities{
-			PrivateDirs:           true,
-			FileFsync:             true,
-			AtomicFileRename:      true,
-			AtomicDirectoryRename: true,
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-	bundleWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    filepath.Join(root, "bundles"),
-		TmpRoot: filepath.Join(root, "tmp", "bundles"),
-		Capabilities: hostfs.Capabilities{
-			PrivateDirs:           true,
-			AtomicDirectoryRename: true,
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    filepath.Join(root, "run", "runtime"),
-		TmpRoot: filepath.Join(root, "tmp", "runtime"),
-		Capabilities: hostfs.Capabilities{
-			PrivateDirs:      true,
-			FileFsync:        true,
-			AtomicFileRename: true,
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-	runtimeBinaryWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    filepath.Join(root, "bin"),
-		TmpRoot: filepath.Join(root, "tmp", "runtime-bin"),
-		Capabilities: hostfs.Capabilities{
-			PrivateDirs:      true,
-			FileFsync:        true,
-			AtomicFileRename: true,
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	imageStore, err := chamberImageFactory.NewStore(chamberImage.Config{
-		Root: imageWorkspace.Root(),
-	}, imageWorkspace)
+	imageStore, err := chamberImageFactory.NewStore(chamberImage.DefaultConfig(root))
 	if err != nil {
 		panic(err)
 	}
@@ -198,11 +143,7 @@ func main() {
 		panic(err)
 	}
 
-	provisioner, err := chamberBundleFactory.NewProvisioner(chamberBundle.Config{
-		Root:      bundleWorkspace.Root(),
-		Name:      chamberBundle.ProvisionerNameDirectory,
-		Privilege: capability.Rootless,
-	}, bundleWorkspace)
+	provisioner, err := chamberBundleFactory.NewProvisioner(chamberBundle.DefaultConfig(root))
 	if err != nil {
 		panic(err)
 	}
@@ -222,12 +163,7 @@ func main() {
 		panic(err)
 	}
 
-	runc, err := chamberRuntimeFactory.NewRuntime(ctx, chamberRuntime.Config{
-		RuntimeRoot:   runtimeWorkspace.Root(),
-		RuntimeBinDir: runtimeBinaryWorkspace.Root(),
-		Name:          chamberRuntime.RuntimeNameRunc,
-		Privilege:     capability.Rootless,
-	}, runtimeWorkspace, runtimeBinaryWorkspace)
+	runc, err := chamberRuntimeFactory.NewRuntime(ctx, chamberRuntime.DefaultConfig(root))
 	if err != nil {
 		panic(err)
 	}

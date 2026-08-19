@@ -28,7 +28,7 @@ func TestProvisionerImplementationsSatisfySharedConstructorContract(t *testing.T
 			provisioner, err := NewProvisioner(chamberBundle.Config{
 				Root: root,
 				Name: implementation.name,
-			}, newTestWorkspace(t, root))
+			})
 			if err != nil {
 				t.Fatalf("NewProvisioner() error = %v", err)
 			}
