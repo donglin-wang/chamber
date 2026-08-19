@@ -31,7 +31,7 @@ var RequireLinux = Rule{
 		if rule.goos() == "linux" {
 			return nil
 		}
-		return []string{finding(
+		return []string{ruleMessage(
 			CodeUnsupportedHostOS,
 			fmt.Sprintf("Chamber host operation requires Linux; current GOOS is %q", rule.goos()),
 			"Run this probe and the Chamber operation inside Linux.",
@@ -45,7 +45,7 @@ var RequireRootlessUser = Rule{
 		if rule.euid() != 0 {
 			return nil
 		}
-		return []string{finding(
+		return []string{ruleMessage(
 			CodeRootlessRequiresNonRoot,
 			"Chamber rootless operation cannot run as root",
 			"Run Chamber as the unprivileged user that will own the Chamber roots.",
@@ -56,80 +56,80 @@ var RequireRootlessUser = Rule{
 var RequireUserNamespacesEnabled = Rule{
 	name: "require_user_namespaces_enabled",
 	run: func(_ context.Context, rule Rule) []string {
-		var findings []string
-		if value, ok, result := readHostInt(rule, "/proc/sys/kernel/unprivileged_userns_clone"); result != nil {
-			findings = append(findings, *result)
+		var messages []string
+		if value, ok, message := readHostInt(rule, "/proc/sys/kernel/unprivileged_userns_clone"); message != nil {
+			messages = append(messages, *message)
 		} else if ok && value == 0 {
-			findings = append(findings, finding(
+			messages = append(messages, ruleMessage(
 				CodeUserNamespacesDisabled,
 				"/proc/sys/kernel/unprivileged_userns_clone is 0, so unprivileged user namespaces are disabled",
 				"Enable unprivileged user namespaces for this host or run inside a Linux environment where they are allowed.",
 			))
 		}
-		if value, ok, result := readHostInt(rule, "/proc/sys/user/max_user_namespaces"); result != nil {
-			findings = append(findings, *result)
+		if value, ok, message := readHostInt(rule, "/proc/sys/user/max_user_namespaces"); message != nil {
+			messages = append(messages, *message)
 		} else if ok && value <= 0 {
-			findings = append(findings, finding(
+			messages = append(messages, ruleMessage(
 				CodeUserNamespacesDisabled,
 				"/proc/sys/user/max_user_namespaces is 0, so this user cannot create user namespaces",
 				"Set user.max_user_namespaces to a positive value appropriate for rootless containers.",
 			))
 		}
-		return findings
+		return messages
 	},
 }
 
 var RequireAppArmorAllowsUserNamespaces = Rule{
 	name: "require_apparmor_allows_user_namespaces",
 	run: func(_ context.Context, rule Rule) []string {
-		var findings []string
+		var messages []string
 		for _, path := range []string{
 			"/proc/sys/kernel/apparmor_restrict_unprivileged_userns",
 			"/proc/sys/kernel/apparmor_restrict_unprivileged_unconfined",
 		} {
-			value, ok, result := readHostInt(rule, path)
-			if result != nil {
-				findings = append(findings, *result)
+			value, ok, message := readHostInt(rule, path)
+			if message != nil {
+				messages = append(messages, *message)
 				continue
 			}
 			if !ok || value == 0 {
 				continue
 			}
-			findings = append(findings, finding(
+			messages = append(messages, ruleMessage(
 				CodeAppArmorRestrictsUserns,
 				fmt.Sprintf("%s is %d, so AppArmor may block unprivileged user namespace creation before runc init", path, value),
 				"Use an AppArmor profile that permits Chamber's unprivileged user namespace setup, or have the host operator adjust this policy.",
 			))
 		}
-		return findings
+		return messages
 	},
 }
 
-var WarnSubUIDMapping = Rule{
-	name: "warn_subuid_mapping",
+var RequireSubUIDMapping = Rule{
+	name: "require_subuid_mapping",
 	run: func(_ context.Context, rule Rule) []string {
 		return checkSubordinateIDMapping(rule, "/etc/subuid")
 	},
 }
 
-var WarnSubGIDMapping = Rule{
-	name: "warn_subgid_mapping",
+var RequireSubGIDMapping = Rule{
+	name: "require_subgid_mapping",
 	run: func(_ context.Context, rule Rule) []string {
 		return checkSubordinateIDMapping(rule, "/etc/subgid")
 	},
 }
 
-var WarnNewUIDMap = Rule{
-	name: "warn_newuidmap",
+var RequireNewUIDMap = Rule{
+	name: "require_newuidmap",
 	run: func(_ context.Context, rule Rule) []string {
-		return warnMissingHelper(rule, "newuidmap")
+		return requireHelper(rule, "newuidmap")
 	},
 }
 
-var WarnNewGIDMap = Rule{
-	name: "warn_newgidmap",
+var RequireNewGIDMap = Rule{
+	name: "require_newgidmap",
 	run: func(_ context.Context, rule Rule) []string {
-		return warnMissingHelper(rule, "newgidmap")
+		return requireHelper(rule, "newgidmap")
 	},
 }
 
@@ -137,7 +137,7 @@ var ProbeUserNamespace = Rule{
 	name: "probe_user_namespace",
 	run: func(ctx context.Context, rule Rule) []string {
 		if _, err := rule.lookPath("unshare"); err != nil {
-			return []string{finding(
+			return []string{ruleMessage(
 				CodeActiveProbeUnavailable,
 				"unshare was not found in PATH, so Chamber cannot actively verify user namespace policy",
 				"Install util-linux unshare on the host used for active Chamber probes.",
@@ -149,7 +149,7 @@ var ProbeUserNamespace = Rule{
 			if message == "" {
 				message = err.Error()
 			}
-			return []string{finding(
+			return []string{ruleMessage(
 				CodeActiveUserNamespaceFailed,
 				fmt.Sprintf("active user namespace probe failed: %s", message),
 				"Fix user namespace or LSM/AppArmor policy before starting Chamber runtime or BuildKit work.",
@@ -162,7 +162,7 @@ var ProbeUserNamespace = Rule{
 func checkSubordinateIDMapping(rule Rule, path string) []string {
 	username, err := rule.currentUser()
 	if err != nil || strings.TrimSpace(username) == "" {
-		return []string{finding(
+		return []string{ruleMessage(
 			CodeSubordinateIDMappingMissing,
 			fmt.Sprintf("cannot determine current username while checking %s", path),
 			"Verify the Chamber user has subordinate ID ranges when running images that need more than a single-ID rootless mapping.",
@@ -170,7 +170,7 @@ func checkSubordinateIDMapping(rule Rule, path string) []string {
 	}
 	data, err := rule.readFile(path)
 	if err != nil {
-		return []string{finding(
+		return []string{ruleMessage(
 			CodeSubordinateIDMappingMissing,
 			fmt.Sprintf("%s is not readable for subordinate ID mapping checks: %v", path, err),
 			"Add a subordinate ID range for the Chamber user when builds or images need multi-ID ownership mapping.",
@@ -182,18 +182,18 @@ func checkSubordinateIDMapping(rule Rule, path string) []string {
 			return nil
 		}
 	}
-	return []string{finding(
+	return []string{ruleMessage(
 		CodeSubordinateIDMappingMissing,
 		fmt.Sprintf("%s does not contain a subordinate ID mapping for %q", path, username),
 		"Add a subordinate ID range for the Chamber user when builds or images need multi-ID ownership mapping.",
 	)}
 }
 
-func warnMissingHelper(rule Rule, name string) []string {
+func requireHelper(rule Rule, name string) []string {
 	if _, err := rule.lookPath(name); err == nil {
 		return nil
 	}
-	return []string{finding(
+	return []string{ruleMessage(
 		CodeHelperMissing,
 		fmt.Sprintf("%s was not found in PATH", name),
 		fmt.Sprintf("Install %s or configure Chamber to use an explicit equivalent helper path when that operation needs it.", name),
@@ -206,27 +206,27 @@ func readHostInt(rule Rule, path string) (int64, bool, *string) {
 		if os.IsNotExist(err) || os.IsPermission(err) {
 			return 0, false, nil
 		}
-		result := finding(
+		message := ruleMessage(
 			CodeUserNamespaceLimitUnavailable,
 			fmt.Sprintf("cannot inspect %s: %v", path, err),
 			"Verify this host's user namespace policy directly if Chamber operations fail later.",
 		)
-		return 0, false, &result
+		return 0, false, &message
 	}
 	value := strings.TrimSpace(string(data))
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		result := finding(
+		message := ruleMessage(
 			CodeUserNamespaceLimitUnavailable,
 			fmt.Sprintf("cannot parse %s value %q: %v", path, value, err),
 			"Fix the host sysctl value before running Chamber rootless operations.",
 		)
-		return 0, false, &result
+		return 0, false, &message
 	}
 	return parsed, true, nil
 }
 
-func finding(code string, message string, remediation string) string {
+func ruleMessage(code string, message string, remediation string) string {
 	return fmt.Sprintf("%s: %s Remediation: %s", code, message, remediation)
 }
 

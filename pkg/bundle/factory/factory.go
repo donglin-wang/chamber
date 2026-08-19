@@ -74,10 +74,7 @@ func NewProvisionerWithWorkspace(config chamberBundle.Config, workspace *hostfs.
 	if err := requireWorkspaceTmpRoot("bundle temporary root", config.TmpRoot, workspace.TmpRoot()); err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceFeatures("bundle workspace", workspace.Features(), hostfs.FeatureSet{
-		PrivateDirs:           provisionerWorkspaceRequirements.PrivateDirs,
-		AtomicDirectoryRename: provisionerWorkspaceRequirements.AtomicDirectoryRename,
-	}); err != nil {
+	if err := requireWorkspaceFeatures("bundle workspace", workspace.Features(), provisionerWorkspaceRequirements); err != nil {
 		return nil, err
 	}
 	if err := checkProvisionerHostRules(context.Background()); err != nil {

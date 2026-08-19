@@ -70,8 +70,8 @@ func TestRequireAppArmorAllowsUserNamespacesReportsRestriction(t *testing.T) {
 	assertCheckContains(t, messages, "apparmor_restrict_unprivileged_userns")
 }
 
-func TestWarnSubUIDMappingUsesStubbedUserAndFile(t *testing.T) {
-	rule := WarnSubUIDMapping
+func TestRequireSubUIDMappingUsesStubbedUserAndFile(t *testing.T) {
+	rule := RequireSubUIDMapping
 	rule.currentUser = func() (string, error) { return "tester", nil }
 	rule.readFile = func(string) ([]byte, error) {
 		return []byte("other:100000:65536\n"), nil
@@ -82,8 +82,8 @@ func TestWarnSubUIDMappingUsesStubbedUserAndFile(t *testing.T) {
 	assertCheckContains(t, messages, "tester")
 }
 
-func TestWarnNewUIDMapUsesStubbedLookPath(t *testing.T) {
-	rule := WarnNewUIDMap
+func TestRequireNewUIDMapUsesStubbedLookPath(t *testing.T) {
+	rule := RequireNewUIDMap
 	rule.lookPath = func(string) (string, error) {
 		return "", errors.New("not found")
 	}

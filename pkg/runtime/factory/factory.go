@@ -104,11 +104,7 @@ func newRuntime(ctx context.Context, config chamberRuntime.Config, runtimeWorksp
 	if err := requireWorkspaceTmpRoot("runtime temporary root", config.RuntimeTmpRoot, runtimeWorkspace.TmpRoot()); err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceFeatures("runtime workspace", runtimeWorkspace.Features(), hostfs.FeatureSet{
-		PrivateDirs:      runtimeWorkspaceRequirements.PrivateDirs,
-		FileFsync:        runtimeWorkspaceRequirements.FileFsync,
-		AtomicFileRename: runtimeWorkspaceRequirements.AtomicFileRename,
-	}); err != nil {
+	if err := requireWorkspaceFeatures("runtime workspace", runtimeWorkspace.Features(), runtimeWorkspaceRequirements); err != nil {
 		return nil, err
 	}
 	config.RuntimeRoot = runtimeWorkspace.Root()
@@ -127,11 +123,7 @@ func newRuntime(ctx context.Context, config chamberRuntime.Config, runtimeWorksp
 		if err := requireWorkspaceTmpRoot("runtime binary temporary root", config.RuntimeBinTmpRoot, binaryWorkspace.TmpRoot()); err != nil {
 			return nil, err
 		}
-		if err := requireWorkspaceFeatures("runtime binary workspace", binaryWorkspace.Features(), hostfs.FeatureSet{
-			PrivateDirs:      runtimeWorkspaceRequirements.PrivateDirs,
-			FileFsync:        runtimeWorkspaceRequirements.FileFsync,
-			AtomicFileRename: runtimeWorkspaceRequirements.AtomicFileRename,
-		}); err != nil {
+		if err := requireWorkspaceFeatures("runtime binary workspace", binaryWorkspace.Features(), runtimeWorkspaceRequirements); err != nil {
 			return nil, err
 		}
 		config.RuntimeBinDir = binaryWorkspace.Root()
