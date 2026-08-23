@@ -1,5 +1,7 @@
 package errors
 
+import stderrors "errors"
+
 // Code is Chamber's stable, JSON-friendly error vocabulary. It also satisfies
 // error so callers can use errors.Is with wrapped operation failures.
 type Code string
@@ -96,3 +98,36 @@ const (
 	// valid from the current state.
 	ErrStateConflict Code = "state_conflict"
 )
+
+// CodeFromError returns the first Chamber code wrapped by err, or fallback
+// when err does not carry a known code.
+func CodeFromError(err error, fallback Code) Code {
+	for _, code := range []Code{
+		ErrInvalidContainerID,
+		ErrInvalidImageReference,
+		ErrInvalidImageLayout,
+		ErrInvalidBundleMount,
+		ErrInvalidProcessSpec,
+		ErrInvalidRequest,
+		ErrCanceled,
+		ErrUnsupportedHost,
+		ErrFilesystemFailed,
+		ErrImageNotFound,
+		ErrContainerNotFound,
+		ErrLogNotFound,
+		ErrStateConflict,
+		ErrPullFailed,
+		ErrMetadataFailed,
+		ErrBundlePrepareFailed,
+		ErrRuntimeInstallFailed,
+		ErrRuntimeStartFailed,
+		ErrRuntimeControlFailed,
+		ErrRuntimeWaitFailed,
+		ErrContainerExitNonzero,
+	} {
+		if stderrors.Is(err, code) {
+			return code
+		}
+	}
+	return fallback
+}
