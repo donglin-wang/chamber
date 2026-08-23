@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	ciPipeline "github.com/donglin-wang/chamber/cmd/github-ci/pipeline"
 	"github.com/donglin-wang/chamber/pkg/shared/logging"
 	"github.com/google/uuid"
 )
@@ -20,7 +21,7 @@ type statusUpdater interface {
 	CreateStatus(context.Context, string, githubStatus) error
 }
 
-type ciRunner func(context.Context, ciConfig) (int, error)
+type ciRunner func(context.Context, ciPipeline.Config) (int, error)
 
 type checkoutFunc func(context.Context, string, string, string) error
 
@@ -50,7 +51,7 @@ func newWebhookServer(cfg config) *server {
 		cfg:          cfg,
 		runSlots:     make(chan struct{}, cfg.MaxParallel),
 		statusClient: newGitHubStatusClient(cfg),
-		runCI:        runCI,
+		runCI:        ciPipeline.Run,
 		checkout:     checkoutExactSHA,
 		now:          time.Now,
 		activeRuns:   map[string]context.CancelFunc{},
@@ -252,14 +253,17 @@ func (s *server) runCIForPush(parent context.Context, record runRecord, dirs run
 		s.completeRun(ctx, record)
 		return
 	}
-	result, err := s.runCI(ctx, ciConfig{
-		Root:    filepath.Join(s.cfg.Root, "ci"),
-		Workdir: dirs.checkout,
-		Image:   defaultCIImage,
-		Timeout: s.cfg.RunTimeout,
-		Keep:    false,
-		Stdout:  []io.Writer{stdout},
-		Stderr:  []io.Writer{stderr},
+	result, err := s.runCI(ctx, ciPipeline.Config{
+		Name:        s.cfg.Pipeline,
+		Root:        filepath.Join(s.cfg.Root, "ci"),
+		Workdir:     dirs.checkout,
+		Image:       ciPipeline.DefaultImage,
+		DaemonURL:   s.cfg.DaemonURL,
+		EvidenceDir: filepath.Join(dirs.logs, "proof"),
+		Timeout:     s.cfg.RunTimeout,
+		Keep:        false,
+		Stdout:      []io.Writer{stdout},
+		Stderr:      []io.Writer{stderr},
 	})
 	if err != nil {
 		record.Status = runStatusErrored

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	ciPipeline "github.com/donglin-wang/chamber/cmd/github-ci/pipeline"
 	"github.com/google/uuid"
 )
 
@@ -75,7 +76,7 @@ func TestWebhookReturnsTooManyRequestsWhenSlotBusy(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	done := make(chan struct{})
-	server.runCI = func(ctx context.Context, cfg ciConfig) (int, error) {
+	server.runCI = func(ctx context.Context, cfg ciPipeline.Config) (int, error) {
 		close(started)
 		<-release
 		return 0, nil
@@ -115,7 +116,7 @@ func TestCancelActiveRunsMarksRunErrored(t *testing.T) {
 	statuses := &recordingStatusClient{}
 	server.statusClient = statuses
 	started := make(chan struct{})
-	server.runCI = func(ctx context.Context, cfg ciConfig) (int, error) {
+	server.runCI = func(ctx context.Context, cfg ciPipeline.Config) (int, error) {
 		close(started)
 		<-ctx.Done()
 		return 1, ctx.Err()
@@ -168,7 +169,7 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 		}
 		return nil
 	}
-	server.runCI = func(ctx context.Context, cfg ciConfig) (int, error) {
+	server.runCI = func(ctx context.Context, cfg ciPipeline.Config) (int, error) {
 		for _, writer := range cfg.Stdout {
 			_, _ = writer.Write([]byte("go test stdout\n"))
 		}
@@ -382,7 +383,7 @@ func testServer(t *testing.T) *server {
 	server.checkout = func(context.Context, string, string, string) error {
 		return nil
 	}
-	server.runCI = func(context.Context, ciConfig) (int, error) {
+	server.runCI = func(context.Context, ciPipeline.Config) (int, error) {
 		return 0, nil
 	}
 	server.statusClient = &recordingStatusClient{}

@@ -24,7 +24,7 @@ Chamber validation inside Linux with Lima:
 
 ```sh
 limactl shell <linux-instance> --workdir /Users/donglinwang/Projects/chamber -- env GOCACHE=/tmp/chamber-go-cache go test ./pkg/... ./cmd/...
-limactl shell <linux-instance> --workdir /Users/donglinwang/Projects/chamber -- env CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./cmd/github-ci -run TestRunDogfoodIntegration
+limactl shell <linux-instance> --workdir /Users/donglinwang/Projects/chamber -- env CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./cmd/github-ci/pipeline -run TestRunDogfoodIntegration
 ```
 
 Do not add macOS compatibility shims to make this CI path run natively on
@@ -471,28 +471,39 @@ Do not add macOS compatibility shims for this CI path. If a developer is on
 macOS, they should validate this plan through `limactl shell` into a Linux
 guest.
 
-### 2. Keep the runner local to `cmd/github-ci`
+### 2. Keep the runners local to `cmd/github-ci`
 
-`cmd/github-ci` owns config assembly, image pull, bundle provisioning, runtime
-execution, logging, and result aggregation. The runner is not a public SDK
-boundary; it exists to serve the webhook command.
+`cmd/github-ci` owns config assembly, pipeline selection, logging, and result
+aggregation. Its pipeline package is not a public SDK boundary; it exists to
+serve the webhook command.
 
 The runner shape is:
 
 ```go
-type ciConfig struct {
-    Root    string
-    Workdir string
-    Image   string
-    Timeout time.Duration
-    Keep    bool
+type Config struct {
+    Name        Name
+    Root        string
+    Workdir     string
+    Image       string
+    DaemonURL   string
+    EvidenceDir string
+    Timeout     time.Duration
+    Keep        bool
+    Stdout      []io.Writer
+    Stderr      []io.Writer
 }
 
-func runCI(ctx context.Context, cfg ciConfig) (int, error)
+func Run(ctx context.Context, cfg Config) (int, error)
 ```
 
-The dogfood end-to-end path is an opt-in integration test, not a parameterized
-CLI. It uses:
+Current pipeline names:
+
+- `direct-sdk`: pull, provision, run, log, and cleanup through SDK packages in
+  the GitHub CI process.
+- `daemon-supervised`: pull and run through `chamberd`, then persist proof
+  files under the GitHub CI run log directory.
+
+The dogfood end-to-end path is part of the selected pipeline. It uses:
 
 ```text
 root:    /var/tmp/chamber-ci-<uid>
@@ -586,7 +597,7 @@ OCI Linux VM checks:
 
 ```sh
 GOCACHE=/tmp/chamber-go-cache go test ./pkg/... ./cmd/...
-CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./cmd/github-ci -run TestRunDogfoodIntegration
+CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./cmd/github-ci/pipeline -run TestRunDogfoodIntegration
 ```
 
 End-to-end checks:

@@ -1,4 +1,4 @@
-package main
+package pipeline
 
 import (
 	"context"
@@ -21,82 +21,84 @@ import (
 	"github.com/google/uuid"
 )
 
-const defaultCIImage = "docker.io/library/golang:1.26.4-bookworm"
-const containerGoStateRoot = "/go/chamber-ci"
+const DefaultImage = "docker.io/library/golang:1.26.4-bookworm"
+const ContainerGoStateRoot = "/go/chamber-ci"
 
-var testCommand = []string{
-	"/bin/sh",
-	"-c",
-	"mkdir -p " + containerGoStateRoot + "/build " + containerGoStateRoot + "/mod " + containerGoStateRoot + "/work && " +
-		"GOCACHE=" + containerGoStateRoot + "/build " +
-		"GOMODCACHE=" + containerGoStateRoot + "/mod " +
-		"GOTMPDIR=" + containerGoStateRoot + "/work " +
-		"exec go test ./...",
+const GoTestShellCommand = "mkdir -p " + ContainerGoStateRoot + "/build " + ContainerGoStateRoot + "/mod " + ContainerGoStateRoot + "/work && " +
+	"GOCACHE=" + ContainerGoStateRoot + "/build " +
+	"GOMODCACHE=" + ContainerGoStateRoot + "/mod " +
+	"GOTMPDIR=" + ContainerGoStateRoot + "/work " +
+	"exec go test ./..."
+
+func GoTestCommand() []string {
+	return []string{"/bin/sh", "-c", GoTestShellCommand}
 }
 
-type ciConfig struct {
-	Root    string
-	Workdir string
-	Image   string
-	Timeout time.Duration
-	Keep    bool
-	Stdout  []io.Writer
-	Stderr  []io.Writer
+type Name string
+
+const (
+	DirectSDK        Name = "direct-sdk"
+	DaemonSupervised Name = "daemon-supervised"
+)
+
+type Config struct {
+	Name        Name
+	Root        string
+	Workdir     string
+	Image       string
+	DaemonURL   string
+	EvidenceDir string
+	Timeout     time.Duration
+	Keep        bool
+	Stdout      []io.Writer
+	Stderr      []io.Writer
 }
 
-func runCI(ctx context.Context, cfg ciConfig) (int, error) {
-	if ctx == nil {
-		ctx = context.Background()
+func ParseName(raw string) (Name, error) {
+	switch name := Name(strings.TrimSpace(raw)); name {
+	case "", DirectSDK:
+		return DirectSDK, nil
+	case DaemonSupervised:
+		return DaemonSupervised, nil
+	default:
+		return "", fmt.Errorf("unsupported CI pipeline %q", raw)
 	}
-	if cfg.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, cfg.Timeout)
-		defer cancel()
-	}
-	if strings.TrimSpace(cfg.Image) == "" {
-		cfg.Image = defaultCIImage
-	}
-	if strings.TrimSpace(cfg.Workdir) == "" {
-		cfg.Workdir = "."
-	}
-	if strings.TrimSpace(cfg.Root) == "" {
-		return 1, fmt.Errorf("CI root is required")
-	}
+}
 
-	workspace, err := filepath.Abs(cfg.Workdir)
+func Run(ctx context.Context, cfg Config) (int, error) {
+	name, err := ParseName(string(cfg.Name))
 	if err != nil {
-		return 1, fmt.Errorf("resolve workspace: %w", err)
+		return 1, err
 	}
-	rootParent, err := filepath.Abs(cfg.Root)
-	if err != nil {
-		return 1, fmt.Errorf("resolve CI root: %w", err)
+	cfg.Name = name
+	switch name {
+	case DirectSDK:
+		return RunDirectSDK(ctx, cfg)
+	case DaemonSupervised:
+		return RunDaemonSupervised(ctx, cfg)
+	default:
+		return 1, fmt.Errorf("unsupported CI pipeline %q", name)
 	}
-	if pathContains(workspace, rootParent) {
-		return 1, fmt.Errorf("CI root %q must be outside workspace %q", rootParent, workspace)
-	}
-	ciWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    rootParent,
-		TmpRoot: filepath.Join(rootParent, "tmp"),
-		Requirements: hostfs.FeatureSet{
-			PrivateDirs: true,
-		},
-	})
-	if err != nil {
-		return 1, fmt.Errorf("create CI workspace: %w", err)
-	}
-	root, err := ciWorkspace.MkdirTemp("runs", "chamber-ci-*")
-	if err != nil {
-		return 1, fmt.Errorf("create CI root: %w", err)
-	}
-	if !cfg.Keep {
-		defer func() {
-			if err := os.RemoveAll(root); err != nil {
-				logging.Error(ctx, "remove CI root failed", "root", root, "error", err)
-			}
-		}()
-	}
+}
 
-	logging.Info(ctx, "CI root ready", "root", root)
+func RunDirectSDK(ctx context.Context, cfg Config) (int, error) {
+	ctx, cancel, cfg, err := prepareRun(ctx, cfg)
+	if err != nil {
+		return 1, err
+	}
+	defer cancel()
+
+	workspace, err := workspacePath(cfg)
+	if err != nil {
+		return 1, err
+	}
+	root, cleanup, err := createRunRoot(ctx, cfg)
+	if err != nil {
+		return 1, err
+	}
+	defer cleanup()
+
+	logging.Info(ctx, "CI root ready", "root", root, "pipeline", DirectSDK)
 	imageConfig, imageWorkspace, err := imageStoreConfig(root)
 	if err != nil {
 		return 1, err
@@ -148,7 +150,7 @@ func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 		ImageDigest:   image.Digest,
 		ImagePlatform: image.Platform,
 		Process: chamberBundle.ProcessSpec{
-			Args:     testCommand,
+			Args:     GoTestCommand(),
 			Cwd:      "/workspace",
 			Terminal: &terminal,
 		},
@@ -176,6 +178,7 @@ func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 		return 1, fmt.Errorf("run CI container: %w", err)
 	}
 	result, waitErr := container.Wait(ctx)
+	exitCode := ContainerExitCode(result)
 	stdout, stdoutErr := container.ReadLog(chamberRuntime.StdoutLogStream)
 	stderr, stderrErr := container.ReadLog(chamberRuntime.StderrLogStream)
 	if len(stdout) > 0 {
@@ -192,20 +195,93 @@ func runCI(ctx context.Context, cfg ciConfig) (int, error) {
 		_ = container.DeleteLog(chamberRuntime.StderrLogStream)
 	}
 	if waitErr != nil {
-		return result.ExitCode, waitErr
+		return exitCode, waitErr
 	}
 	if stdoutErr != nil {
-		return result.ExitCode, fmt.Errorf("read stdout: %w", stdoutErr)
+		return exitCode, fmt.Errorf("read stdout: %w", stdoutErr)
 	}
 	if stderrErr != nil {
-		return result.ExitCode, fmt.Errorf("read stderr: %w", stderrErr)
+		return exitCode, fmt.Errorf("read stderr: %w", stderrErr)
 	}
-	if result.ExitCode == 0 {
-		logging.Info(ctx, "CI passed")
+	if exitCode == 0 {
+		logging.Info(ctx, "CI passed", "pipeline", DirectSDK)
 	} else {
-		logging.Error(ctx, "CI failed", "exit_code", result.ExitCode)
+		logging.Error(ctx, "CI failed", "pipeline", DirectSDK, "exit_code", exitCode)
 	}
-	return result.ExitCode, nil
+	return exitCode, nil
+}
+
+func ContainerExitCode(result chamberRuntime.ContainerResult) int {
+	if result.ExitCode == nil {
+		return 1
+	}
+	return *result.ExitCode
+}
+
+func prepareRun(ctx context.Context, cfg Config) (context.Context, context.CancelFunc, Config, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cancel := func() {}
+	if cfg.Timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, cfg.Timeout)
+	}
+	if strings.TrimSpace(cfg.Image) == "" {
+		cfg.Image = DefaultImage
+	}
+	if strings.TrimSpace(cfg.Workdir) == "" {
+		cfg.Workdir = "."
+	}
+	if strings.TrimSpace(cfg.Root) == "" {
+		cancel()
+		return ctx, func() {}, cfg, fmt.Errorf("CI root is required")
+	}
+	return ctx, cancel, cfg, nil
+}
+
+func workspacePath(cfg Config) (string, error) {
+	workspace, err := filepath.Abs(cfg.Workdir)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace: %w", err)
+	}
+	rootParent, err := filepath.Abs(cfg.Root)
+	if err != nil {
+		return "", fmt.Errorf("resolve CI root: %w", err)
+	}
+	if PathContains(workspace, rootParent) {
+		return "", fmt.Errorf("CI root %q must be outside workspace %q", rootParent, workspace)
+	}
+	return workspace, nil
+}
+
+func createRunRoot(ctx context.Context, cfg Config) (string, func(), error) {
+	rootParent, err := filepath.Abs(cfg.Root)
+	if err != nil {
+		return "", func() {}, fmt.Errorf("resolve CI root: %w", err)
+	}
+	ciWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root:    rootParent,
+		TmpRoot: filepath.Join(rootParent, "tmp"),
+		Requirements: hostfs.FeatureSet{
+			PrivateDirs: true,
+		},
+	})
+	if err != nil {
+		return "", func() {}, fmt.Errorf("create CI workspace: %w", err)
+	}
+	root, err := ciWorkspace.MkdirTemp("runs", "chamber-ci-*")
+	if err != nil {
+		return "", func() {}, fmt.Errorf("create CI root: %w", err)
+	}
+	cleanup := func() {}
+	if !cfg.Keep {
+		cleanup = func() {
+			if err := os.RemoveAll(root); err != nil {
+				logging.Error(ctx, "remove CI root failed", "root", root, "error", err)
+			}
+		}
+	}
+	return root, cleanup, nil
 }
 
 func imageStoreConfig(root string) (chamberImage.Config, *hostfs.Workspace, error) {
@@ -275,7 +351,7 @@ func runtimeConfig(root string) (chamberRuntime.Config, *hostfs.Workspace, *host
 	return config, runtimeWorkspace, binaryWorkspace, nil
 }
 
-func pathContains(parent string, child string) bool {
+func PathContains(parent string, child string) bool {
 	relative, err := filepath.Rel(parent, child)
 	if err != nil {
 		return false
