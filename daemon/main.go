@@ -18,7 +18,6 @@ import (
 	chamberEtcdMetadataStore "github.com/donglin-wang/chamber/daemon/metadata/etcd"
 	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
 	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
-	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
@@ -49,8 +48,14 @@ func configureLogging(config chamberLogging.Config) {
 }
 
 func run(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "runtime-supervisor" {
+		return runRuntimeSupervisor(ctx, args[1:])
+	}
 	if len(args) > 0 && args[0] == "storage" {
 		return runStorage(args[1:], os.Getenv, os.Stdout)
+	}
+	if len(args) > 0 && args[0] == "serve" {
+		args = args[1:]
 	}
 
 	options, err := parseArgs(args)
@@ -99,33 +104,6 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("create bundle workspace: %w", err)
 	}
-	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    runtimeConfig.RuntimeRoot,
-		TmpRoot: runtimeConfig.RuntimeTmpRoot,
-		Requirements: hostfs.FeatureSet{
-			PrivateDirs:      true,
-			FileFsync:        true,
-			AtomicFileRename: true,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("create runtime workspace: %w", err)
-	}
-	var runtimeBinaryWorkspace *hostfs.Workspace
-	if runtimeConfig.RuntimePath == "" {
-		runtimeBinaryWorkspace, err = hostfs.NewWorkspace(hostfs.Config{
-			Root:    runtimeConfig.RuntimeBinDir,
-			TmpRoot: runtimeConfig.RuntimeBinTmpRoot,
-			Requirements: hostfs.FeatureSet{
-				PrivateDirs:      true,
-				FileFsync:        true,
-				AtomicFileRename: true,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("create runtime binary workspace: %w", err)
-		}
-	}
 	metadataWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:    cfg.Metadata.Root,
 		TmpRoot: filepath.Join(cfg.TmpRoot, "metadata"),
@@ -145,18 +123,14 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("open metadata store: %w", err)
 	}
 	defer store.Close()
-
-	runtime, err := chamberRuntimeFactory.NewRuntimeWithWorkspace(lifetime, runtimeConfig, runtimeWorkspace, runtimeBinaryWorkspace)
-	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
-	}
+	go watchSupervisorContainers(lifetime, store)
 
 	mux := newServer()
 	imageStore, err := chamberImageFactory.NewStoreWithWorkspace(imageConfig, imageWorkspace)
 	if err != nil {
 		return fmt.Errorf("create image store: %w", err)
 	}
-	registerImageRoutes(mux, cfg, store, imageStore)
+	registerImageRoutes(mux, store, imageStore)
 	provisioner, err := chamberBundleFactory.NewProvisionerWithWorkspace(
 		bundleConfig,
 		bundleWorkspace,
@@ -168,9 +142,10 @@ func run(ctx context.Context, args []string) error {
 		mux,
 		store,
 		imageStore,
-		runtime,
+		runtimeConfig,
 		provisioner,
-		lifetime,
+		filepath.Join(filepath.Dir(cfg.Metadata.Root), "supervisors"),
+		startSupervisorProcess,
 	)
 
 	server := &http.Server{

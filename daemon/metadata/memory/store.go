@@ -240,6 +240,15 @@ func (s *MemoryStore) TransitionContainer(
 	if update.StderrPath != "" {
 		container.StderrPath = update.StderrPath
 	}
+	if update.RuntimeRoot != "" {
+		container.RuntimeRoot = update.RuntimeRoot
+	}
+	if update.SupervisorPath != "" {
+		container.SupervisorPath = update.SupervisorPath
+	}
+	if update.SupervisorPID != 0 {
+		container.SupervisorPID = update.SupervisorPID
+	}
 	s.containers[id] = cloneContainer(container)
 	return cloneContainer(container), nil
 }

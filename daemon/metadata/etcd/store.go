@@ -267,6 +267,15 @@ func (s *Store) TransitionContainer(
 	if update.StderrPath != "" {
 		container.StderrPath = update.StderrPath
 	}
+	if update.RuntimeRoot != "" {
+		container.RuntimeRoot = update.RuntimeRoot
+	}
+	if update.SupervisorPath != "" {
+		container.SupervisorPath = update.SupervisorPath
+	}
+	if update.SupervisorPID != 0 {
+		container.SupervisorPID = update.SupervisorPID
+	}
 
 	if err := compareAndPut(ctx, s.client, key, modRevision, container); err != nil {
 		return metadata.Container{}, err

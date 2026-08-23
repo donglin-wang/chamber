@@ -40,21 +40,26 @@ const (
 )
 
 type Container struct {
-	ID          string             `json:"id"`
-	OperationID string             `json:"operation_id"`
-	TraceID     string             `json:"trace_id,omitempty"`
-	SpanID      string             `json:"span_id,omitempty"`
-	ImageDigest string             `json:"image_digest"`
-	ImageRef    string             `json:"image_ref"`
-	BundlePath  string             `json:"bundle_path"`
-	StdoutPath  string             `json:"stdout_path,omitempty"`
-	StderrPath  string             `json:"stderr_path,omitempty"`
-	Runtime     string             `json:"runtime"`
-	State       ContainerState     `json:"state"`
-	CreatedAt   time.Time          `json:"created_at"`
-	UpdatedAt   time.Time          `json:"updated_at"`
-	ExitCode    *int               `json:"exit_code,omitempty"`
-	ErrorCode   chamberErrors.Code `json:"error_code,omitempty"`
+	ID          string `json:"id"`
+	OperationID string `json:"operation_id"`
+	TraceID     string `json:"trace_id,omitempty"`
+	SpanID      string `json:"span_id,omitempty"`
+	ImageDigest string `json:"image_digest"`
+	ImageRef    string `json:"image_ref"`
+	BundlePath  string `json:"bundle_path"`
+	StdoutPath  string `json:"stdout_path,omitempty"`
+	StderrPath  string `json:"stderr_path,omitempty"`
+	Runtime     string `json:"runtime"`
+	RuntimeRoot string `json:"runtime_root,omitempty"`
+
+	SupervisorPath string `json:"supervisor_path,omitempty"`
+	SupervisorPID  int    `json:"supervisor_pid,omitempty"`
+
+	State     ContainerState     `json:"state"`
+	CreatedAt time.Time          `json:"created_at"`
+	UpdatedAt time.Time          `json:"updated_at"`
+	ExitCode  *int               `json:"exit_code,omitempty"`
+	ErrorCode chamberErrors.Code `json:"error_code,omitempty"`
 }
 
 type OperationKind string
@@ -94,6 +99,7 @@ type StateTransition[T ~string] struct {
 var validContainerTransitions = map[StateTransition[ContainerState]]bool{
 	{ContainerCreating, ContainerStarting}: true,
 	{ContainerCreating, ContainerFailed}:   true,
+	{ContainerCreating, ContainerExited}:   true,
 	{ContainerStarting, ContainerRunning}:  true,
 	{ContainerStarting, ContainerFailed}:   true,
 	{ContainerStarting, ContainerExited}:   true,
@@ -151,12 +157,16 @@ type Store interface {
 }
 
 type ContainerUpdate struct {
-	State      ContainerState
-	At         time.Time
-	ExitCode   *int
-	ErrorCode  chamberErrors.Code
-	StdoutPath string
-	StderrPath string
+	State       ContainerState
+	At          time.Time
+	ExitCode    *int
+	ErrorCode   chamberErrors.Code
+	StdoutPath  string
+	StderrPath  string
+	RuntimeRoot string
+
+	SupervisorPath string
+	SupervisorPID  int
 }
 
 type OperationUpdate struct {

@@ -150,6 +150,20 @@ const openAPIJSON = `{
                     "image": "docker.io/library/alpine:latest",
                     "command": ["/bin/sh", "-c", "id && echo chamber"]
                   }
+                },
+                "workspaceTest": {
+                  "value": {
+                    "image": "docker.io/library/golang:latest",
+                    "command": ["/bin/sh", "-lc", "cd /workspace && GOCACHE=/tmp/chamber-go-cache go test ./..."],
+                    "mounts": [
+                      {
+                        "type": "bind",
+                        "source": "/home/user/chamber",
+                        "target": "/workspace",
+                        "options": ["rbind", "ro"]
+                      }
+                    ]
+                  }
                 }
               }
             }
@@ -252,6 +266,34 @@ const openAPIJSON = `{
             "items": { "type": "string" },
             "minItems": 1,
             "example": ["/bin/sh", "-c", "id && echo chamber"]
+          },
+          "mounts": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Mount" }
+          }
+        }
+      },
+      "Mount": {
+        "type": "object",
+        "required": ["source", "target"],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "example": "bind"
+          },
+          "source": {
+            "type": "string",
+            "example": "/home/user/chamber"
+          },
+          "target": {
+            "type": "string",
+            "example": "/workspace"
+          },
+          "options": {
+            "type": "array",
+            "items": { "type": "string" },
+            "example": ["rbind", "ro"]
           }
         }
       },

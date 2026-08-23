@@ -12,17 +12,17 @@ import (
 type Mount struct {
 	// Type is the OCI mount type. Empty defaults to "bind" for current bundle
 	// provisioning.
-	Type string
+	Type string `json:"type,omitempty"`
 
 	// Source is the host path to mount.
-	Source string
+	Source string `json:"source"`
 
 	// Target is the absolute path where the mount appears inside the container.
-	Target string
+	Target string `json:"target"`
 
 	// Options are OCI mount options. Empty uses the provisioner's bind-mount
 	// defaults.
-	Options []string
+	Options []string `json:"options,omitempty"`
 }
 
 // ProvisionedBundle describes a ready OCI runtime bundle.
