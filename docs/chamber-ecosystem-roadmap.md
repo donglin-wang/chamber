@@ -137,16 +137,34 @@ Required probes: `build` when building the test image, `provision`, and `run`.
 For pull-only CI, `provision` and `run` are mandatory, while registry access is
 validated as part of image pull behavior.
 
-### Ring 2: Daemon-Hosted Test Container
+### Ring 2: Daemon-Supervised Test Container
 
 Run the same repo test workload through `chamberd` instead of direct SDK
-composition. The daemon owns operation records, state transitions, log paths,
-and cleanup.
+composition. The daemon owns operation records, state transitions, supervisor
+subprocesses, log paths, completion results, restart reconciliation, and
+cleanup.
 
 This proves the local authority can host Chamber's own CI workload.
 
 Required probes: `daemon`, including the selected image, bundle, runtime,
 metadata, socket, and cleanup scopes.
+
+Current proof path:
+
+```sh
+github-ci \
+  -pipeline=daemon-supervised \
+  -daemon-url http://127.0.0.1:8080 \
+  -root /var/lib/chamber-ci \
+  -secrets-file /path/to/github-ci-secrets.json
+```
+
+The `daemon-supervised` GitHub CI pipeline pulls a Go image through `chamberd`,
+starts a daemon-supervised container, bind-mounts the checked-out SHA at
+`/workspace`, runs `go test ./...` with Go cache, module cache, and temp state
+inside the container, polls daemon container state, and writes `input.json`,
+`healthz.json`, `pull.json`, `run.json`, `polls.json`, `stdout.log`,
+`stderr.log`, and `proof.json` under that CI run's log directory.
 
 ### Ring 3: Chamber-Hosted Cluster Test
 
@@ -226,49 +244,58 @@ This phase is not solid until the validator prevents the known class of
 "everything looked fine until AppArmor/runc/BuildKit failed halfway through"
 incidents.
 
-## Phase 1: Runtime Becomes Reconnectable
+## Phase 1: Daemon Runtime Supervisor
 
 ### Goal
 
-Move `pkg/runtime` from direct `runc run` process ownership toward a
-shim-like lifecycle model. A runtime container should be controllable after the
-original caller process exits.
+Introduce a daemon-owned runtime supervisor mode without requiring SDK callers,
+local developers, CI, or users of `go run ./daemon` to build or configure a
+separate shim binary.
+
+The direct SDK runtime path remains a low-level package primitive. Daemon-grade
+supervision belongs in `chamberd`, which spawns a second copy of the daemon
+binary in an explicit supervisor mode.
 
 ### Implementation Plan
 
-- Introduce a small Chamber-owned runtime shim process or equivalent supervisor.
-- Persist runtime-owned state under `RuntimeRoot`, including pid, status,
-  stdout path, stderr path, started time, exit code, exit time, and error.
-- Add a reconnect/open API such as `Runtime.Open(ctx, containerID)` or an
-  equivalent runtime-owned container lookup.
-- Keep stdio and log ownership inside the runtime package.
-- Keep daemon operation records out of `pkg/runtime`.
-- Ensure `State`, `Signal`, `Delete`, `ReadLog`, and `Wait` can work after the
-  original caller reconnects.
-- Preserve the public `os.Signal` vocabulary for container signaling.
+- Add `docs/daemon-runtime-supervisor-plan.md` as the implementation contract.
+- Keep `pkg/runtime` focused on ordinary runtime primitives such as `Run`,
+  `Open`, `Container`, and `RunAndWait`.
+- Keep one daemon-owned supervisor state file per container because it exists to
+  recover daemon operations, not to define a public runtime SDK model.
+- Add an explicit daemon mode such as
+  `go run ./daemon runtime-supervisor --supervisor <path>`.
+- Have the parent daemon spawn the same daemon binary through `os.Executable()`
+  with supervisor-mode arguments, not through a package `init` hook.
+- Make the supervisor process read one supervisor file, run one runtime
+  container, atomically advance its phase, and exit.
+- Keep daemon operation records, cancellation policy, restart reconciliation,
+  and cleanup authority in the daemon.
+- Keep the direct SDK runtime path usable from Go scripts and tests without
+  daemon setup, helper binaries, `just`, `make`, or `ShimPath` configuration.
 
 ### Embarrassingly Solid Dogfood Proof
 
-Use Ring 1 after a passing `run` probe. Run Chamber's own test suite inside a
-Chamber-launched container, then intentionally kill the host-side Go process
-that launched the container. A second Chamber process must reconnect to the
-runtime container, read logs, wait for completion, delete runtime state, and
-prove no runtime-owned files are left except retained evidence.
+Use Ring 2 after a passing `daemon` probe. Start the daemon, ask it to run a
+short container through supervisor mode, and prove the supervisor process
+captures stdout, stderr, exit status, and errors without starting the daemon
+server in the child process.
 
 The proof should include:
 
 - one short successful container, such as `echo ok`;
-- one long-running container that survives caller exit;
-- one Chamber CI container running `go test ./...`;
-- reconnect after caller exit;
-- reconnect after a new Chamber binary process starts;
-- successful signal and forced delete;
-- stdout/stderr log reads before and after reconnect;
-- cleanup verification under the runtime root.
+- one failing container with a non-zero exit code;
+- one long-running container supervised by a daemon child process;
+- one daemon-supervised Chamber CI container running `go test ./...`;
+- daemon restart while the supervisor process is still running;
+- supervisor process failure or kill with explicit daemon recovery state;
+- successful cancellation and forced cleanup;
+- stdout/stderr log reads after daemon restart;
+- cleanup verification under daemon, bundle, and runtime roots.
 
-This phase is not solid until `Wait` no longer depends on an in-memory
-`exec.Cmd` handle owned by the original caller, and until any post-probe
-runtime host-policy failure is treated as a missing validator check.
+This phase is not solid until daemon-supervised execution has a real process
+boundary, no separate helper-binary setup, no hidden `init` dispatch, and no
+daemon imports of private concrete runtime adapters.
 
 ## Phase 2: Daemon Owns Durable Local Lifecycle
 
@@ -284,8 +311,8 @@ truth.
   logs, and cancel operations.
 - Add daemon startup reconciliation for `creating`, `starting`, and `running`
   container records.
-- Reconnect daemon records to runtime containers through the new runtime open
-  API.
+- Reconcile daemon records with supervisor files, supervisor PIDs, runtime
+  state, and cleanup records.
 - Add operation-scoped locks for image references, containers, and cleanup.
 - Add stop/remove endpoints before adding richer orchestration.
 - Add log tailing only after log ownership and read behavior are stable.
@@ -297,9 +324,8 @@ truth.
 
 Use Ring 2 after a passing `daemon` probe. Start `chamberd`, ask it to run
 Chamber's own test suite in a container, then restart `chamberd` while the test
-container is still running. The restarted daemon must reconcile records,
-reconnect to runtime state, return logs, record the final exit code, and clean
-up.
+container is still running. The restarted daemon must reconcile operation
+records, supervisor state, runtime state, logs, final exit code, and cleanup.
 
 The proof matrix should cover:
 
@@ -655,13 +681,18 @@ The next practical sequence is:
 2. Add active `provision` and `run` probes, including AppArmor/user-namespace
    detection.
 3. Require those probes before runtime dogfood runs.
-4. Design the runtime reconnect API and shim state layout.
-5. Implement the runtime dogfood reconnect test.
-6. Add daemon startup reconciliation on top of reconnectable runtime state.
-7. Add daemon stop/remove/log/state endpoints.
-8. Add the aggregate daemon probe.
-9. Design the minimal `pkg/network` contracts and network probe.
-10. Build the first two-container Chamber network proof.
+4. Implement the daemon runtime supervisor shape in
+   `docs/daemon-runtime-supervisor-plan.md`.
+5. Keep runtime supervision as one daemon-owned supervisor state file built on
+   top of `pkg/runtime.RunAndWait`.
+6. Add daemon `runtime-supervisor --supervisor <path>` mode and parent-process
+   spawn logic using the daemon binary.
+7. Add daemon reconciliation on top of supervisor files, runtime state, and
+   cleanup records.
+8. Add daemon stop/remove/log/state endpoints.
+9. Add the aggregate daemon probe.
+10. Design the minimal `pkg/network` contracts and network probe.
+11. Build the first two-container Chamber network proof.
 
 The product line should stay narrow while these are in progress. If a proposed
 feature cannot be validated by one of the dogfood rings above, it is probably
