@@ -1,0 +1,14 @@
+[Unit]
+Description=Chamber daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/chamberd -http-addr=127.0.0.1:18080
+Restart=on-failure
+RestartSec=5s
+WorkingDirectory=%h
+
+[Install]
+WantedBy=default.target

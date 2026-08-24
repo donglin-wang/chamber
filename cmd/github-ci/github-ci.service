@@ -1,7 +1,7 @@
 [Unit]
 Description=Chamber GitHub CI webhook receiver
-After=network-online.target
-Wants=network-online.target
+After=network-online.target chamberd.service
+Wants=network-online.target chamberd.service
 
 [Service]
 Type=simple
