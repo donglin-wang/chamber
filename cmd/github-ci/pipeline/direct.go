@@ -42,7 +42,6 @@ const (
 )
 
 type Config struct {
-	Name        Name
 	Root        string
 	Workdir     string
 	Image       string
@@ -54,31 +53,36 @@ type Config struct {
 	Stderr      []io.Writer
 }
 
-func ParseName(raw string) (Name, error) {
-	switch name := Name(strings.TrimSpace(raw)); name {
-	case "", DirectSDK:
-		return DirectSDK, nil
-	case DaemonSupervised:
-		return DaemonSupervised, nil
-	default:
-		return "", fmt.Errorf("unsupported CI pipeline %q", raw)
-	}
+func Names() []Name {
+	return []Name{DirectSDK, DaemonSupervised}
 }
 
 func Run(ctx context.Context, cfg Config) (int, error) {
-	name, err := ParseName(string(cfg.Name))
-	if err != nil {
-		return 1, err
+	exitCode := 0
+	var runErr error
+	for _, name := range Names() {
+		code, err := runOne(ctx, cfg, name)
+		if code != 0 && exitCode == 0 {
+			exitCode = code
+		}
+		if err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("%s pipeline: %w", name, err))
+		}
+		if ctx != nil && ctx.Err() != nil {
+			break
+		}
 	}
-	cfg.Name = name
+	return exitCode, runErr
+}
+
+func runOne(ctx context.Context, cfg Config, name Name) (int, error) {
 	switch name {
 	case DirectSDK:
 		return RunDirectSDK(ctx, cfg)
 	case DaemonSupervised:
 		return RunDaemonSupervised(ctx, cfg)
-	default:
-		return 1, fmt.Errorf("unsupported CI pipeline %q", name)
 	}
+	return 1, fmt.Errorf("unsupported CI pipeline %q", name)
 }
 
 func RunDirectSDK(ctx context.Context, cfg Config) (int, error) {

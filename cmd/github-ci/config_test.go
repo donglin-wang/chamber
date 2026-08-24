@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	ciPipeline "github.com/donglin-wang/chamber/cmd/github-ci/pipeline"
 )
 
 func TestParseConfigReadsCommandLineConfigAndSecretsFile(t *testing.T) {
@@ -25,7 +23,6 @@ func TestParseConfigReadsCommandLineConfigAndSecretsFile(t *testing.T) {
 		"-run-timeout=45m",
 		"-retention=24h",
 		"-skip-preflight",
-		"-pipeline=daemon-supervised",
 		"-daemon-url=http://127.0.0.1:18080",
 		"-secrets-file=" + secretsFile,
 	})
@@ -62,9 +59,6 @@ func TestParseConfigReadsCommandLineConfigAndSecretsFile(t *testing.T) {
 	}
 	if !cfg.SkipPreflight {
 		t.Fatal("SkipPreflight = false, want true")
-	}
-	if cfg.Pipeline != ciPipeline.DaemonSupervised {
-		t.Fatalf("Pipeline = %q, want %q", cfg.Pipeline, ciPipeline.DaemonSupervised)
 	}
 	if cfg.DaemonURL != "http://127.0.0.1:18080" {
 		t.Fatalf("DaemonURL = %q, want configured daemon URL", cfg.DaemonURL)
@@ -137,14 +131,13 @@ func TestParseConfigRejectsUnknownSecretFields(t *testing.T) {
 	}
 }
 
-func TestParseConfigRequiresDaemonURLForDaemonPipeline(t *testing.T) {
+func TestParseConfigRequiresDaemonURL(t *testing.T) {
 	secretsFile := writeSecretsFile(t, `{
 		"github_token": "status-token",
 		"github_webhook_secret": "webhook-secret"
 	}`)
 
 	_, err := parseConfig([]string{
-		"-pipeline=daemon-supervised",
 		"-secrets-file=" + secretsFile,
 	})
 	if err == nil {

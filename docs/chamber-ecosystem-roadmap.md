@@ -153,14 +153,14 @@ Current proof path:
 
 ```sh
 github-ci \
-  -pipeline=daemon-supervised \
-  -daemon-url http://127.0.0.1:8080 \
+  -daemon-url http://127.0.0.1:18080 \
   -root /var/lib/chamber-ci \
   -secrets-file /path/to/github-ci-secrets.json
 ```
 
-The `daemon-supervised` GitHub CI pipeline pulls a Go image through `chamberd`,
-starts a daemon-supervised container, bind-mounts the checked-out SHA at
+GitHub CI runs both the direct SDK pipeline and the daemon-supervised pipeline
+against the checked-out SHA. The daemon-supervised stage pulls a Go image
+through `chamberd`, starts a supervised container, bind-mounts the checkout at
 `/workspace`, runs `go test ./...` with Go cache, module cache, and temp state
 inside the container, polls daemon container state, and writes `input.json`,
 `healthz.json`, `pull.json`, `run.json`, `polls.json`, `stdout.log`,

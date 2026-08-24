@@ -254,7 +254,6 @@ func (s *server) runCIForPush(parent context.Context, record runRecord, dirs run
 		return
 	}
 	result, err := s.runCI(ctx, ciPipeline.Config{
-		Name:        s.cfg.Pipeline,
 		Root:        filepath.Join(s.cfg.Root, "ci"),
 		Workdir:     dirs.checkout,
 		Image:       ciPipeline.DefaultImage,

@@ -38,6 +38,13 @@ func TestRunDogfoodIntegration(t *testing.T) {
 	}
 }
 
+func TestNamesIncludesBothPipelines(t *testing.T) {
+	names := Names()
+	if len(names) != 2 || names[0] != DirectSDK || names[1] != DaemonSupervised {
+		t.Fatalf("Names() = %#v, want direct SDK then daemon supervised", names)
+	}
+}
+
 func TestRunRequiresRoot(t *testing.T) {
 	exitCode, err := Run(context.Background(), Config{
 		Workdir: t.TempDir(),

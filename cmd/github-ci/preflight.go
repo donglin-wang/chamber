@@ -61,10 +61,8 @@ func runPreflight(ctx context.Context, cfg config) error {
 	if err := runTinyContainerPreflight(ctx, cfg); err != nil {
 		return fmt.Errorf("run tiny Chamber container preflight: %w", err)
 	}
-	if cfg.Pipeline == ciPipeline.DaemonSupervised {
-		if err := requireDaemonHealth(ctx, cfg.DaemonURL); err != nil {
-			return err
-		}
+	if err := requireDaemonHealth(ctx, cfg.DaemonURL); err != nil {
+		return err
 	}
 	return nil
 }

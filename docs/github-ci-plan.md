@@ -473,7 +473,7 @@ guest.
 
 ### 2. Keep the runners local to `cmd/github-ci`
 
-`cmd/github-ci` owns config assembly, pipeline selection, logging, and result
+`cmd/github-ci` owns config assembly, pipeline execution, logging, and result
 aggregation. Its pipeline package is not a public SDK boundary; it exists to
 serve the webhook command.
 
@@ -481,7 +481,6 @@ The runner shape is:
 
 ```go
 type Config struct {
-    Name        Name
     Root        string
     Workdir     string
     Image       string
@@ -496,14 +495,14 @@ type Config struct {
 func Run(ctx context.Context, cfg Config) (int, error)
 ```
 
-Current pipeline names:
+Current pipeline suite:
 
 - `direct-sdk`: pull, provision, run, log, and cleanup through SDK packages in
   the GitHub CI process.
 - `daemon-supervised`: pull and run through `chamberd`, then persist proof
   files under the GitHub CI run log directory.
 
-The dogfood end-to-end path is part of the selected pipeline. It uses:
+Both run for every admitted GitHub CI job. The dogfood end-to-end path uses:
 
 ```text
 root:    /var/tmp/chamber-ci-<uid>
