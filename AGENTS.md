@@ -79,6 +79,32 @@ Model privilege cleanly:
 - Keep package-owned config at generic boundaries. Avoid letting global config import concrete adapters such as specific metadata or runtime implementations.
 - Keep shared helpers small and policy-shaped. `pkg/shared/hostfs` should encode scoped private-directory, temporary-root, and filesystem-capability policy, not become a broad utility grab bag.
 
+## Code Clarity And Package Boundaries
+
+Code should read like a self-evident first-principles explanation of what is
+going on. A seasoned Go developer should be able to open an arbitrary file and
+understand the process stages, ownership, and side effects from the file's
+types and function names without needing hidden context from a prior refactor.
+
+- Treat each file's function list as a contract with the reader. In the context
+  of that file, every function name should justify why the function exists.
+  If a reader would reasonably ask "why is this here?", rename it, inline it,
+  move it to the owning package, or remove it.
+- Keep helpers only when they express a real domain step, isolate a hazardous
+  invariant, hide meaningful complexity, or provide a necessary test seam.
+  Do not keep helpers that merely forward to another helper, wrap a literal, or
+  exist only to make another function appear shorter.
+- Package boundaries should reduce how much state a developer must keep in
+  their head. A package should make its ownership obvious enough to guard
+  against human error: callers should know which package owns a concept,
+  which package may persist it, and which package may mutate it.
+- Before moving a type, field, durable file, or helper across a package
+  boundary, identify the concept's owner in plain language. If ownership is
+  unclear, stop and clarify the boundary instead of adding an abstraction.
+- Do not let names imply a stronger guarantee than the code provides. A
+  function named for supervision, recovery, persistence, lease ownership, or
+  cleanup must actually own that contract end to end.
+
 ## Naming And Import Conventions
 
 - If a Chamber package import needs an alias, use a readable `chamber...` alias rather than a shortened `ch...` alias.
@@ -112,7 +138,11 @@ Important current boundaries:
 - `pkg/image/internal/store`, `pkg/image/internal/metadata`, `pkg/image/internal/registry`, and `pkg/image/internal/buildkit`: concrete image-store orchestration, JSON metadata, go-containerregistry pull mechanics, and BuildKit-backed Dockerfile build mechanics. Registry/build helpers write temporary OCI layouts; the store validates, copies reachable blobs into the shared layout, rewrites the shared index, and writes metadata last. `Store.Build` uses configured local BuildKit executables or downloads managed tools, and keeps builder state below the configured image root.
 - `pkg/bundle`: public bundle provisioning contract, bundle-root config, `ProcessSpec`, and provisioner-applied `Mounts`. Use `bundle/factory.NewProvisioner`; `pkg/bundle.Config.Name` selects the concrete provisioner implementation, and the factory constructor owns implementation name checks before dispatch. `ProcessSpec.Terminal` is a pointer so callers can distinguish "leave the image default alone" from "force true/false". Do not expose future runtime-applied rootfs mount hooks before a runtime implementation supports them.
 - `pkg/bundle/internal/directory`: concrete directory-backed OCI bundle provisioner using `umoci`. It currently supports rootless provisioning and owns unpacking, rootless OCI spec patching, private `config.json` writes, temporary staging, and atomic final bundle placement.
-- `pkg/runtime`: public runtime contract, config, schemas, and fixed string constants. Concrete implementations such as `pkg/runtime/internal/runc` import the root runtime package and expose their own ordinary `New` constructor for the factory constructor to dispatch to. `runtime/factory.NewRuntime` owns shared validation, including Linux host gating, implementation name checks, and private runtime directory creation, then dispatches directly to the concrete implementation. The `Runtime` interface includes only `Descriptor` and `Run`; `Descriptor` includes runtime identity, version, and binary path. `Run` accepts a provisioned bundle plus optional stdin and stdout/stderr writer slices, always writes default runtime logs, and returns a `Container`. The `Run` context controls launch work only; after `Run` succeeds, lifecycle belongs to the returned `Container`. The `Container` owns per-container lifecycle methods: `ID`, `StdoutPath`, `StderrPath`, `Wait`, `State`, `Signal`, `Delete`, `ReadLog`, and `DeleteLog`. Use the standard library `os.Signal`/`syscall.Signal` vocabulary for runtime signals. Runtime statuses and log streams should use the fixed runtime string types and constants instead of raw unbounded strings at public boundaries.
+- `pkg/runtime`: public runtime contract, config, schemas, and fixed string constants. Concrete implementations such as `pkg/runtime/internal/runc` import the root runtime package and expose their own ordinary `New` constructor for the factory constructor to dispatch to. `runtime/factory.NewRuntime` owns shared validation, including Linux host gating, implementation name checks, and private runtime directory creation, then dispatches directly to the concrete implementation. The `Runtime` interface includes only ordinary runtime operations such as `Descriptor`, `Run`, and reconnect/open primitives such as `Open` when needed; do not add daemon operation, lease, reconciliation, or metadata concepts to it. `Descriptor` includes runtime identity, version, and binary path. `Run` accepts a provisioned bundle plus optional stdin and stdout/stderr writer slices, always writes default runtime logs, and returns a `Container`. The `Run` context controls launch work only; after `Run` succeeds, lifecycle belongs to the returned `Container`. The `Container` owns per-container lifecycle methods: `ID`, `StdoutPath`, `StderrPath`, `Wait`, `State`, `Signal`, `Delete`, `ReadLog`, and `DeleteLog`. Use the standard library `os.Signal`/`syscall.Signal` vocabulary for runtime signals. Runtime statuses and log streams should use the fixed runtime string types and constants instead of raw unbounded strings at public boundaries.
+- Runtime-owned supervised helpers may describe runtime launch evidence, started
+  evidence, result evidence, stdio/log plumbing, and container IDs. They must
+  not contain daemon-only vocabulary such as operation IDs, daemon metadata
+  states, leases, HTTP response fields, or recovery/reconciliation policy.
 - `pkg/shared/errors`: canonical public Chamber error-code taxonomy. The daemon and SDK adapters should use these durable codes for contract errors and response mapping.
   Prefer choosing the Chamber error from the Chamber step that failed, not by
   translating library-specific sentinel errors into Chamber codes. For example,
@@ -163,6 +193,72 @@ When asked to clean up or simplify code:
 - Preserve behavior unless the user explicitly asked for a behavior change. Keep diffs small, testable, and easy to review.
 - Leave code alone when simplification is not obvious. A boring, explicit implementation is better than a clever cleanup that moves complexity somewhere else.
 - Do not commit during review or cleanup unless the user explicitly asks for a commit.
+
+## Refactor Guardrails
+
+Refactors should make ownership, control flow, and package boundaries more
+obvious. They are not permission to introduce speculative abstractions or move
+concepts into packages where they are merely convenient.
+
+Before adding or moving any type, field, function, interface, durable file, or
+schema across package boundaries, answer these questions from the code in front
+of you:
+
+- Which package owns this concept?
+- Which package is allowed to persist it?
+- Which package is allowed to mutate it?
+- Which callers should know this concept exists?
+- Does this include daemon-only vocabulary such as operation IDs, leases,
+  metadata states, reconciliation, cancellation policy, HTTP/API responses, or
+  operation records?
+
+Boundary rules for refactors:
+
+- `OperationID`, daemon metadata states, operation records, leases,
+  reconciliation, daemon recovery policy, and HTTP response concerns belong to
+  `daemon`.
+- Root SDK packages under `pkg/` may own reusable image, bundle, runtime, host
+  filesystem, subprocess, and error-code concepts. They must not know about
+  daemon operations merely because the daemon is currently their main caller.
+- If a durable file exists only to correlate daemon operations, keep it in
+  `daemon`. If a durable file is reusable runtime/image/bundle evidence
+  independent of daemon operation tracking, it may belong in the relevant
+  `pkg/` package.
+- Do not duplicate schemas with the same fields across packages. Use one owner
+  and add a narrow wrapper only when the wrapper contributes package-owned
+  metadata such as a schema version or daemon record identity.
+- Do not only check for identical field lists. Check for concept duplication:
+  if two types represent the same event, request, outcome, lifecycle stage, or
+  durable fact, there should be one canonical domain type. A persistence
+  wrapper may add versioning, but it should be private or clearly named as a
+  storage envelope owned by the package that owns that durable file format.
+- When introducing a new interface or struct, ask whether it serves a real
+  testing purpose or whether a seasoned maintainer would intuitively conceive
+  it during high-level design for this module. If not, its reason for
+  existence is shaky, and there must be an overwhelming reason to keep it.
+- Do not create both a package-level function and an interface method for the
+  same behavior. Pick the owner that makes the behavior self-evident.
+- Do not introduce an interface when there is only one implementation unless it
+  protects a real package boundary or preserves an existing test seam. Prefer a
+  function type for one callback and a concrete type for one implementation.
+- Do not add public methods to root SDK interfaces merely to make one daemon
+  workflow convenient. First ask whether the behavior is an ordinary SDK
+  primitive, a package-level helper built from existing primitives, or daemon
+  policy.
+
+Public API changes require a full caller audit in the same turn:
+
+- Search with `rg` for every changed type, field, method, constructor, and
+  deleted name.
+- Compile every affected downstream package with
+  `GOCACHE=/tmp/chamber-go-cache GOOS=linux go test -c`.
+- Include `cmd/github-ci` whenever touching `pkg/runtime`, `pkg/bundle`,
+  `pkg/image`, process environment, logs, exit/result contracts, filesystem
+  roots, or host execution behavior.
+- Include `daemon`, `daemon/metadata`, the relevant factory package, and the
+  concrete adapter package whenever changing a root SDK contract.
+- If a result field changes type or meaning, update all callers before
+  finishing; do not leave downstream packages to rediscover the API breakage.
 
 ## Daemon Contract
 

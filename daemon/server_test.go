@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	"github.com/donglin-wang/chamber/daemon/metadata/memory"
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
@@ -59,7 +58,7 @@ func TestPullImageRequiresReference(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/v1/images/pull", strings.NewReader(`{"reference":" "}`))
 
 	mux := newServer()
-	registerImageRoutes(mux, testConfig(t), memory.NewMemoryStore(), fakeImageStore{})
+	registerImageRoutes(mux, memory.NewMemoryStore(), fakeImageStore{})
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusBadRequest {
@@ -72,7 +71,7 @@ func TestPullImagePullsAndRecordsImage(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/v1/images/pull", strings.NewReader(`{"reference":"docker.io/library/alpine:latest"}`))
 
 	mux := newServer()
-	registerImageRoutes(mux, testConfig(t), memory.NewMemoryStore(), fakeImageStore{})
+	registerImageRoutes(mux, memory.NewMemoryStore(), fakeImageStore{})
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
@@ -117,7 +116,7 @@ func TestRunContainerRequiresCommand(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/v1/containers/run", strings.NewReader(`{"image":"docker.io/library/alpine:latest","command":[]}`))
 
 	mux := newServer()
-	registerContainerRoutes(mux, memory.NewMemoryStore(), nil, nil, nil, context.Background())
+	registerContainerRoutes(mux, memory.NewMemoryStore(), nil, chamberRuntime.Config{}, nil, t.TempDir(), fakeStartSupervisor(nil))
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusBadRequest {
@@ -133,11 +132,13 @@ func TestRunContainerRecordsPreciseProvisionerErrorCode(t *testing.T) {
 		context.Background(),
 		store,
 		fakeImageStore{},
-		fakeRuntime{},
+		chamberRuntime.Config{Name: "fake"},
 		fakeProvisioner{err: fmt.Errorf("%w: bad mount", chamberErrors.ErrInvalidBundleMount)},
-		context.Background(),
+		t.TempDir(),
+		fakeStartSupervisor(nil),
 		"docker.io/library/alpine:latest",
 		[]string{"/bin/true"},
+		nil,
 	)
 	if err == nil {
 		t.Fatal("runContainer() error = nil, want provisioner error")
@@ -147,7 +148,7 @@ func TestRunContainerRecordsPreciseProvisionerErrorCode(t *testing.T) {
 	}
 }
 
-func TestRunContainerRecordsPreciseRuntimeErrorCode(t *testing.T) {
+func TestRunContainerRecordsPreciseSupervisorErrorCode(t *testing.T) {
 	store := memory.NewMemoryStore()
 	putTestImage(t, store)
 
@@ -155,11 +156,13 @@ func TestRunContainerRecordsPreciseRuntimeErrorCode(t *testing.T) {
 		context.Background(),
 		store,
 		fakeImageStore{},
-		fakeRuntime{err: fmt.Errorf("%w: launch canceled", chamberErrors.ErrCanceled)},
+		chamberRuntime.Config{Name: "fake"},
 		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
-		context.Background(),
+		t.TempDir(),
+		fakeStartSupervisor(fmt.Errorf("%w: launch canceled", chamberErrors.ErrCanceled)),
 		"docker.io/library/alpine:latest",
 		[]string{"/bin/true"},
+		nil,
 	)
 	if err == nil {
 		t.Fatal("runContainer() error = nil, want runtime error")
@@ -188,9 +191,10 @@ func TestRunContainerStoresProvisionedBundlePath(t *testing.T) {
 		mux,
 		store,
 		fakeImageStore{},
-		fakeRuntime{},
+		chamberRuntime.Config{Name: "fake"},
 		fakeProvisioner{bundlePath: provisionedBundlePath},
-		context.Background(),
+		t.TempDir(),
+		fakeStartSupervisor(nil),
 	)
 	mux.ServeHTTP(recorder, request)
 
@@ -222,14 +226,16 @@ func TestRunContainerRequestsNonTerminalProcess(t *testing.T) {
 		context.Background(),
 		store,
 		fakeImageStore{},
-		fakeRuntime{},
+		chamberRuntime.Config{Name: "fake"},
 		fakeProvisioner{
 			bundlePath: "/tmp/chamber-test/provisioner-owned/container",
 			request:    &provisionRequest,
 		},
-		context.Background(),
+		t.TempDir(),
+		fakeStartSupervisor(nil),
 		"docker.io/library/alpine:latest",
 		[]string{"/bin/true"},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("runContainer() error = %v", err)
@@ -242,6 +248,50 @@ func TestRunContainerRequestsNonTerminalProcess(t *testing.T) {
 	}
 }
 
+func TestRunContainerPassesMountsToProvisioner(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+	var provisionRequest chamberBundle.ProvisionRequest
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/containers/run", strings.NewReader(`{
+		"image":"docker.io/library/alpine:latest",
+		"command":["/bin/true"],
+		"mounts":[
+			{"source":"/host/workspace","target":"/workspace","options":["rbind","ro"]}
+		]
+	}`))
+
+	mux := newServer()
+	registerContainerRoutes(
+		mux,
+		store,
+		fakeImageStore{},
+		chamberRuntime.Config{Name: "fake"},
+		fakeProvisioner{
+			bundlePath: "/tmp/chamber-test/provisioner-owned/container",
+			request:    &provisionRequest,
+		},
+		t.TempDir(),
+		fakeStartSupervisor(nil),
+	)
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body.String())
+	}
+	if len(provisionRequest.Mounts) != 1 {
+		t.Fatalf("Mounts length = %d, want 1", len(provisionRequest.Mounts))
+	}
+	mount := provisionRequest.Mounts[0]
+	if mount.Source != "/host/workspace" || mount.Target != "/workspace" {
+		t.Fatalf("Mount = %#v, want workspace bind mount", mount)
+	}
+	if len(mount.Options) != 2 || mount.Options[0] != "rbind" || mount.Options[1] != "ro" {
+		t.Fatalf("Mount.Options = %#v, want [rbind ro]", mount.Options)
+	}
+}
+
 func TestRunContainerCanonicalizesImageBeforeLookup(t *testing.T) {
 	store := memory.NewMemoryStore()
 	putTestImage(t, store)
@@ -250,11 +300,13 @@ func TestRunContainerCanonicalizesImageBeforeLookup(t *testing.T) {
 		context.Background(),
 		store,
 		fakeImageStore{},
-		fakeRuntime{},
+		chamberRuntime.Config{Name: "fake"},
 		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
-		context.Background(),
+		t.TempDir(),
+		fakeStartSupervisor(nil),
 		"alpine",
 		[]string{"/bin/true"},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("runContainer(short image) error = %v", err)
@@ -270,14 +322,16 @@ func TestRunContainerPassesImagePlatformToProvisioner(t *testing.T) {
 		context.Background(),
 		store,
 		fakeImageStore{},
-		fakeRuntime{},
+		chamberRuntime.Config{Name: "fake"},
 		fakeProvisioner{
 			bundlePath: "/tmp/chamber-test/provisioner-owned/container",
 			request:    &provisionRequest,
 		},
-		context.Background(),
+		t.TempDir(),
+		fakeStartSupervisor(nil),
 		"docker.io/library/alpine:latest",
 		[]string{"/bin/true"},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("runContainer() error = %v", err)
@@ -330,7 +384,7 @@ func TestContainerLogsReadByContainerID(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/v1/containers/container-1/logs?stream=stderr", nil)
 
 	mux := newServer()
-	registerContainerRoutes(mux, store, nil, nil, nil, context.Background())
+	registerContainerRoutes(mux, store, nil, chamberRuntime.Config{}, nil, t.TempDir(), fakeStartSupervisor(nil))
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
@@ -338,25 +392,6 @@ func TestContainerLogsReadByContainerID(t *testing.T) {
 	}
 	if recorder.Body.String() != "hello stderr" {
 		t.Fatalf("log body = %q, want hello stderr", recorder.Body.String())
-	}
-}
-
-func testConfig(t *testing.T) chamberDaemonConfig.Config {
-	t.Helper()
-
-	root := t.TempDir()
-	return chamberDaemonConfig.Config{
-		HTTPAddr: "127.0.0.1:0",
-		Bundle: chamberBundle.Config{
-			Root: root + "/bundles",
-			Name: chamberBundle.ProvisionerNameDirectory,
-		},
-		Image: chamberImage.Config{
-			Root: root + "/images",
-		},
-		Runtime: chamberRuntime.Config{
-			RuntimeRoot: root + "/runtime",
-		},
 	}
 }
 
@@ -390,75 +425,15 @@ func (p fakeProvisioner) Remove(ctx context.Context, bundle chamberBundle.Provis
 	return ctx.Err()
 }
 
-type fakeRuntime struct {
-	err error
-}
-
-func (r fakeRuntime) Descriptor() chamberRuntime.Descriptor {
-	return chamberRuntime.Descriptor{Name: "fake"}
-}
-
-func (r fakeRuntime) Run(ctx context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Container, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if r.err != nil {
-		return nil, r.err
-	}
-	return fakeContainer{
-		id:         request.Bundle.ContainerID,
-		stdoutPath: filepath.Join(os.TempDir(), request.Bundle.ContainerID, "stdout.log"),
-		stderrPath: filepath.Join(os.TempDir(), request.Bundle.ContainerID, "stderr.log"),
-	}, nil
-}
-
-type fakeContainer struct {
-	id         string
-	stdoutPath string
-	stderrPath string
-}
-
-func (c fakeContainer) ID() string { return c.id }
-
-func (c fakeContainer) StdoutPath() string { return c.stdoutPath }
-
-func (c fakeContainer) StderrPath() string { return c.stderrPath }
-
-func (fakeContainer) Wait(context.Context) (chamberRuntime.ContainerResult, error) {
-	return chamberRuntime.ContainerResult{}, nil
-}
-
-func (c fakeContainer) State(ctx context.Context) (chamberRuntime.ContainerState, error) {
-	return chamberRuntime.ContainerState{ContainerID: c.id}, ctx.Err()
-}
-
-func (fakeContainer) Signal(ctx context.Context, signal os.Signal) error {
-	return ctx.Err()
-}
-
-func (fakeContainer) Delete(ctx context.Context, force bool) error {
-	return ctx.Err()
-}
-
-func (c fakeContainer) ReadLog(stream chamberRuntime.LogStream) ([]byte, error) {
-	switch stream {
-	case chamberRuntime.StdoutLogStream:
-		return os.ReadFile(c.stdoutPath)
-	case chamberRuntime.StderrLogStream:
-		return os.ReadFile(c.stderrPath)
-	default:
-		return nil, chamberErrors.ErrInvalidRequest
-	}
-}
-
-func (c fakeContainer) DeleteLog(stream chamberRuntime.LogStream) error {
-	switch stream {
-	case chamberRuntime.StdoutLogStream:
-		return os.Remove(c.stdoutPath)
-	case chamberRuntime.StderrLogStream:
-		return os.Remove(c.stderrPath)
-	default:
-		return chamberErrors.ErrInvalidRequest
+func fakeStartSupervisor(startErr error) startSupervisorFunc {
+	return func(ctx context.Context, _ string) (int, func() error, error) {
+		if err := ctx.Err(); err != nil {
+			return 0, nil, err
+		}
+		if startErr != nil {
+			return 0, nil, startErr
+		}
+		return 1234, nil, nil
 	}
 }
 

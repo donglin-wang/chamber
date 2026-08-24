@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,8 +19,9 @@ import (
 )
 
 type runContainerRequest struct {
-	Image   string   `json:"image"`
-	Command []string `json:"command"`
+	Image   string                `json:"image"`
+	Command []string              `json:"command"`
+	Mounts  []chamberBundle.Mount `json:"mounts,omitempty"`
 }
 
 type runContainerResponse struct {
@@ -50,15 +52,11 @@ func registerContainerRoutes(
 	mux *http.ServeMux,
 	store metadata.Store,
 	imageStore chamberImage.Store,
-	runtime chamberRuntime.Runtime,
+	runtimeConfig chamberRuntime.Config,
 	provisioner chamberBundle.Provisioner,
-	lifetime context.Context,
+	supervisorRoot string,
+	startSupervisor startSupervisorFunc,
 ) {
-	runtimeCtx := lifetime
-	if runtimeCtx == nil {
-		runtimeCtx = context.Background()
-	}
-
 	mux.HandleFunc("GET /v1/containers", func(w http.ResponseWriter, r *http.Request) {
 		if store == nil {
 			writeDaemonError(w, fmt.Errorf("metadata store is required"))
@@ -100,11 +98,13 @@ func registerContainerRoutes(
 			r.Context(),
 			store,
 			imageStore,
-			runtime,
+			runtimeConfig,
 			provisioner,
-			runtimeCtx,
+			supervisorRoot,
+			startSupervisor,
 			strings.TrimSpace(request.Image),
 			request.Command,
+			request.Mounts,
 		)
 		if err != nil {
 			writeDaemonError(w, err)
@@ -183,11 +183,13 @@ func runContainer(
 	ctx context.Context,
 	store metadata.Store,
 	imageStore chamberImage.Store,
-	runtime chamberRuntime.Runtime,
+	runtimeConfig chamberRuntime.Config,
 	provisioner chamberBundle.Provisioner,
-	runtimeCtx context.Context,
+	supervisorRoot string,
+	startSupervisor startSupervisorFunc,
 	imageRef string,
 	command []string,
+	mounts []chamberBundle.Mount,
 ) (runContainerResult, error) {
 	if store == nil {
 		return runContainerResult{}, fmt.Errorf("metadata store is required")
@@ -198,11 +200,14 @@ func runContainer(
 	if imageStore == nil {
 		return runContainerResult{}, fmt.Errorf("image store is required")
 	}
-	if runtime == nil {
-		return runContainerResult{}, fmt.Errorf("runtime is required")
+	if strings.TrimSpace(runtimeConfig.Name) == "" {
+		return runContainerResult{}, fmt.Errorf("%w: runtime name is required", chamberErrors.ErrInvalidRequest)
 	}
-	if runtimeCtx == nil {
-		runtimeCtx = context.Background()
+	if strings.TrimSpace(supervisorRoot) == "" {
+		return runContainerResult{}, fmt.Errorf("%w: supervisor root is required", chamberErrors.ErrInvalidRequest)
+	}
+	if startSupervisor == nil {
+		return runContainerResult{}, fmt.Errorf("supervisor starter is required")
 	}
 	canonicalImageRef, err := chamberImage.CanonicalImageReference(imageRef)
 	if err != nil {
@@ -243,7 +248,7 @@ func runContainer(
 		return runContainerResult{operation: operation}, failErr
 	}
 
-	runtimeName := runtime.Descriptor().Name
+	runtimeName := runtimeConfig.Name
 	terminal := false
 	imageLayout, err := imageStore.Layout(ctx)
 	if err != nil {
@@ -262,9 +267,10 @@ func runContainer(
 			Args:     command,
 			Terminal: &terminal,
 		},
+		Mounts: mounts,
 	})
 	if err != nil {
-		code := chamberCodeFromError(err, chamberErrors.ErrBundlePrepareFailed)
+		code := chamberErrors.CodeFromError(err, chamberErrors.ErrBundlePrepareFailed)
 		failedOperation, transitionErr := store.FailOperation(ctx, operationID, code)
 		failErr := operationError(operationID, code, errors.Join(err, transitionErr))
 		if failedOperation.ID != "" {
@@ -282,17 +288,25 @@ func runContainer(
 		return runContainerResult{operation: operation}, failErr
 	}
 
+	supervisorDir := filepath.Join(supervisorRoot, containerID)
+	supervisorPath := filepath.Join(supervisorDir, "supervisor.json")
+	stdoutPath := filepath.Join(supervisorDir, "stdout.log")
+	stderrPath := filepath.Join(supervisorDir, "stderr.log")
 	now := time.Now().UTC()
 	container := metadata.Container{
-		ID:          containerID,
-		OperationID: operationID,
-		ImageDigest: image.Digest,
-		ImageRef:    image.Reference,
-		BundlePath:  provisioned.BundlePath,
-		Runtime:     runtimeName,
-		State:       metadata.ContainerCreating,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:             containerID,
+		OperationID:    operationID,
+		ImageDigest:    image.Digest,
+		ImageRef:       image.Reference,
+		BundlePath:     provisioned.BundlePath,
+		StdoutPath:     stdoutPath,
+		StderrPath:     stderrPath,
+		Runtime:        runtimeName,
+		RuntimeRoot:    runtimeConfig.RuntimeRoot,
+		SupervisorPath: supervisorPath,
+		State:          metadata.ContainerCreating,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := store.CreateContainer(ctx, container); err != nil {
 		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrMetadataFailed)
@@ -300,109 +314,62 @@ func runContainer(
 		return runContainerResult{operation: operation}, failErr
 	}
 
-	starting, err := store.TransitionContainer(ctx, containerID, metadata.ContainerCreating, metadata.ContainerUpdate{
-		State: metadata.ContainerStarting,
-		At:    time.Now().UTC(),
-	})
-	if err != nil {
-		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrMetadataFailed)
-		failErr := operationError(operationID, chamberErrors.ErrMetadataFailed, errors.Join(err, transitionErr))
+	supervisorState := supervisorFile{
+		Version:     supervisorFileVersion,
+		Phase:       supervisorPrepared,
+		OperationID: operationID,
+		ContainerID: containerID,
+		Runtime:     runtimeConfig,
+		Bundle:      provisioned,
+		StdoutPath:  stdoutPath,
+		StderrPath:  stderrPath,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := writeSupervisorFile(supervisorPath, supervisorState); err != nil {
+		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, metadata.ContainerCreating, operationID, chamberErrors.ErrFilesystemFailed)
+		failErr := operationError(operationID, chamberErrors.ErrFilesystemFailed, errors.Join(err, transitionErr))
+		if failedOperation.ID != "" {
+			operation = failedOperation
+		}
+		if failedContainer.ID != "" {
+			container = failedContainer
+		}
 		return runContainerResult{operation: operation, container: container}, failErr
 	}
 
-	runtimeContainer, err := runtime.Run(runtimeCtx, chamberRuntime.RunRequest{
-		Bundle: provisioned,
-	})
+	supervisorPID, waitSupervisor, err := startSupervisor(ctx, supervisorPath)
 	if err != nil {
-		code := chamberCodeFromError(err, chamberErrors.ErrRuntimeStartFailed)
-		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, metadata.ContainerStarting, operationID, code)
+		code := chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeStartFailed)
+		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, metadata.ContainerCreating, operationID, code)
 		failErr := operationError(operationID, code, errors.Join(err, transitionErr))
 		if failedOperation.ID != "" {
 			operation = failedOperation
 		}
 		if failedContainer.ID != "" {
-			starting = failedContainer
+			container = failedContainer
 		}
-		return runContainerResult{
-			operation: operation,
-			container: starting,
-		}, failErr
+		return runContainerResult{operation: operation, container: container}, failErr
 	}
 
-	running, err := store.TransitionContainer(ctx, containerID, metadata.ContainerStarting, metadata.ContainerUpdate{
-		State:      metadata.ContainerRunning,
-		At:         time.Now().UTC(),
-		StdoutPath: runtimeContainer.StdoutPath(),
-		StderrPath: runtimeContainer.StderrPath(),
+	starting, err := store.TransitionContainer(ctx, containerID, metadata.ContainerCreating, metadata.ContainerUpdate{
+		State:          metadata.ContainerStarting,
+		At:             time.Now().UTC(),
+		StdoutPath:     stdoutPath,
+		StderrPath:     stderrPath,
+		RuntimeRoot:    runtimeConfig.RuntimeRoot,
+		SupervisorPath: supervisorPath,
+		SupervisorPID:  supervisorPID,
 	})
 	if err != nil {
-		go finishRunningProcess(store, operationID, containerID, metadata.ContainerStarting, runtimeContainer)
-		return runContainerResult{operation: operation, container: starting}, operationError(operationID, chamberErrors.ErrMetadataFailed, err)
-	}
-	go finishRunningProcess(store, operationID, containerID, metadata.ContainerRunning, runtimeContainer)
-	return runContainerResult{operation: operation, container: running}, nil
-}
-
-func finishRunningProcess(store metadata.Store, operationID string, containerID string, from metadata.ContainerState, runtimeContainer chamberRuntime.Container) {
-	_, _, err := finishExitedProcess(context.Background(), store, operationID, containerID, from, runtimeContainer)
-	if err != nil {
-		// The HTTP request already returned. Leave the error in logs; the
-		// operation/container records remain the durable debugging surface.
-		fmt.Fprintf(os.Stderr, "record container exit: operation=%s container=%s error=%v\n", operationID, containerID, err)
-	}
-}
-
-func finishExitedProcess(ctx context.Context, store metadata.Store, operationID string, containerID string, from metadata.ContainerState, runtimeContainer chamberRuntime.Container) (metadata.Container, metadata.Operation, error) {
-	if runtimeContainer == nil {
-		err := fmt.Errorf("runtime container is required")
-		failedContainer, failedOperation, transitionErr := store.FailContainerAndOperation(ctx, containerID, from, operationID, chamberErrors.ErrRuntimeWaitFailed)
-		failErr := operationError(operationID, chamberErrors.ErrRuntimeWaitFailed, errors.Join(err, transitionErr))
-		return failedContainer, failedOperation, failErr
+		go monitorSupervisor(context.Background(), store, operationID, containerID, supervisorPath, waitSupervisor)
+		_, transitionErr := store.FailOperation(ctx, operationID, chamberErrors.ErrMetadataFailed)
+		failErr := operationError(operationID, chamberErrors.ErrMetadataFailed, errors.Join(err, transitionErr))
+		return runContainerResult{operation: operation, container: container}, failErr
 	}
 
-	result, waitErr := runtimeContainer.Wait(ctx)
-	exitCodePtr := &result.ExitCode
-	code := chamberErrors.Code("")
-	operationState := metadata.OperationSucceeded
-	if waitErr != nil {
-		code = chamberErrors.ErrRuntimeWaitFailed
-		operationState = metadata.OperationFailed
-	} else if result.ExitCode != 0 {
-		code = chamberErrors.ErrContainerExitNonzero
-		operationState = metadata.OperationFailed
-	}
-
-	exited, containerErr := store.TransitionContainer(ctx, containerID, from, metadata.ContainerUpdate{
-		State:     metadata.ContainerExited,
-		At:        time.Now().UTC(),
-		ExitCode:  exitCodePtr,
-		ErrorCode: code,
-	})
-	if containerErr != nil {
-		return exited, metadata.Operation{}, operationError(operationID, chamberErrors.ErrMetadataFailed, errors.Join(waitErr, containerErr))
-	}
-
-	var operation metadata.Operation
-	var operationErr error
-	if operationState == metadata.OperationSucceeded {
-		operation, operationErr = store.SucceedOperation(ctx, operationID)
-	} else {
-		operation, operationErr = store.FailOperation(ctx, operationID, code)
-	}
-	if operationErr != nil {
-		errorCode := code
-		if errorCode == "" {
-			errorCode = chamberErrors.ErrMetadataFailed
-		}
-		return exited, operation, operationError(operationID, errorCode, errors.Join(waitErr, operationErr))
-	}
-	if waitErr != nil {
-		return exited, operation, operationError(operationID, code, waitErr)
-	}
-	if result.ExitCode != 0 {
-		return exited, operation, operationError(operationID, code, fmt.Errorf("container exited with status %d", result.ExitCode))
-	}
-	return exited, operation, nil
+	go monitorSupervisor(context.Background(), store, operationID, containerID, supervisorPath, waitSupervisor)
+	return runContainerResult{operation: operation, container: starting}, nil
 }
 
 func newContainerResponse(container metadata.Container) containerResponse {

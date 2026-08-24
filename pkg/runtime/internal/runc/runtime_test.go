@@ -470,8 +470,8 @@ esac
 	if err != nil {
 		t.Fatalf("Container.Wait() error = %v", err)
 	}
-	if result.ExitCode != 0 {
-		t.Fatalf("Container.Wait() exit code = %d, want 0", result.ExitCode)
+	if result.ExitCode == nil || *result.ExitCode != 0 {
+		t.Fatalf("Container.Wait() exit code = %v, want 0", result.ExitCode)
 	}
 	stdoutContent, err := container.ReadLog(chamberRuntime.StdoutLogStream)
 	if err != nil {
@@ -535,8 +535,8 @@ esac
 		if err != nil {
 			t.Fatalf("Container.Wait() call %d error = %v", i+1, err)
 		}
-		if result.ExitCode != 7 {
-			t.Fatalf("Container.Wait() call %d exit code = %d, want 7", i+1, result.ExitCode)
+		if result.ExitCode == nil || *result.ExitCode != 7 {
+			t.Fatalf("Container.Wait() call %d exit code = %v, want 7", i+1, result.ExitCode)
 		}
 	}
 
@@ -585,8 +585,8 @@ esac
 	if !errors.Is(err, chamberErrors.ErrCanceled) {
 		t.Fatalf("Wait(canceled) error = %v, want canceled code", err)
 	}
-	if result.ExitCode != 137 {
-		t.Fatalf("Wait(canceled) exit code = %d, want 137", result.ExitCode)
+	if result.ExitCode == nil || *result.ExitCode != 137 {
+		t.Fatalf("Wait(canceled) exit code = %v, want 137", result.ExitCode)
 	}
 	assertLines(t, filepath.Join(logDir, "delete-args"), []string{"--root", stateRoot, "delete", "--force", "timeout"})
 }
@@ -751,8 +751,8 @@ esac
 	if err != nil {
 		t.Fatalf("Wait() error = %v", err)
 	}
-	if result.ExitCode != 0 {
-		t.Fatalf("Wait() exit code = %d, want 0", result.ExitCode)
+	if result.ExitCode == nil || *result.ExitCode != 0 {
+		t.Fatalf("Wait() exit code = %v, want 0", result.ExitCode)
 	}
 }
 

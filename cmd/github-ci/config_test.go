@@ -23,6 +23,7 @@ func TestParseConfigReadsCommandLineConfigAndSecretsFile(t *testing.T) {
 		"-run-timeout=45m",
 		"-retention=24h",
 		"-skip-preflight",
+		"-daemon-url=http://127.0.0.1:18080",
 		"-secrets-file=" + secretsFile,
 	})
 	if err != nil {
@@ -58,6 +59,9 @@ func TestParseConfigReadsCommandLineConfigAndSecretsFile(t *testing.T) {
 	}
 	if !cfg.SkipPreflight {
 		t.Fatal("SkipPreflight = false, want true")
+	}
+	if cfg.DaemonURL != "http://127.0.0.1:18080" {
+		t.Fatalf("DaemonURL = %q, want configured daemon URL", cfg.DaemonURL)
 	}
 }
 
@@ -124,6 +128,23 @@ func TestParseConfigRejectsUnknownSecretFields(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `unknown field "extra"`) {
 		t.Fatalf("parseConfig() error = %v, want unknown field error", err)
+	}
+}
+
+func TestParseConfigRequiresDaemonURL(t *testing.T) {
+	secretsFile := writeSecretsFile(t, `{
+		"github_token": "status-token",
+		"github_webhook_secret": "webhook-secret"
+	}`)
+
+	_, err := parseConfig([]string{
+		"-secrets-file=" + secretsFile,
+	})
+	if err == nil {
+		t.Fatal("parseConfig() error = nil, want missing daemon URL error")
+	}
+	if !strings.Contains(err.Error(), "daemon URL is required") {
+		t.Fatalf("parseConfig() error = %v, want missing daemon URL error", err)
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
@@ -26,7 +25,7 @@ type pullImageResponse struct {
 	PulledAt    time.Time `json:"pulled_at"`
 }
 
-func registerImageRoutes(mux *http.ServeMux, cfg chamberDaemonConfig.Config, store metadata.Store, imageStore chamberImage.Store) {
+func registerImageRoutes(mux *http.ServeMux, store metadata.Store, imageStore chamberImage.Store) {
 	mux.HandleFunc("POST /v1/images/pull", func(w http.ResponseWriter, r *http.Request) {
 		var request pullImageRequest
 		if err := decodeJSON(w, r, &request); err != nil {
@@ -89,7 +88,7 @@ func pullImage(ctx context.Context, store metadata.Store, imageStore chamberImag
 		Reference: reference,
 	})
 	if err != nil {
-		code := chamberCodeFromError(err, chamberErrors.ErrPullFailed)
+		code := chamberErrors.CodeFromError(err, chamberErrors.ErrPullFailed)
 		_, transitionErr := store.FailOperation(ctx, operationID, code)
 		failErr := operationError(operationID, code, errors.Join(err, transitionErr))
 		return pullImageResult{operation: operation}, failErr

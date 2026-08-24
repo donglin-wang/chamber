@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	ciPipeline "github.com/donglin-wang/chamber/cmd/github-ci/pipeline"
 )
 
 const (
@@ -28,6 +30,7 @@ type config struct {
 	SecretsFile         string
 	GitHubToken         string
 	GitHubWebhookSecret string
+	DaemonURL           string
 	MaxParallel         int
 	RunTimeout          time.Duration
 	Retention           time.Duration
@@ -55,6 +58,7 @@ func parseConfig(args []string) (config, error) {
 	flags.StringVar(&cfg.Root, "root", cfg.Root, "root directory for all GitHub CI mutable state")
 	flags.StringVar(&cfg.Repository, "repository", cfg.Repository, "allowed GitHub repository full name")
 	flags.StringVar(&cfg.SecretsFile, "secrets-file", cfg.SecretsFile, "JSON file containing GitHub CI secrets")
+	flags.StringVar(&cfg.DaemonURL, "daemon-url", cfg.DaemonURL, "chamberd HTTP URL for the daemon-supervised CI pipeline")
 	flags.IntVar(&cfg.MaxParallel, "max-parallel", cfg.MaxParallel, "maximum admitted CI runs in this process")
 	flags.DurationVar(&cfg.RunTimeout, "run-timeout", cfg.RunTimeout, "timeout for one CI run")
 	flags.DurationVar(&cfg.Retention, "retention", cfg.Retention, "duration to keep run directories")
@@ -136,6 +140,9 @@ func (cfg config) validate() error {
 	}
 	if cfg.Retention < 0 {
 		return fmt.Errorf("retention must not be negative")
+	}
+	if strings.TrimSpace(cfg.DaemonURL) == "" {
+		return fmt.Errorf("daemon URL is required for %s pipeline", ciPipeline.DaemonSupervised)
 	}
 	return nil
 }

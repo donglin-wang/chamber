@@ -3,13 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
+	"time"
 
+	ciPipeline "github.com/donglin-wang/chamber/cmd/github-ci/pipeline"
 	"github.com/google/uuid"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
@@ -57,6 +60,28 @@ func runPreflight(ctx context.Context, cfg config) error {
 	}
 	if err := runTinyContainerPreflight(ctx, cfg); err != nil {
 		return fmt.Errorf("run tiny Chamber container preflight: %w", err)
+	}
+	if err := requireDaemonHealth(ctx, cfg.DaemonURL); err != nil {
+		return err
+	}
+	return nil
+}
+
+func requireDaemonHealth(ctx context.Context, daemonURL string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(daemonURL, "/")+"/healthz", nil)
+	if err != nil {
+		return fmt.Errorf("create daemon health request: %w", err)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return fmt.Errorf("check chamberd health: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("check chamberd health: HTTP %d", response.StatusCode)
 	}
 	return nil
 }
@@ -189,8 +214,9 @@ func runTinyContainerPreflight(ctx context.Context, cfg config) error {
 	if waitErr != nil {
 		return waitErr
 	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("preflight container exited with code %d", result.ExitCode)
+	exitCode := ciPipeline.ContainerExitCode(result)
+	if exitCode != 0 {
+		return fmt.Errorf("preflight container exited with code %d", exitCode)
 	}
 	return nil
 }

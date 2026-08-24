@@ -125,37 +125,6 @@ func publicError(err error, daemonErr *daemonError) (int, string, string) {
 	}
 }
 
-func chamberCodeFromError(err error, fallback chamberErrors.Code) chamberErrors.Code {
-	for _, code := range []chamberErrors.Code{
-		chamberErrors.ErrInvalidContainerID,
-		chamberErrors.ErrInvalidImageReference,
-		chamberErrors.ErrInvalidImageLayout,
-		chamberErrors.ErrInvalidBundleMount,
-		chamberErrors.ErrInvalidProcessSpec,
-		chamberErrors.ErrInvalidRequest,
-		chamberErrors.ErrCanceled,
-		chamberErrors.ErrUnsupportedHost,
-		chamberErrors.ErrFilesystemFailed,
-		chamberErrors.ErrImageNotFound,
-		chamberErrors.ErrContainerNotFound,
-		chamberErrors.ErrLogNotFound,
-		chamberErrors.ErrStateConflict,
-		chamberErrors.ErrPullFailed,
-		chamberErrors.ErrMetadataFailed,
-		chamberErrors.ErrBundlePrepareFailed,
-		chamberErrors.ErrRuntimeInstallFailed,
-		chamberErrors.ErrRuntimeStartFailed,
-		chamberErrors.ErrRuntimeControlFailed,
-		chamberErrors.ErrRuntimeWaitFailed,
-		chamberErrors.ErrContainerExitNonzero,
-	} {
-		if errors.Is(err, code) {
-			return code
-		}
-	}
-	return fallback
-}
-
 func operationError(operationID string, code chamberErrors.Code, err error) error {
 	return &daemonError{
 		OperationID: operationID,

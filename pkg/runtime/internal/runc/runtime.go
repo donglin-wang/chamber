@@ -39,6 +39,7 @@ const (
 )
 
 var _ chamberRuntime.Runtime = (*Runtime)(nil)
+var _ chamberRuntime.ContainerHandle = (*runcContainer)(nil)
 var _ chamberRuntime.Container = (*runcContainer)(nil)
 
 type Runtime struct {
@@ -197,7 +198,7 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 		"url", binary.url,
 		"path", binaryPath,
 	)
-	if err := r.download(ctx, binary.url, expectedDigest, binDir, binaryPath); err != nil {
+	if err := r.download(ctx, binary.url, expectedDigest, binaryPath); err != nil {
 		return err
 	}
 
@@ -283,6 +284,53 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 		stderrPath: stderrPath,
 		logger:     r.logger,
 	}, cmd, stdout, stderr), nil
+}
+
+// Open returns a handle for an existing runc container owned by this runtime
+// root.
+func (r *Runtime) Open(ctx context.Context, containerID string) (chamberRuntime.ContainerHandle, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: runtime open canceled before start: %w", chamberErrors.ErrCanceled, err)
+	}
+	return r.existingContainerHandle(containerID)
+}
+
+func (r *Runtime) existingContainerHandle(containerID string) (*runcContainer, error) {
+	if r == nil {
+		return nil, fmt.Errorf("%w: runtime is required", chamberErrors.ErrInvalidRequest)
+	}
+	if err := containerid.Validate(containerID); err != nil {
+		return nil, err
+	}
+	binaryPath := r.binaryPath
+	if binaryPath == "" {
+		return nil, fmt.Errorf("%w: runtime binary is required", chamberErrors.ErrInvalidRequest)
+	}
+	stateRoot, err := r.stateRoot()
+	if err != nil {
+		return nil, err
+	}
+	stdoutPath, err := r.logPath(containerID, chamberRuntime.StdoutLogStream)
+	if err != nil {
+		return nil, err
+	}
+	stderrPath, err := r.logPath(containerID, chamberRuntime.StderrLogStream)
+	if err != nil {
+		return nil, err
+	}
+	return &runcContainer{
+		containerConfig: containerConfig{
+			id:         containerID,
+			binaryPath: binaryPath,
+			stateRoot:  stateRoot,
+			stdoutPath: stdoutPath,
+			stderrPath: stderrPath,
+			logger:     r.logger,
+		},
+	}, nil
 }
 
 func validateSupportedBundleSpec(bundlePath string) error {
@@ -482,6 +530,7 @@ type runcContainer struct {
 
 type waitResult struct {
 	exitCode int
+	exitedAt time.Time
 	err      error
 }
 
@@ -492,6 +541,7 @@ func newRuncContainer(config containerConfig, cmd *exec.Cmd, closers ...io.Close
 	}
 	go func() {
 		container.result = convertWaitResult(cmd.Wait())
+		container.result.exitedAt = time.Now().UTC()
 		for _, closer := range closers {
 			if closeErr := closer.Close(); closeErr != nil && container.result.err == nil {
 				container.result.err = fmt.Errorf("%w: close runtime stdio: %w", chamberErrors.ErrRuntimeWaitFailed, closeErr)
@@ -536,22 +586,49 @@ func (c *runcContainer) Wait(ctx context.Context) (chamberRuntime.ContainerResul
 	case <-ctx.Done():
 		timeoutErr := fmt.Errorf("%w: runtime wait canceled: %w", chamberErrors.ErrCanceled, ctx.Err())
 		if deleteErr := c.Delete(context.Background(), true); deleteErr != nil && !looksAlreadyDeleted(deleteErr) {
-			return chamberRuntime.ContainerResult{ExitCode: 1}, errors.Join(timeoutErr, fmt.Errorf("force-delete runtime container: %w", deleteErr))
+			err := errors.Join(timeoutErr, fmt.Errorf("force-delete runtime container: %w", deleteErr))
+			return c.errorResult(chamberRuntime.ContainerResultStatusCanceled, 1, err), err
 		}
 		select {
 		case <-c.done:
 			result, waitErr := c.containerResult()
-			return result, errors.Join(timeoutErr, waitErr)
+			err := errors.Join(timeoutErr, waitErr)
+			result.Status = chamberRuntime.ContainerResultStatusCanceled
+			result.ErrorCode = chamberErrors.CodeFromError(err, chamberErrors.ErrCanceled)
+			result.Error = err.Error()
+			return result, err
 		case <-time.After(forcedDeleteWait):
-			return chamberRuntime.ContainerResult{ExitCode: 1}, fmt.Errorf("%w: timed out waiting for forced-delete runtime container to exit", timeoutErr)
+			err := fmt.Errorf("%w: timed out waiting for forced-delete runtime container to exit", timeoutErr)
+			return c.errorResult(chamberRuntime.ContainerResultStatusCanceled, 1, err), err
 		}
 	}
 }
 
 func (c *runcContainer) containerResult() (chamberRuntime.ContainerResult, error) {
+	exitCode := c.result.exitCode
+	result := chamberRuntime.ContainerResult{
+		ContainerID: c.id,
+		Status:      chamberRuntime.ContainerResultStatusExited,
+		ExitCode:    &exitCode,
+		ExitedAt:    c.result.exitedAt,
+	}
+	if c.result.err != nil {
+		result.Status = chamberRuntime.ContainerResultStatusUnknown
+		result.ErrorCode = chamberErrors.CodeFromError(c.result.err, chamberErrors.ErrRuntimeWaitFailed)
+		result.Error = c.result.err.Error()
+	}
+	return result, c.result.err
+}
+
+func (c *runcContainer) errorResult(status chamberRuntime.ContainerResultStatus, exitCode int, err error) chamberRuntime.ContainerResult {
 	return chamberRuntime.ContainerResult{
-		ExitCode: c.result.exitCode,
-	}, c.result.err
+		ContainerID: c.id,
+		Status:      status,
+		ExitCode:    &exitCode,
+		ErrorCode:   chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeWaitFailed),
+		Error:       err.Error(),
+		ExitedAt:    time.Now().UTC(),
+	}
 }
 
 func (c *runcContainer) State(ctx context.Context) (chamberRuntime.ContainerState, error) {
@@ -739,7 +816,7 @@ func readRuncState(ctx context.Context, binaryPath string, stateRoot string, con
 	return state, nil
 }
 
-func (r *Runtime) download(ctx context.Context, url string, expectedDigest []byte, binDir string, binaryPath string) error {
+func (r *Runtime) download(ctx context.Context, url string, expectedDigest []byte, binaryPath string) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("%w: create runtime download request: %w", chamberErrors.ErrRuntimeInstallFailed, err)
