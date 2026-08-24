@@ -39,6 +39,7 @@ type Name string
 const (
 	DirectSDK        Name = "direct-sdk"
 	DaemonSupervised Name = "daemon-supervised"
+	DaemonLifecycle  Name = "daemon-lifecycle"
 )
 
 type Config struct {
@@ -54,7 +55,7 @@ type Config struct {
 }
 
 func Names() []Name {
-	return []Name{DirectSDK, DaemonSupervised}
+	return []Name{DirectSDK, DaemonSupervised, DaemonLifecycle}
 }
 
 func Run(ctx context.Context, cfg Config) (int, error) {
@@ -76,11 +77,16 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 }
 
 func runOne(ctx context.Context, cfg Config, name Name) (int, error) {
+	if strings.TrimSpace(cfg.EvidenceDir) != "" {
+		cfg.EvidenceDir = filepath.Join(cfg.EvidenceDir, string(name))
+	}
 	switch name {
 	case DirectSDK:
 		return RunDirectSDK(ctx, cfg)
 	case DaemonSupervised:
 		return RunDaemonSupervised(ctx, cfg)
+	case DaemonLifecycle:
+		return RunDaemonLifecycle(ctx, cfg)
 	}
 	return 1, fmt.Errorf("unsupported CI pipeline %q", name)
 }

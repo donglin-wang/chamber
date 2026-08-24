@@ -146,6 +146,8 @@ func run(ctx context.Context, args []string) error {
 		provisioner,
 		filepath.Join(filepath.Dir(cfg.Metadata.Root), "supervisors"),
 		startSupervisorProcess,
+		openRuntimeContainer,
+		terminateSupervisorProcessGroup,
 	)
 
 	server := &http.Server{

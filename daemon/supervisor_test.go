@@ -107,6 +107,48 @@ func TestReconcileSupervisorRecordsStartedPhaseFromCreating(t *testing.T) {
 	}
 }
 
+func TestReconcileSupervisorFailsStartedContainerWhenSupervisorProcessExited(t *testing.T) {
+	store := memory.NewMemoryStore()
+	container := createSupervisorContainerWithPID(t, store, metadata.ContainerRunning, time.Now().UTC(), 4321)
+	state := supervisorStateForContainer(t, container, supervisorStarted)
+	startedAt := time.Now().UTC()
+	state.RuntimeName = container.Runtime
+	state.StartedAt = &startedAt
+	if err := writeSupervisorFile(container.SupervisorPath, state); err != nil {
+		t.Fatalf("writeSupervisorFile() error = %v", err)
+	}
+	previous := supervisorProcessAlive
+	supervisorProcessAlive = func(pid int) (bool, error) {
+		if pid != container.SupervisorPID {
+			t.Fatalf("supervisor PID = %d, want %d", pid, container.SupervisorPID)
+		}
+		return false, nil
+	}
+	t.Cleanup(func() { supervisorProcessAlive = previous })
+
+	if err := reconcileSupervisorContainer(context.Background(), store, container); err == nil {
+		t.Fatal("reconcileSupervisorContainer() error = nil, want missing supervisor process error")
+	}
+
+	updated, err := store.GetContainer(context.Background(), container.ID)
+	if err != nil {
+		t.Fatalf("GetContainer() error = %v", err)
+	}
+	if updated.State != metadata.ContainerFailed {
+		t.Fatalf("container state = %q, want %q", updated.State, metadata.ContainerFailed)
+	}
+	if updated.ErrorCode != chamberErrors.ErrRuntimeWaitFailed {
+		t.Fatalf("container error code = %q, want %q", updated.ErrorCode, chamberErrors.ErrRuntimeWaitFailed)
+	}
+	operation, err := store.GetOperation(context.Background(), container.OperationID)
+	if err != nil {
+		t.Fatalf("GetOperation() error = %v", err)
+	}
+	if operation.State != metadata.OperationFailed || operation.ErrorCode != chamberErrors.ErrRuntimeWaitFailed {
+		t.Fatalf("operation = %#v, want failed runtime wait", operation)
+	}
+}
+
 func TestReconcileSupervisorFailsStalePreparedContainer(t *testing.T) {
 	store := memory.NewMemoryStore()
 	container := createSupervisorContainer(t, store, metadata.ContainerCreating, time.Now().UTC().Add(-supervisorCreatingTimeout-time.Second))
@@ -131,6 +173,10 @@ func TestReconcileSupervisorFailsStalePreparedContainer(t *testing.T) {
 }
 
 func createSupervisorContainer(t *testing.T, store metadata.Store, state metadata.ContainerState, updatedAt time.Time) metadata.Container {
+	return createSupervisorContainerWithPID(t, store, state, updatedAt, 0)
+}
+
+func createSupervisorContainerWithPID(t *testing.T, store metadata.Store, state metadata.ContainerState, updatedAt time.Time, supervisorPID int) metadata.Container {
 	t.Helper()
 
 	operationID := "operation-" + string(state)
@@ -158,6 +204,7 @@ func createSupervisorContainer(t *testing.T, store metadata.Store, state metadat
 		Runtime:        "fake",
 		RuntimeRoot:    filepath.Join(root, "runtime"),
 		SupervisorPath: filepath.Join(root, "supervisor.json"),
+		SupervisorPID:  supervisorPID,
 		State:          state,
 		CreatedAt:      updatedAt,
 		UpdatedAt:      updatedAt,

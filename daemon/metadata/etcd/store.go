@@ -239,6 +239,25 @@ func (s *Store) ListContainers(ctx context.Context) ([]metadata.Container, error
 	return containers, nil
 }
 
+func (s *Store) DeleteContainer(ctx context.Context, id string) (metadata.Container, error) {
+	key := containerKey(id)
+	container, modRevision, err := getValueWithRevision[metadata.Container](ctx, s.client, key)
+	if err != nil {
+		return metadata.Container{}, err
+	}
+	response, err := s.client.Txn(ctx).
+		If(clientv3.Compare(clientv3.ModRevision(key), "=", modRevision)).
+		Then(clientv3.OpDelete(key)).
+		Commit()
+	if err != nil {
+		return metadata.Container{}, mapEtcdError(err)
+	}
+	if !response.Succeeded {
+		return metadata.Container{}, chamberErrors.ErrStateConflict
+	}
+	return cloneContainer(container), nil
+}
+
 func (s *Store) TransitionContainer(
 	ctx context.Context,
 	id string,

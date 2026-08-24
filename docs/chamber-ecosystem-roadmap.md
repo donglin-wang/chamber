@@ -158,13 +158,18 @@ github-ci \
   -secrets-file /path/to/github-ci-secrets.json
 ```
 
-GitHub CI runs both the direct SDK pipeline and the daemon-supervised pipeline
-against the checked-out SHA. The daemon-supervised stage pulls a Go image
-through `chamberd`, starts a supervised container, bind-mounts the checkout at
-`/workspace`, runs `go test ./...` with Go cache, module cache, and temp state
-inside the container, polls daemon container state, and writes `input.json`,
+GitHub CI runs the direct SDK, daemon-supervised, and `daemon-lifecycle`
+pipelines against the checked-out SHA. Dispatcher-launched proof artifacts live
+under a per-pipeline directory below that CI run's log directory. The
+daemon-supervised stage pulls a Go image through `chamberd`, starts a
+supervised container, bind-mounts the checkout at `/workspace`, runs
+`go test ./...` with Go cache, module cache, and temp state inside the
+container, polls daemon container state, and writes `input.json`,
 `healthz.json`, `pull.json`, `run.json`, `polls.json`, `stdout.log`,
-`stderr.log`, and `proof.json` under that CI run's log directory.
+`stderr.log`, and `proof.json`. The `daemon-lifecycle` stage owns a temporary
+`chamberd`, exercises success, nonzero exit, daemon restart, supervisor-loss
+recovery, cancellation, removal, and root cleanup, and writes the full
+`proof.json` matrix beside its per-case logs.
 
 ### Ring 3: Chamber-Hosted Cluster Test
 

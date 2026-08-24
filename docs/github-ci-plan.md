@@ -501,8 +501,12 @@ Current pipeline suite:
   the GitHub CI process.
 - `daemon-supervised`: pull and run through `chamberd`, then persist proof
   files under the GitHub CI run log directory.
+- `daemon-lifecycle`: build and start a temporary `chamberd`, then persist the
+  Phase 1 success, failure, restart, supervisor-loss, cancellation, removal,
+  and cleanup proof matrix under the GitHub CI run log directory.
 
-Both run for every admitted GitHub CI job. The dogfood end-to-end path uses:
+All three run for every admitted GitHub CI job. Dispatcher-launched proof
+artifacts are split by pipeline name. The dogfood end-to-end path uses:
 
 ```text
 root:    /var/tmp/chamber-ci-<uid>

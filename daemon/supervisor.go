@@ -29,6 +29,8 @@ const (
 	supervisorCreatingTimeout   = 30 * time.Second
 )
 
+var supervisorProcessAlive = processAlive
+
 type supervisorPhase string
 
 const (
@@ -237,12 +239,49 @@ func reconcileSupervisorContainer(ctx context.Context, store metadata.Store, con
 		}
 		return nil
 	case supervisorStarted:
-		return recordSupervisorStarted(ctx, store, container.ID)
+		if err := recordSupervisorStarted(ctx, store, container.ID); err != nil {
+			return err
+		}
+		return failContainerIfSupervisorProcessExited(ctx, store, container)
 	case supervisorCompleted:
 		return applySupervisorResult(ctx, store, container.OperationID, container.ID, *state.Result)
 	default:
 		return failContainerFromCurrent(ctx, store, container.OperationID, container.ID, chamberErrors.ErrRuntimeWaitFailed, fmt.Errorf("unknown supervisor phase %q", state.Phase))
 	}
+}
+
+func failContainerIfSupervisorProcessExited(ctx context.Context, store metadata.Store, container metadata.Container) error {
+	alive, err := supervisorProcessAlive(container.SupervisorPID)
+	if err != nil {
+		return err
+	}
+	if alive {
+		return nil
+	}
+	return failContainerFromCurrent(
+		ctx,
+		store,
+		container.OperationID,
+		container.ID,
+		chamberErrors.ErrRuntimeWaitFailed,
+		fmt.Errorf("supervisor process %d exited without completed result", container.SupervisorPID),
+	)
+}
+
+func processAlive(pid int) (bool, error) {
+	if pid <= 0 {
+		return true, nil
+	}
+	if err := syscall.Kill(pid, 0); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return false, nil
+		}
+		if errors.Is(err, syscall.EPERM) {
+			return true, nil
+		}
+		return false, fmt.Errorf("%w: inspect supervisor process %d: %w", chamberErrors.ErrRuntimeControlFailed, pid, err)
+	}
+	return true, nil
 }
 
 func recordSupervisorStarted(ctx context.Context, store metadata.Store, containerID string) error {
