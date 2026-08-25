@@ -65,7 +65,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /runs/{runID}", s.handleRun)
 	mux.HandleFunc("GET /runs/{runID}/logs", s.handleRunLog)
 	mux.HandleFunc("GET /runs/{runID}/logs/proof/{path...}", s.handleProofLog)
-	mux.HandleFunc("GET /runs/{runID}/logs/{job}/{stream}", s.handleLog)
+	mux.HandleFunc("GET /runs/{runID}/logs/ci/{stream}", s.handleLog)
 	return mux
 }
 
@@ -445,7 +445,7 @@ func (s *server) handleRunLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleLog(w http.ResponseWriter, r *http.Request) {
-	path, err := runLogPath(s.cfg.Root, r.PathValue("runID"), r.PathValue("job"), r.PathValue("stream"))
+	path, err := runLogPath(s.cfg.Root, r.PathValue("runID"), runLogJobCI, r.PathValue("stream"))
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "log not found"})
 		return
