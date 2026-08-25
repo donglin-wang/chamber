@@ -86,8 +86,12 @@ func RunDaemonLifecycle(ctx context.Context, cfg Config) (exitCode int, runErr e
 		return 1, err
 	}
 	defer cleanup()
+	chamberRoot, err := daemonLifecycleCreateRoot(cfg.Root)
+	if err != nil {
+		return 1, err
+	}
 
-	run := newDaemonLifecycleRun(cfg.Image, workspace, evidenceDir)
+	run := newDaemonLifecycleRun(cfg.Image, workspace, evidenceDir, chamberRoot)
 	defer func() {
 		if runErr != nil {
 			run.recordFailure(runErr)
@@ -247,7 +251,7 @@ func RunDaemonLifecycle(ctx context.Context, cfg Config) (exitCode int, runErr e
 		return 1, err
 	}
 	if cfg.Keep {
-		run.cleanup["chamber_root_removed"] = true
+		run.cleanup["chamber_root_removed"] = false
 	} else if err := daemonLifecycleRemoveRoot(run.root); err != nil {
 		run.cleanup["chamber_root_removed"] = false
 		return 1, fmt.Errorf("remove chamber root: %w", err)
@@ -271,8 +275,26 @@ func daemonLifecycleRoots(root string) map[string]string {
 	}
 }
 
-func newDaemonLifecycleRun(image string, repo string, evidenceDir string) *daemonLifecycleRun {
-	root := filepath.Join(evidenceDir, "chamber-root")
+func daemonLifecycleCreateRoot(root string) (string, error) {
+	rootParent, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve CI root: %w", err)
+	}
+	parent := filepath.Join(rootParent, "dl")
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		return "", fmt.Errorf("create daemon lifecycle root parent: %w", err)
+	}
+	if err := os.Chmod(parent, 0700); err != nil {
+		return "", fmt.Errorf("make daemon lifecycle root parent private: %w", err)
+	}
+	chamberRoot, err := os.MkdirTemp(parent, "r-*")
+	if err != nil {
+		return "", fmt.Errorf("create daemon lifecycle root: %w", err)
+	}
+	return chamberRoot, nil
+}
+
+func newDaemonLifecycleRun(image string, repo string, evidenceDir string, root string) *daemonLifecycleRun {
 	return &daemonLifecycleRun{
 		image:       image,
 		repo:        repo,
@@ -344,11 +366,13 @@ func (r *daemonLifecycleRun) writeDaemonConfig(httpAddr string) error {
 }
 
 func (r *daemonLifecycleRun) startDaemon(ctx context.Context, label string) (func() error, error) {
-	stdout, err := os.Create(filepath.Join(r.evidenceDir, "daemon-"+label+".stdout.log"))
+	stdoutPath := filepath.Join(r.evidenceDir, "daemon-"+label+".stdout.log")
+	stderrPath := filepath.Join(r.evidenceDir, "daemon-"+label+".stderr.log")
+	stdout, err := os.Create(stdoutPath)
 	if err != nil {
 		return nil, fmt.Errorf("create daemon stdout: %w", err)
 	}
-	stderr, err := os.Create(filepath.Join(r.evidenceDir, "daemon-"+label+".stderr.log"))
+	stderr, err := os.Create(stderrPath)
 	if err != nil {
 		_ = stdout.Close()
 		return nil, fmt.Errorf("create daemon stderr: %w", err)
@@ -402,7 +426,7 @@ func (r *daemonLifecycleRun) startDaemon(ctx context.Context, label string) (fun
 	r.recordEvent("started daemon "+label, command.Process.Pid)
 	if err := daemonLifecycleWaitHealth(ctx, r.daemonURL); err != nil {
 		stopErr := stopDaemon()
-		return nil, errors.Join(err, stopErr)
+		return nil, errors.Join(daemonLifecycleStartFailure(err, stdoutPath, stderrPath), stopErr)
 	}
 	return stopDaemon, nil
 }
@@ -692,6 +716,30 @@ func daemonLifecycleWaitHealth(ctx context.Context, daemonURL string) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+func daemonLifecycleStartFailure(err error, stdoutPath string, stderrPath string) error {
+	details := []string{err.Error()}
+	if stderr := daemonLifecycleLogSnippet(stderrPath); stderr != "" {
+		details = append(details, "stderr: "+stderr)
+	}
+	if stdout := daemonLifecycleLogSnippet(stdoutPath); stdout != "" {
+		details = append(details, "stdout: "+stdout)
+	}
+	details = append(details, "stderr_log: "+stderrPath)
+	return errors.New(strings.Join(details, "; "))
+}
+
+func daemonLifecycleLogSnippet(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	text := strings.TrimSpace(string(data))
+	if len(text) > 1000 {
+		return text[:1000] + "...(truncated)"
+	}
+	return text
 }
 
 func daemonLifecyclePostJSON(ctx context.Context, url string, body any, evidencePath string) ([]byte, error) {
