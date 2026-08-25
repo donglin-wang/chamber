@@ -64,6 +64,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /github/webhook", s.handleWebhook)
 	mux.HandleFunc("GET /runs/{runID}", s.handleRun)
 	mux.HandleFunc("GET /runs/{runID}/logs", s.handleRunLog)
+	mux.HandleFunc("GET /runs/{runID}/logs/proof/{path...}", s.handleProofLog)
 	mux.HandleFunc("GET /runs/{runID}/logs/{job}/{stream}", s.handleLog)
 	return mux
 }
@@ -405,6 +406,7 @@ func (s *server) handleRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"error": "run not found"})
 		return
 	}
+	record.Logs = s.runLogLinks(record.RunID)
 	writeJSON(w, http.StatusOK, record)
 }
 
@@ -439,6 +441,7 @@ func (s *server) handleRunLog(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJobLog(w, s.cfg.Root, runID, runLogJobCI, "stdout")
 	writeJobLog(w, s.cfg.Root, runID, runLogJobCI, "stderr")
+	writeProofLogs(w, s.cfg.Root, runID)
 }
 
 func (s *server) handleLog(w http.ResponseWriter, r *http.Request) {
@@ -461,12 +464,84 @@ func (s *server) handleLog(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+func (s *server) handleProofLog(w http.ResponseWriter, r *http.Request) {
+	path, err := runProofLogPath(s.cfg.Root, r.PathValue("runID"), r.PathValue("path"))
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "log not found"})
+		return
+	}
+	data, err := readProofLogFile(path)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if os.IsNotExist(err) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": "log not found"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+func (s *server) runLogLinks(runID string) map[string]string {
+	links := runLogLinks(runID)
+	for _, entry := range proofLogEntries(s.cfg.Root, runID) {
+		links[runProofLogPrefix+entry.relativePath] = "/runs/" + runID + "/logs/proof/" + entry.relativePath
+	}
+	return links
+}
+
 func runLogLinks(runID string) map[string]string {
 	return map[string]string{
 		"run":       "/runs/" + runID + "/logs",
 		"ci.stdout": "/runs/" + runID + "/logs/" + runLogJobCI + "/stdout",
 		"ci.stderr": "/runs/" + runID + "/logs/" + runLogJobCI + "/stderr",
 	}
+}
+
+type proofLogEntry struct {
+	relativePath string
+	fullPath     string
+}
+
+func proofLogEntries(root string, runID string) []proofLogEntry {
+	rootPath, err := runProofLogRootPath(root, runID)
+	if err != nil {
+		return nil
+	}
+	var entries []proofLogEntry
+	if err := filepath.WalkDir(rootPath, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil || !info.Mode().IsRegular() {
+			return nil
+		}
+		relativePath, err := filepath.Rel(rootPath, path)
+		if err != nil {
+			return nil
+		}
+		if _, err := runProofLogPath(root, runID, relativePath); err != nil {
+			return nil
+		}
+		entries = append(entries, proofLogEntry{
+			relativePath: filepath.ToSlash(relativePath),
+			fullPath:     path,
+		})
+		return nil
+	}); err != nil {
+		return nil
+	}
+	return entries
+}
+
+func runProofLogRootPath(root string, runID string) (string, error) {
+	if !isSafePathComponent(runID) {
+		return "", fmt.Errorf("invalid run ID %q", runID)
+	}
+	return filepath.Join(root, "runs", runID, "logs", runProofLogRoot), nil
 }
 
 func writeJobLog(w io.Writer, root string, runID string, job string, stream string) {
@@ -493,6 +568,36 @@ func writeJobLog(w io.Writer, root string, runID string, job string, stream stri
 	if data[len(data)-1] != '\n' {
 		_, _ = fmt.Fprintln(w)
 	}
+}
+
+func writeProofLogs(w io.Writer, root string, runID string) {
+	for _, entry := range proofLogEntries(root, runID) {
+		_, _ = fmt.Fprintf(w, "\n===== proof/%s =====\n", entry.relativePath)
+		data, err := readProofLogFile(entry.fullPath)
+		if err != nil {
+			_, _ = fmt.Fprintf(w, "log unavailable: %v\n", err)
+			continue
+		}
+		if len(data) == 0 {
+			_, _ = fmt.Fprintln(w, "log is empty")
+			continue
+		}
+		_, _ = w.Write(data)
+		if data[len(data)-1] != '\n' {
+			_, _ = fmt.Fprintln(w)
+		}
+	}
+}
+
+func readProofLogFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("proof log is not a regular file")
+	}
+	return os.ReadFile(path)
 }
 
 func (s *server) tryAcquireRunSlot() bool {

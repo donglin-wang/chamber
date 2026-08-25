@@ -3,7 +3,6 @@ package metadata_test
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -87,11 +86,7 @@ func TestStoreContract(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			t.Cleanup(cancel)
-			testRoot, err := os.MkdirTemp(".", ".chamber-etcd-*")
-			if err != nil {
-				t.Fatalf("MkdirTemp() error = %v", err)
-			}
-			t.Cleanup(func() { _ = os.RemoveAll(testRoot) })
+			testRoot := t.TempDir()
 
 			dataDir := filepath.Join(testRoot, "data")
 			store, err := metadataetcd.Open(ctx, metadata.Config{

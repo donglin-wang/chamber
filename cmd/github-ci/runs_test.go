@@ -20,3 +20,20 @@ func TestRunLogPathRejectsEscapes(t *testing.T) {
 		}
 	}
 }
+
+func TestRunProofLogPathRejectsEscapesAndNonTextEvidence(t *testing.T) {
+	root := t.TempDir()
+	for _, test := range []struct {
+		runID string
+		path  string
+	}{
+		{runID: "..", path: "daemon-supervised/stdout.log"},
+		{runID: "00000000-0000-0000-0000-000000000000", path: "../stdout.log"},
+		{runID: "00000000-0000-0000-0000-000000000000", path: "daemon-lifecycle/../../stdout.log"},
+		{runID: "00000000-0000-0000-0000-000000000000", path: "daemon-lifecycle/chamberd"},
+	} {
+		if _, err := runProofLogPath(root, test.runID, test.path); err == nil {
+			t.Fatalf("runProofLogPath(%q, %q) error = nil, want rejection", test.runID, test.path)
+		}
+	}
+}

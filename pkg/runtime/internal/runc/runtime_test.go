@@ -334,6 +334,8 @@ func TestDescriptorNameDoesNotFollowBinaryPath(t *testing.T) {
 
 func TestNewReturnsAbsoluteBinaryPath(t *testing.T) {
 	content := []byte("absolute")
+	runInTempWorkingDirectory(t)
+
 	relativeBinDir := filepath.Join(".", t.Name())
 	relativeRuntimeRoot := filepath.Join(".", t.Name()+"-state")
 	t.Cleanup(func() {
@@ -351,6 +353,24 @@ func TestNewReturnsAbsoluteBinaryPath(t *testing.T) {
 	if !filepath.IsAbs(descriptor.BinaryPath) {
 		t.Fatalf("Descriptor().BinaryPath = %q, want absolute path", descriptor.BinaryPath)
 	}
+}
+
+func runInTempWorkingDirectory(t *testing.T) {
+	t.Helper()
+
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	workingDir := privateTempDir(t)
+	if err := os.Chdir(workingDir); err != nil {
+		t.Fatalf("Chdir(%q) error = %v", workingDir, err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatalf("Chdir(%q) cleanup error = %v", previous, err)
+		}
+	})
 }
 
 func TestNewRequiresCompleteRuntimeBinaryConfiguration(t *testing.T) {
