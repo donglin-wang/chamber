@@ -44,7 +44,7 @@ func runPreflight(ctx context.Context, cfg config) error {
 	if err := requireSubordinateIDMapping("/etc/subgid", current.Username); err != nil {
 		return err
 	}
-	for _, binary := range []string{"git", "newuidmap", "newgidmap"} {
+	for _, binary := range []string{"git", "go", "newuidmap", "newgidmap"} {
 		if _, err := exec.LookPath(binary); err != nil {
 			return fmt.Errorf("%s is required: %w", binary, err)
 		}
