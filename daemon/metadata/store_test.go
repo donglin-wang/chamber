@@ -3,7 +3,6 @@ package metadata_test
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -87,11 +86,7 @@ func TestStoreContract(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			t.Cleanup(cancel)
-			testRoot, err := os.MkdirTemp(".", ".chamber-etcd-*")
-			if err != nil {
-				t.Fatalf("MkdirTemp() error = %v", err)
-			}
-			t.Cleanup(func() { _ = os.RemoveAll(testRoot) })
+			testRoot := t.TempDir()
 
 			dataDir := filepath.Join(testRoot, "data")
 			store, err := metadataetcd.Open(ctx, metadata.Config{
@@ -363,6 +358,20 @@ func assertContainerLifecycle(t *testing.T, store metadata.Store) {
 	}
 	if rereadList[0].ExitCode != nil {
 		t.Fatalf("ListContainers(after caller mutation) ExitCode = %v, want nil", rereadList[0].ExitCode)
+	}
+
+	deleted, err := store.DeleteContainer(ctx, second.ID)
+	if err != nil {
+		t.Fatalf("DeleteContainer() error = %v", err)
+	}
+	if deleted.ID != second.ID {
+		t.Fatalf("DeleteContainer() ID = %q, want %q", deleted.ID, second.ID)
+	}
+	if _, err := store.GetContainer(ctx, second.ID); !errors.Is(err, metadata.ErrNotFound) {
+		t.Fatalf("GetContainer(deleted) error = %v, want %v", err, metadata.ErrNotFound)
+	}
+	if _, err := store.DeleteContainer(ctx, second.ID); !errors.Is(err, metadata.ErrNotFound) {
+		t.Fatalf("DeleteContainer(deleted) error = %v, want %v", err, metadata.ErrNotFound)
 	}
 
 	updated, err := store.TransitionContainer(ctx, container.ID, metadata.ContainerCreating, metadata.ContainerUpdate{

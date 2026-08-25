@@ -139,6 +139,7 @@ type Store interface {
 	CreateContainer(ctx context.Context, container Container) error
 	GetContainer(ctx context.Context, id string) (Container, error)
 	ListContainers(ctx context.Context) ([]Container, error)
+	DeleteContainer(ctx context.Context, id string) (Container, error)
 	TransitionContainer(
 		ctx context.Context,
 		id string,

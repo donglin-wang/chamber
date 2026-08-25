@@ -8,12 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/donglin-wang/chamber/daemon/metadata"
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/google/uuid"
 )
@@ -48,6 +50,10 @@ type containerResponse struct {
 	ErrorCode   chamberErrors.Code      `json:"error_code,omitempty"`
 }
 
+type openContainerFunc func(ctx context.Context, config chamberRuntime.Config, containerID string) (chamberRuntime.ContainerHandle, error)
+
+type terminateSupervisorFunc func(pid int) error
+
 func registerContainerRoutes(
 	mux *http.ServeMux,
 	store metadata.Store,
@@ -56,6 +62,8 @@ func registerContainerRoutes(
 	provisioner chamberBundle.Provisioner,
 	supervisorRoot string,
 	startSupervisor startSupervisorFunc,
+	openContainer openContainerFunc,
+	terminateSupervisor terminateSupervisorFunc,
 ) {
 	mux.HandleFunc("GET /v1/containers", func(w http.ResponseWriter, r *http.Request) {
 		if store == nil {
@@ -76,6 +84,28 @@ func registerContainerRoutes(
 			response.Containers = append(response.Containers, newContainerResponse(container))
 		}
 		writeJSON(w, http.StatusOK, response)
+	})
+
+	mux.HandleFunc("GET /v1/containers/{id}", func(w http.ResponseWriter, r *http.Request) {
+		containerID := strings.TrimSpace(r.PathValue("id"))
+		if containerID == "" {
+			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "container id is required")
+			return
+		}
+		if store == nil {
+			writeDaemonError(w, fmt.Errorf("metadata store is required"))
+			return
+		}
+		container, err := store.GetContainer(r.Context(), containerID)
+		if errors.Is(err, metadata.ErrNotFound) {
+			writeDaemonError(w, operationError("", chamberErrors.ErrContainerNotFound, err))
+			return
+		}
+		if err != nil {
+			writeDaemonError(w, operationError("", chamberErrors.ErrMetadataFailed, err))
+			return
+		}
+		writeJSON(w, http.StatusOK, newContainerResponse(container))
 	})
 
 	mux.HandleFunc("POST /v1/containers/run", func(w http.ResponseWriter, r *http.Request) {
@@ -117,6 +147,50 @@ func registerContainerRoutes(
 			ImageDigest: result.container.ImageDigest,
 			State:       result.container.State,
 		})
+	})
+
+	mux.HandleFunc("POST /v1/containers/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
+		containerID := strings.TrimSpace(r.PathValue("id"))
+		if containerID == "" {
+			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "container id is required")
+			return
+		}
+		result, err := cancelContainer(
+			r.Context(),
+			store,
+			runtimeConfig,
+			provisioner,
+			openContainer,
+			terminateSupervisor,
+			containerID,
+		)
+		if err != nil {
+			writeDaemonError(w, err)
+			return
+		}
+		writeOperationJSON(w, http.StatusOK, result.OperationID, newContainerResponse(result))
+	})
+
+	mux.HandleFunc("DELETE /v1/containers/{id}", func(w http.ResponseWriter, r *http.Request) {
+		containerID := strings.TrimSpace(r.PathValue("id"))
+		if containerID == "" {
+			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "container id is required")
+			return
+		}
+		removed, err := removeContainer(
+			r.Context(),
+			store,
+			runtimeConfig,
+			provisioner,
+			openContainer,
+			terminateSupervisor,
+			containerID,
+		)
+		if err != nil {
+			writeDaemonError(w, err)
+			return
+		}
+		writeOperationJSON(w, http.StatusOK, removed.OperationID, newContainerResponse(removed))
 	})
 
 	mux.HandleFunc("GET /v1/containers/{id}/logs", func(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +246,173 @@ func registerContainerRoutes(
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(content)
 	})
+}
+
+func openRuntimeContainer(ctx context.Context, config chamberRuntime.Config, containerID string) (chamberRuntime.ContainerHandle, error) {
+	rt, err := chamberRuntimeFactory.NewRuntime(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	return rt.Open(ctx, containerID)
+}
+
+func terminateSupervisorProcessGroup(pid int) error {
+	if pid <= 0 {
+		return nil
+	}
+	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return fmt.Errorf("%w: terminate supervisor process group %d: %w", chamberErrors.ErrRuntimeControlFailed, pid, err)
+	}
+	return nil
+}
+
+func removeContainer(
+	ctx context.Context,
+	store metadata.Store,
+	runtimeConfig chamberRuntime.Config,
+	provisioner chamberBundle.Provisioner,
+	openContainer openContainerFunc,
+	terminateSupervisor terminateSupervisorFunc,
+	containerID string,
+) (metadata.Container, error) {
+	if store == nil {
+		return metadata.Container{}, fmt.Errorf("metadata store is required")
+	}
+	container, err := store.GetContainer(ctx, containerID)
+	if errors.Is(err, metadata.ErrNotFound) {
+		return metadata.Container{}, operationError("", chamberErrors.ErrContainerNotFound, err)
+	}
+	if err != nil {
+		return metadata.Container{}, operationError("", chamberErrors.ErrMetadataFailed, err)
+	}
+	if container.State != metadata.ContainerExited && container.State != metadata.ContainerFailed {
+		container, err = cancelContainer(ctx, store, runtimeConfig, provisioner, openContainer, terminateSupervisor, containerID)
+		if err != nil {
+			return metadata.Container{}, err
+		}
+	} else if err := deleteContainerArtifacts(ctx, runtimeConfig, provisioner, openContainer, terminateSupervisor, container); err != nil {
+		return metadata.Container{}, err
+	}
+
+	removed, err := store.DeleteContainer(ctx, container.ID)
+	if err != nil {
+		return metadata.Container{}, operationError(container.OperationID, chamberErrors.ErrMetadataFailed, err)
+	}
+	return removed, nil
+}
+
+func deleteContainerArtifacts(
+	ctx context.Context,
+	runtimeConfig chamberRuntime.Config,
+	provisioner chamberBundle.Provisioner,
+	openContainer openContainerFunc,
+	terminateSupervisor terminateSupervisorFunc,
+	container metadata.Container,
+) error {
+	if provisioner == nil {
+		return fmt.Errorf("bundle provisioner is required")
+	}
+	if openContainer == nil {
+		return fmt.Errorf("runtime opener is required")
+	}
+	controlConfig := runtimeConfig
+	if strings.TrimSpace(container.RuntimeRoot) != "" {
+		controlConfig.RuntimeRoot = container.RuntimeRoot
+	}
+	handle, err := openContainer(ctx, controlConfig, container.ID)
+	if err != nil {
+		code := chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeControlFailed)
+		return operationError(container.OperationID, code, err)
+	}
+	if err := handle.Delete(ctx, true); err != nil && !looksAlreadyDeleted(err) {
+		code := chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeControlFailed)
+		return operationError(container.OperationID, code, err)
+	}
+	if err := handle.DeleteLog(chamberRuntime.StdoutLogStream); err != nil && !errors.Is(err, chamberErrors.ErrLogNotFound) {
+		return operationError(container.OperationID, chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeControlFailed), err)
+	}
+	if err := handle.DeleteLog(chamberRuntime.StderrLogStream); err != nil && !errors.Is(err, chamberErrors.ErrLogNotFound) {
+		return operationError(container.OperationID, chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeControlFailed), err)
+	}
+	if err := provisioner.Remove(ctx, chamberBundle.ProvisionedBundle{
+		ContainerID: container.ID,
+		BundlePath:  container.BundlePath,
+	}); err != nil {
+		return operationError(container.OperationID, chamberErrors.ErrBundlePrepareFailed, err)
+	}
+	if terminateSupervisor != nil {
+		if err := terminateSupervisor(container.SupervisorPID); err != nil {
+			code := chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeControlFailed)
+			return operationError(container.OperationID, code, err)
+		}
+	}
+	if strings.TrimSpace(container.SupervisorPath) != "" {
+		if err := os.RemoveAll(filepath.Dir(container.SupervisorPath)); err != nil {
+			return operationError(container.OperationID, chamberErrors.ErrFilesystemFailed, err)
+		}
+	}
+	return nil
+}
+
+func cancelContainer(
+	ctx context.Context,
+	store metadata.Store,
+	runtimeConfig chamberRuntime.Config,
+	provisioner chamberBundle.Provisioner,
+	openContainer openContainerFunc,
+	terminateSupervisor terminateSupervisorFunc,
+	containerID string,
+) (metadata.Container, error) {
+	if store == nil {
+		return metadata.Container{}, fmt.Errorf("metadata store is required")
+	}
+	if provisioner == nil {
+		return metadata.Container{}, fmt.Errorf("bundle provisioner is required")
+	}
+	if openContainer == nil {
+		return metadata.Container{}, fmt.Errorf("runtime opener is required")
+	}
+
+	container, err := store.GetContainer(ctx, containerID)
+	if errors.Is(err, metadata.ErrNotFound) {
+		return metadata.Container{}, operationError("", chamberErrors.ErrContainerNotFound, err)
+	}
+	if err != nil {
+		return metadata.Container{}, operationError("", chamberErrors.ErrMetadataFailed, err)
+	}
+	if container.State == metadata.ContainerExited || container.State == metadata.ContainerFailed {
+		return container, nil
+	}
+
+	if err := transitionContainerFailedFromCurrent(ctx, store, container.ID, chamberErrors.ErrCanceled); err != nil {
+		return metadata.Container{}, operationError(container.OperationID, chamberErrors.ErrMetadataFailed, err)
+	}
+	_, err = store.TransitionOperation(ctx, container.OperationID, metadata.OperationRunning, metadata.OperationUpdate{
+		State:     metadata.OperationAborted,
+		At:        time.Now().UTC(),
+		ErrorCode: chamberErrors.ErrCanceled,
+	})
+	if err := ignoreTerminalConflict(err); err != nil {
+		return metadata.Container{}, operationError(container.OperationID, chamberErrors.ErrMetadataFailed, err)
+	}
+	if err := deleteContainerArtifacts(ctx, runtimeConfig, provisioner, openContainer, terminateSupervisor, container); err != nil {
+		return metadata.Container{}, err
+	}
+	canceled, err := store.GetContainer(ctx, container.ID)
+	if err != nil {
+		return metadata.Container{}, operationError(container.OperationID, chamberErrors.ErrMetadataFailed, err)
+	}
+	return canceled, nil
+}
+
+func looksAlreadyDeleted(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return errors.Is(err, os.ErrNotExist) ||
+		strings.Contains(message, "does not exist") ||
+		strings.Contains(message, "container does not exist")
 }
 
 type runContainerResult struct {

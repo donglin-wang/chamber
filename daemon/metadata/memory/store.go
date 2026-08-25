@@ -203,6 +203,25 @@ func (s *MemoryStore) ListContainers(ctx context.Context) ([]metadata.Container,
 	return containers, nil
 }
 
+func (s *MemoryStore) DeleteContainer(ctx context.Context, id string) (metadata.Container, error) {
+	if err := ctx.Err(); err != nil {
+		return metadata.Container{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return metadata.Container{}, metadata.ErrNotFound
+	}
+
+	container, ok := s.containers[id]
+	if !ok {
+		return metadata.Container{}, metadata.ErrNotFound
+	}
+	delete(s.containers, id)
+	return cloneContainer(container), nil
+}
+
 func (s *MemoryStore) TransitionContainer(
 	ctx context.Context,
 	id string,

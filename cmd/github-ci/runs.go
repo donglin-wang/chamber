@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -17,7 +18,9 @@ const (
 	runStatusFailed    runStatus = "failed"
 	runStatusErrored   runStatus = "errored"
 
-	runLogJobCI = "ci"
+	runLogJobCI       = "ci"
+	runProofLogRoot   = "proof"
+	runProofLogPrefix = "proof."
 )
 
 type runRecord struct {
@@ -50,6 +53,37 @@ func runLogPath(root string, runID string, job string, stream string) (string, e
 		return "", fmt.Errorf("invalid log stream %q", stream)
 	}
 	return filepath.Join(root, "runs", runID, "logs", job+"."+stream), nil
+}
+
+func runProofLogPath(root string, runID string, relativePath string) (string, error) {
+	if !isSafePathComponent(runID) {
+		return "", fmt.Errorf("invalid run ID %q", runID)
+	}
+	if relativePath == "" || filepath.IsAbs(relativePath) {
+		return "", fmt.Errorf("invalid proof log path %q", relativePath)
+	}
+	clean := filepath.Clean(relativePath)
+	if clean == "." || clean == ".." || clean == "" {
+		return "", fmt.Errorf("invalid proof log path %q", relativePath)
+	}
+	for _, part := range strings.Split(clean, string(filepath.Separator)) {
+		if part == "." || part == ".." || part == "" {
+			return "", fmt.Errorf("invalid proof log path %q", relativePath)
+		}
+	}
+	if !isTextEvidenceFile(clean) {
+		return "", fmt.Errorf("proof log path %q is not a text evidence file", relativePath)
+	}
+	return filepath.Join(root, "runs", runID, "logs", runProofLogRoot, clean), nil
+}
+
+func isTextEvidenceFile(path string) bool {
+	switch filepath.Ext(path) {
+	case ".json", ".log", ".txt":
+		return true
+	default:
+		return false
+	}
 }
 
 func runRecordPath(root string, runID string) (string, error) {

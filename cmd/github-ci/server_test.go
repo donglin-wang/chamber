@@ -176,6 +176,30 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 		for _, writer := range cfg.Stderr {
 			_, _ = writer.Write([]byte("go test stderr\n"))
 		}
+		if err := os.MkdirAll(filepath.Join(cfg.EvidenceDir, "daemon-supervised"), 0700); err != nil {
+			t.Errorf("create daemon-supervised proof dir: %v", err)
+			return 1, err
+		}
+		if err := os.MkdirAll(filepath.Join(cfg.EvidenceDir, "daemon-lifecycle", "short-success"), 0700); err != nil {
+			t.Errorf("create daemon-lifecycle proof dir: %v", err)
+			return 1, err
+		}
+		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "daemon-supervised", "stdout.log"), []byte("daemon supervised stdout\n"), 0600); err != nil {
+			t.Errorf("write daemon-supervised stdout proof: %v", err)
+			return 1, err
+		}
+		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "daemon-lifecycle", "short-success", "stdout.log"), []byte("lifecycle stdout\n"), 0600); err != nil {
+			t.Errorf("write lifecycle stdout proof: %v", err)
+			return 1, err
+		}
+		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "daemon-lifecycle", "proof.json"), []byte(`{"passed":true}`+"\n"), 0600); err != nil {
+			t.Errorf("write lifecycle proof JSON: %v", err)
+			return 1, err
+		}
+		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "daemon-lifecycle", "chamberd"), []byte("binary should be hidden\n"), 0600); err != nil {
+			t.Errorf("write hidden proof file: %v", err)
+			return 1, err
+		}
 		close(ran)
 		return 0, nil
 	}
@@ -218,10 +242,19 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 		"go test stdout",
 		"===== ci stderr =====",
 		"go test stderr",
+		"===== proof/daemon-lifecycle/proof.json =====",
+		`{"passed":true}`,
+		"===== proof/daemon-lifecycle/short-success/stdout.log =====",
+		"lifecycle stdout",
+		"===== proof/daemon-supervised/stdout.log =====",
+		"daemon supervised stdout",
 	} {
 		if !strings.Contains(wholeLog, want) {
 			t.Fatalf("whole log missing %q:\n%s", want, wholeLog)
 		}
+	}
+	if strings.Contains(wholeLog, "binary should be hidden") {
+		t.Fatalf("whole log includes hidden non-text evidence:\n%s", wholeLog)
 	}
 
 	stdoutRequest := httptest.NewRequest(http.MethodGet, "/runs/"+admitted.RunID+"/logs/ci/stdout", nil)
@@ -229,6 +262,30 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 	server.routes().ServeHTTP(stdoutRecorder, stdoutRequest)
 	if stdoutRecorder.Code != http.StatusOK || stdoutRecorder.Body.String() != "go test stdout\n" {
 		t.Fatalf("stdout log status/body = %d/%q, want 200/go test stdout", stdoutRecorder.Code, stdoutRecorder.Body.String())
+	}
+
+	proofRequest := httptest.NewRequest(http.MethodGet, "/runs/"+admitted.RunID+"/logs/proof/daemon-supervised/stdout.log", nil)
+	proofRecorder := httptest.NewRecorder()
+	server.routes().ServeHTTP(proofRecorder, proofRequest)
+	if proofRecorder.Code != http.StatusOK || proofRecorder.Body.String() != "daemon supervised stdout\n" {
+		t.Fatalf("proof log status/body = %d/%q, want daemon supervised stdout", proofRecorder.Code, proofRecorder.Body.String())
+	}
+
+	runRequest := httptest.NewRequest(http.MethodGet, "/runs/"+admitted.RunID, nil)
+	runRecorder := httptest.NewRecorder()
+	server.routes().ServeHTTP(runRecorder, runRequest)
+	if runRecorder.Code != http.StatusOK {
+		t.Fatalf("run status = %d, want 200", runRecorder.Code)
+	}
+	var record runRecord
+	if err := json.Unmarshal(runRecorder.Body.Bytes(), &record); err != nil {
+		t.Fatalf("decode run record: %v", err)
+	}
+	if record.Logs["proof.daemon-supervised/stdout.log"] != "/runs/"+admitted.RunID+"/logs/proof/daemon-supervised/stdout.log" {
+		t.Fatalf("daemon-supervised proof link = %q, want proof log route", record.Logs["proof.daemon-supervised/stdout.log"])
+	}
+	if _, ok := record.Logs["proof.daemon-lifecycle/chamberd"]; ok {
+		t.Fatalf("run record exposes non-text proof file: %#v", record.Logs)
 	}
 }
 

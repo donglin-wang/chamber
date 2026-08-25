@@ -38,10 +38,10 @@ func TestRunDogfoodIntegration(t *testing.T) {
 	}
 }
 
-func TestNamesIncludesBothPipelines(t *testing.T) {
+func TestNamesIncludesPipelines(t *testing.T) {
 	names := Names()
-	if len(names) != 2 || names[0] != DirectSDK || names[1] != DaemonSupervised {
-		t.Fatalf("Names() = %#v, want direct SDK then daemon supervised", names)
+	if len(names) != 3 || names[0] != DirectSDK || names[1] != DaemonSupervised || names[2] != DaemonLifecycle {
+		t.Fatalf("Names() = %#v, want direct SDK, daemon supervised, then daemon lifecycle", names)
 	}
 }
 
