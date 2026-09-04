@@ -181,8 +181,8 @@ func (p *Provisioner) Remove(ctx context.Context, bundle chamberBundle.Provision
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("%w: bundle removal canceled before start: %w", chamberErrors.ErrCanceled, err)
 	}
-	if p == nil {
-		return fmt.Errorf("%w: bundle provisioner is required", chamberErrors.ErrInvalidRequest)
+	if p == nil || p.workspace == nil {
+		return fmt.Errorf("%w: bundle workspace is required", chamberErrors.ErrInvalidRequest)
 	}
 	if strings.TrimSpace(p.config.Root) == "" {
 		return fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
@@ -209,6 +209,9 @@ func (p *Provisioner) Remove(ctx context.Context, bundle chamberBundle.Provision
 		"container_id", bundle.ContainerID,
 		"bundle_path", bundlePath,
 	)
+	if err := removeTemporaryBundles(ctx, p.workspace.TmpRoot(), bundle.ContainerID); err != nil {
+		return err
+	}
 	if err := removeRuntimeMutatedBundle(ctx, bundlePath); err != nil {
 		return err
 	}
@@ -216,6 +219,26 @@ func (p *Provisioner) Remove(ctx context.Context, bundle chamberBundle.Provision
 		"container_id", bundle.ContainerID,
 		"bundle_path", bundlePath,
 	)
+	return nil
+}
+
+func removeTemporaryBundles(ctx context.Context, tmpRoot string, containerID string) error {
+	entries, err := os.ReadDir(tmpRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%w: list temporary bundles: %w", chamberErrors.ErrFilesystemFailed, err)
+	}
+	prefix := "." + containerID + ".tmp-"
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		if err := removeRuntimeMutatedBundle(ctx, filepath.Join(tmpRoot, entry.Name())); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

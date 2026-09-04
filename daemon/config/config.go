@@ -110,7 +110,7 @@ type loggingInput struct {
 }
 
 const (
-	defaultHTTPAddr                           = "127.0.0.1:8080"
+	defaultHTTPAddr                           = ""
 	defaultOpenTelemetryTraceSampleRatio      = 1.0
 	defaultOpenTelemetryMetricsExportInterval = 10 * time.Second
 )

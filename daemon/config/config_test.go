@@ -146,7 +146,7 @@ func TestLoadDerivesDefaultPathsFromXDGDataHome(t *testing.T) {
 	root := filepath.Join(xdgDataHome, "chamber")
 	defaultLogging := chamberLogging.DefaultConfig()
 	want := Config{
-		HTTPAddr:   "127.0.0.1:8080",
+		HTTPAddr:   "",
 		SocketPath: filepath.Join(root, "run", "chamber.sock"),
 		TmpRoot:    filepath.Join(root, "run", "tmp"),
 		Bundle: chamberBundle.Config{

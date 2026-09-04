@@ -39,6 +39,40 @@ func TestNewUsesCurrentUserIDMap(t *testing.T) {
 	}
 }
 
+func TestRemoveReclaimsContainerTemporaryBundles(t *testing.T) {
+	root := filepath.Join(privateTempDir(t), "bundles")
+	tmpRoot := filepath.Join(privateTempDir(t), "bundle-tmp")
+	workspace, err := hostfs.NewWorkspace(hostfs.Config{
+		Root: root, TmpRoot: tmpRoot,
+		Requirements: hostfs.FeatureSet{PrivateDirs: true, AtomicDirectoryRename: true},
+	})
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	provisioner, err := New(chamberBundle.Config{Root: root}, workspace)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	containerID := "container-temp-cleanup"
+	target := filepath.Join(tmpRoot, "."+containerID+".tmp-abcd")
+	unrelated := filepath.Join(tmpRoot, ".other-container.tmp-abcd")
+	for _, path := range []string{target, unrelated} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatalf("MkdirAll(%q) error = %v", path, err)
+		}
+	}
+
+	if err := provisioner.Remove(context.Background(), chamberBundle.ProvisionedBundle{ContainerID: containerID}); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	if _, err := os.Stat(target); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("temporary bundle stat error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(unrelated); err != nil {
+		t.Fatalf("unrelated temporary bundle was removed: %v", err)
+	}
+}
+
 func TestDescriptorIdentifiesDirectoryProvisioner(t *testing.T) {
 	provisioner := &Provisioner{}
 

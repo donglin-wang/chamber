@@ -3,6 +3,7 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,14 +36,16 @@ type runResponse struct {
 }
 
 type containerRecord struct {
-	ID          string `json:"id"`
-	OperationID string `json:"operation_id"`
-	Image       string `json:"image"`
-	ImageDigest string `json:"image_digest"`
-	Runtime     string `json:"runtime"`
-	State       string `json:"state"`
-	ExitCode    *int   `json:"exit_code,omitempty"`
-	ErrorCode   string `json:"error_code,omitempty"`
+	ID          string    `json:"id"`
+	OperationID string    `json:"operation_id"`
+	Image       string    `json:"image"`
+	ImageDigest string    `json:"image_digest"`
+	Runtime     string    `json:"runtime"`
+	State       string    `json:"state"`
+	ExitCode    *int      `json:"exit_code,omitempty"`
+	ErrorCode   string    `json:"error_code,omitempty"`
+	CreatedAt   time.Time `json:"created_at,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
 
 type listContainersResponse struct {
@@ -357,10 +360,88 @@ func writeJSON(path string, value any) error {
 }
 
 func gitEvidence(repo string) map[string]string {
-	return map[string]string{
+	evidence := map[string]string{
 		"head":   commandOutput("git", "-C", repo, "rev-parse", "HEAD"),
 		"status": commandOutput("git", "-C", repo, "status", "--short"),
 	}
+	digest, err := gitSnapshotSHA256(repo)
+	if err != nil {
+		evidence["source_snapshot_error"] = err.Error()
+	} else {
+		evidence["source_snapshot_sha256"] = digest
+	}
+	return evidence
+}
+
+// gitSnapshotSHA256 identifies the exact committed base plus tracked and
+// untracked worktree content used by a dogfood build. This keeps dirty-tree
+// proof auditable without copying the full source diff into every run record.
+func gitSnapshotSHA256(repo string) (string, error) {
+	head, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return "", fmt.Errorf("read git HEAD: %w", err)
+	}
+	diff, err := exec.Command("git", "-C", repo, "diff", "--binary", "HEAD", "--").Output()
+	if err != nil {
+		return "", fmt.Errorf("read tracked git diff: %w", err)
+	}
+	untracked, err := exec.Command("git", "-C", repo, "ls-files", "--others", "--exclude-standard", "-z").Output()
+	if err != nil {
+		return "", fmt.Errorf("list untracked git files: %w", err)
+	}
+
+	digest := sha256.New()
+	_, _ = digest.Write([]byte("head\x00"))
+	_, _ = digest.Write(bytes.TrimSpace(head))
+	_, _ = digest.Write([]byte("\x00tracked-diff\x00"))
+	_, _ = digest.Write(diff)
+	for _, rawPath := range bytes.Split(untracked, []byte{0}) {
+		if len(rawPath) == 0 {
+			continue
+		}
+		relativePath := filepath.Clean(string(rawPath))
+		if filepath.IsAbs(relativePath) || relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("git returned unsafe untracked path %q", relativePath)
+		}
+		path := filepath.Join(repo, relativePath)
+		info, err := os.Lstat(path)
+		if err != nil {
+			return "", fmt.Errorf("inspect untracked file %q: %w", relativePath, err)
+		}
+		_, _ = fmt.Fprintf(digest, "\x00untracked\x00%s\x00%o\x00", relativePath, info.Mode())
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return "", fmt.Errorf("read untracked symlink %q: %w", relativePath, err)
+			}
+			_, _ = digest.Write([]byte(target))
+			continue
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return "", fmt.Errorf("open untracked file %q: %w", relativePath, err)
+		}
+		_, copyErr := io.Copy(digest, file)
+		closeErr := file.Close()
+		if copyErr != nil || closeErr != nil {
+			return "", fmt.Errorf("hash untracked file %q: %w", relativePath, errors.Join(copyErr, closeErr))
+		}
+	}
+	return fmt.Sprintf("%x", digest.Sum(nil)), nil
+}
+
+func fileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.New()
+	_, copyErr := io.Copy(digest, file)
+	closeErr := file.Close()
+	if copyErr != nil || closeErr != nil {
+		return "", errors.Join(copyErr, closeErr)
+	}
+	return fmt.Sprintf("%x", digest.Sum(nil)), nil
 }
 
 func hostEvidence() map[string]string {

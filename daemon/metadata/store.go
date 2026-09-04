@@ -12,6 +12,7 @@ import (
 var (
 	ErrNotFound      = errors.New("metadata: not found")
 	ErrAlreadyExists = errors.New("metadata: already exists")
+	ErrLeaseHeld     = errors.New("metadata: cleanup lease held")
 )
 
 type Image struct {
@@ -33,6 +34,7 @@ type ContainerState string
 
 const (
 	ContainerCreating ContainerState = "creating"
+	ContainerCreated  ContainerState = "created"
 	ContainerStarting ContainerState = "starting"
 	ContainerRunning  ContainerState = "running"
 	ContainerExited   ContainerState = "exited"
@@ -54,6 +56,10 @@ type Container struct {
 
 	SupervisorPath string `json:"supervisor_path,omitempty"`
 	SupervisorPID  int    `json:"supervisor_pid,omitempty"`
+	// SupervisorStartTime is Linux /proc start-time ticks for SupervisorPID.
+	// PID and start time together identify the daemon-owned supervisor process
+	// across daemon restarts without trusting a potentially reused PID.
+	SupervisorStartTime uint64 `json:"supervisor_start_time,omitempty"`
 
 	State     ContainerState     `json:"state"`
 	CreatedAt time.Time          `json:"created_at"`
@@ -65,8 +71,14 @@ type Container struct {
 type OperationKind string
 
 const (
-	PullOperation OperationKind = "pull"
-	RunOperation  OperationKind = "run"
+	PullOperation    OperationKind = "pull"
+	CreateOperation  OperationKind = "create"
+	StartOperation   OperationKind = "start"
+	RunOperation     OperationKind = "run"
+	StopOperation    OperationKind = "stop"
+	CancelOperation  OperationKind = "cancel"
+	RemoveOperation  OperationKind = "remove"
+	CleanupOperation OperationKind = "cleanup"
 )
 
 type OperationState string
@@ -91,6 +103,24 @@ type Operation struct {
 	ErrorCode  chamberErrors.Code `json:"error_code,omitempty"`
 }
 
+// Cleanup is the durable intent to reclaim one container's runtime and bundle
+// resources. Explicit cancel and remove operations also delete retained logs
+// and supervisor evidence. Record existence means cleanup is not yet complete.
+// Lease fields prevent a periodic reconciler from racing the request that
+// admitted the cleanup. Supervisor identity is copied here so a crash after
+// terminalizing the container cannot lose authority to stop that exact process.
+type Cleanup struct {
+	ContainerID         string        `json:"container_id"`
+	OperationID         string        `json:"operation_id"`
+	Kind                OperationKind `json:"kind"`
+	SupervisorPID       int           `json:"supervisor_pid,omitempty"`
+	SupervisorStartTime uint64        `json:"supervisor_start_time,omitempty"`
+	LeaseID             string        `json:"lease_id,omitempty"`
+	LeaseExpiresAt      time.Time     `json:"lease_expires_at,omitempty"`
+	CreatedAt           time.Time     `json:"created_at"`
+	UpdatedAt           time.Time     `json:"updated_at"`
+}
+
 type StateTransition[T ~string] struct {
 	From T
 	To   T
@@ -98,8 +128,11 @@ type StateTransition[T ~string] struct {
 
 var validContainerTransitions = map[StateTransition[ContainerState]]bool{
 	{ContainerCreating, ContainerStarting}: true,
+	{ContainerCreating, ContainerCreated}:  true,
 	{ContainerCreating, ContainerFailed}:   true,
 	{ContainerCreating, ContainerExited}:   true,
+	{ContainerCreated, ContainerStarting}:  true,
+	{ContainerCreated, ContainerFailed}:    true,
 	{ContainerStarting, ContainerRunning}:  true,
 	{ContainerStarting, ContainerFailed}:   true,
 	{ContainerStarting, ContainerExited}:   true,
@@ -127,6 +160,7 @@ type Store interface {
 
 	CreateOperation(ctx context.Context, operation Operation) error
 	GetOperation(ctx context.Context, id string) (Operation, error)
+	ListOperations(ctx context.Context) ([]Operation, error)
 	SucceedOperation(ctx context.Context, id string) (Operation, error)
 	FailOperation(ctx context.Context, id string, code chamberErrors.Code) (Operation, error)
 	TransitionOperation(
@@ -137,6 +171,14 @@ type Store interface {
 	) (Operation, error)
 
 	CreateContainer(ctx context.Context, container Container) error
+	CreateContainerAndOperation(ctx context.Context, container Container, operation Operation) error
+	CreateOperationAndTransitionContainer(
+		ctx context.Context,
+		operation Operation,
+		containerID string,
+		containerFrom ContainerState,
+		containerUpdate ContainerUpdate,
+	) (Container, error)
 	GetContainer(ctx context.Context, id string) (Container, error)
 	ListContainers(ctx context.Context) ([]Container, error)
 	DeleteContainer(ctx context.Context, id string) (Container, error)
@@ -146,6 +188,16 @@ type Store interface {
 		from ContainerState,
 		update ContainerUpdate,
 	) (Container, error)
+	SetContainerSupervisor(ctx context.Context, id string, state ContainerState, pid int, startTime uint64, at time.Time) (Container, error)
+	TransitionContainerAndOperation(
+		ctx context.Context,
+		containerID string,
+		containerFrom ContainerState,
+		containerUpdate ContainerUpdate,
+		operationID string,
+		operationFrom OperationState,
+		operationUpdate OperationUpdate,
+	) (Container, Operation, error)
 	FailContainerAndOperation(
 		ctx context.Context,
 		containerID string,
@@ -154,10 +206,16 @@ type Store interface {
 		code chamberErrors.Code,
 	) (Container, Operation, error)
 
+	CreateCleanup(ctx context.Context, cleanup Cleanup) error
+	ListCleanups(ctx context.Context) ([]Cleanup, error)
+	ClaimCleanup(ctx context.Context, containerID string, leaseID string, at time.Time, expiresAt time.Time, reclaim bool) (Cleanup, error)
+	DeleteCleanup(ctx context.Context, containerID string, leaseID string) error
+
 	Close() error
 }
 
 type ContainerUpdate struct {
+	OperationID string
 	State       ContainerState
 	At          time.Time
 	ExitCode    *int
@@ -165,9 +223,12 @@ type ContainerUpdate struct {
 	StdoutPath  string
 	StderrPath  string
 	RuntimeRoot string
+	BundlePath  string
 
-	SupervisorPath string
-	SupervisorPID  int
+	SupervisorPath      string
+	SupervisorPID       int
+	SupervisorStartTime uint64
+	ClearSupervisor     bool
 }
 
 type OperationUpdate struct {

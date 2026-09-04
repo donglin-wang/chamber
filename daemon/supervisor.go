@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -27,9 +28,12 @@ const (
 
 	supervisorReconcileInterval = time.Second
 	supervisorCreatingTimeout   = 30 * time.Second
+	supervisorLaunchTimeout     = 5 * time.Second
+
+	supervisorPauseAfterRuntimeExitDirEnv = "CHAMBER_TEST_SUPERVISOR_PAUSE_AFTER_RUNTIME_EXIT_DIR"
 )
 
-var supervisorProcessAlive = processAlive
+var supervisorProcessMatches = processMatches
 
 type supervisorPhase string
 
@@ -52,9 +56,11 @@ type supervisorFile struct {
 	StdoutPath string `json:"stdout_path"`
 	StderrPath string `json:"stderr_path"`
 
-	RuntimeName string                          `json:"runtime_name,omitempty"`
-	StartedAt   *time.Time                      `json:"started_at,omitempty"`
-	Result      *chamberRuntime.ContainerResult `json:"result,omitempty"`
+	RuntimeName         string                          `json:"runtime_name,omitempty"`
+	SupervisorPID       int                             `json:"supervisor_pid,omitempty"`
+	SupervisorStartTime uint64                          `json:"supervisor_start_time,omitempty"`
+	StartedAt           *time.Time                      `json:"started_at,omitempty"`
+	Result              *chamberRuntime.ContainerResult `json:"result,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -79,6 +85,13 @@ func runRuntimeSupervisor(ctx context.Context, args []string) error {
 }
 
 func runSupervisorFile(ctx context.Context, path string) error {
+	startTime, err := processStartTime(os.Getpid())
+	if err != nil {
+		return err
+	}
+	if err := markSupervisorLaunched(path, os.Getpid(), startTime, time.Now().UTC()); err != nil {
+		return err
+	}
 	state, err := readRequiredSupervisorFile(path)
 	if err != nil {
 		return err
@@ -117,7 +130,8 @@ func runSupervisorFile(ctx context.Context, path string) error {
 	}, func(_ chamberRuntime.ContainerHandle) error {
 		return markSupervisorStarted(path, rt.Descriptor().Name, time.Now().UTC())
 	})
-	return errors.Join(runErr, completeSupervisorFile(path, result))
+	pauseErr := pauseSupervisorAfterRuntimeExit(ctx, state.ContainerID, result)
+	return errors.Join(runErr, pauseErr, completeSupervisorFile(path, result))
 }
 
 type startSupervisorFunc func(ctx context.Context, supervisorPath string) (int, func() error, error)
@@ -140,7 +154,35 @@ func startSupervisorProcess(ctx context.Context, supervisorPath string) (int, fu
 	if err := command.Start(); err != nil {
 		return 0, nil, fmt.Errorf("%w: start runtime supervisor: %w", chamberErrors.ErrRuntimeStartFailed, err)
 	}
-	return command.Process.Pid, command.Wait, nil
+	deadline := time.Now().Add(supervisorLaunchTimeout)
+	for {
+		state, present, readErr := readSupervisorFile(supervisorPath, "", "")
+		if readErr == nil && present && state.SupervisorPID == command.Process.Pid && state.SupervisorStartTime != 0 {
+			return command.Process.Pid, command.Wait, nil
+		}
+		alive, aliveErr := processAlive(command.Process.Pid)
+		if aliveErr != nil {
+			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+			_ = command.Wait()
+			return 0, nil, aliveErr
+		}
+		if !alive {
+			waitErr := command.Wait()
+			return 0, nil, fmt.Errorf("%w: supervisor exited before recording process identity: %v", chamberErrors.ErrRuntimeStartFailed, waitErr)
+		}
+		if time.Now().After(deadline) {
+			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+			_ = command.Wait()
+			return 0, nil, fmt.Errorf("%w: supervisor did not record process identity", chamberErrors.ErrRuntimeStartFailed)
+		}
+		select {
+		case <-ctx.Done():
+			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+			_ = command.Wait()
+			return 0, nil, fmt.Errorf("%w: wait for supervisor process identity: %w", chamberErrors.ErrCanceled, ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 func monitorSupervisor(ctx context.Context, store metadata.Store, operationID string, containerID string, supervisorPath string, waitSupervisor func() error) {
@@ -160,11 +202,19 @@ func monitorSupervisor(ctx context.Context, store metadata.Store, operationID st
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := reconcileSupervisorContainerID(ctx, store, containerID); err != nil {
+			var err error
+			daemonOperationLocks.with("container:"+containerID, func() {
+				err = reconcileSupervisorContainerID(ctx, store, containerID, nil, nil, chamberRuntime.Config{}, false)
+			})
+			if err != nil && !errors.Is(err, metadata.ErrNotFound) {
 				fmt.Fprintf(os.Stderr, "record supervisor state: operation=%s container=%s error=%v\n", operationID, containerID, err)
 			}
 		case waitErr := <-waitDone:
-			if err := recordSupervisorExit(ctx, store, operationID, containerID, supervisorPath, waitErr); err != nil {
+			var err error
+			daemonOperationLocks.with("container:"+containerID, func() {
+				err = recordSupervisorExit(ctx, store, operationID, containerID, supervisorPath, waitErr)
+			})
+			if err != nil && !errors.Is(err, metadata.ErrNotFound) {
 				fmt.Fprintf(os.Stderr, "record supervisor result: operation=%s container=%s error=%v\n", operationID, containerID, err)
 			}
 			return
@@ -172,8 +222,16 @@ func monitorSupervisor(ctx context.Context, store metadata.Store, operationID st
 	}
 }
 
-func watchSupervisorContainers(ctx context.Context, store metadata.Store) {
-	reconcileSupervisorContainers(ctx, store)
+func watchSupervisorContainers(
+	ctx context.Context,
+	store metadata.Store,
+	startSupervisor startSupervisorFunc,
+	openContainer openContainerFunc,
+	runtimeConfig chamberRuntime.Config,
+) {
+	if err := reconcileSupervisorContainers(ctx, store, startSupervisor, openContainer, runtimeConfig, false); err != nil {
+		fmt.Fprintf(os.Stderr, "reconcile supervisor containers: error=%v\n", err)
+	}
 
 	ticker := time.NewTicker(supervisorReconcileInterval)
 	defer ticker.Stop()
@@ -182,67 +240,113 @@ func watchSupervisorContainers(ctx context.Context, store metadata.Store) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			reconcileSupervisorContainers(ctx, store)
+			if err := reconcileSupervisorContainers(ctx, store, startSupervisor, openContainer, runtimeConfig, false); err != nil {
+				fmt.Fprintf(os.Stderr, "reconcile supervisor containers: error=%v\n", err)
+			}
 		}
 	}
 }
 
-func reconcileSupervisorContainers(ctx context.Context, store metadata.Store) {
+func reconcileSupervisorContainers(
+	ctx context.Context,
+	store metadata.Store,
+	startSupervisor startSupervisorFunc,
+	openContainer openContainerFunc,
+	runtimeConfig chamberRuntime.Config,
+	startup bool,
+) error {
 	containers, err := store.ListContainers(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "reconcile supervisor containers: error=%v\n", err)
-		return
+		return err
 	}
+	var reconcileErr error
 	for _, container := range containers {
 		if container.State != metadata.ContainerCreating &&
+			container.State != metadata.ContainerCreated &&
 			container.State != metadata.ContainerStarting &&
 			container.State != metadata.ContainerRunning {
 			continue
 		}
-		if err := reconcileSupervisorContainer(ctx, store, container); err != nil {
+		var err error
+		daemonOperationLocks.with("container:"+container.ID, func() {
+			err = reconcileSupervisorContainerID(ctx, store, container.ID, startSupervisor, openContainer, runtimeConfig, startup)
+		})
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "reconcile supervisor container: operation=%s container=%s error=%v\n", container.OperationID, container.ID, err)
+			reconcileErr = errors.Join(reconcileErr, err)
 		}
 	}
+	return reconcileErr
 }
 
-func reconcileSupervisorContainerID(ctx context.Context, store metadata.Store, containerID string) error {
+func reconcileSupervisorContainerID(
+	ctx context.Context,
+	store metadata.Store,
+	containerID string,
+	startSupervisor startSupervisorFunc,
+	openContainer openContainerFunc,
+	runtimeConfig chamberRuntime.Config,
+	startup bool,
+) error {
 	container, err := store.GetContainer(ctx, containerID)
 	if err != nil {
 		return err
 	}
-	return reconcileSupervisorContainer(ctx, store, container)
+	return reconcileSupervisorContainer(ctx, store, container, startSupervisor, openContainer, runtimeConfig, startup)
 }
 
-func reconcileSupervisorContainer(ctx context.Context, store metadata.Store, container metadata.Container) error {
+func reconcileSupervisorContainer(
+	ctx context.Context,
+	store metadata.Store,
+	container metadata.Container,
+	startSupervisor startSupervisorFunc,
+	openContainer openContainerFunc,
+	runtimeConfig chamberRuntime.Config,
+	startup bool,
+) error {
 	if strings.TrimSpace(container.SupervisorPath) == "" {
-		if container.State == metadata.ContainerCreating {
-			return failContainerFromCurrent(ctx, store, container.OperationID, container.ID, chamberErrors.ErrRuntimeStartFailed, fmt.Errorf("creating container has no supervisor file"))
+		if startup || container.State != metadata.ContainerCreating || time.Since(container.UpdatedAt) > supervisorCreatingTimeout {
+			return failContainerFromCurrent(ctx, store, container.OperationID, container.ID, chamberErrors.ErrRuntimeStartFailed, fmt.Errorf("%s container has no supervisor file path", container.State))
 		}
 		return nil
 	}
 
-	state, present, err := readSupervisorFile(container.SupervisorPath, container.OperationID, container.ID)
+	state, present, err := readSupervisorFile(container.SupervisorPath, "", container.ID)
 	if err != nil {
 		return failContainerFromCurrent(ctx, store, container.OperationID, container.ID, chamberErrors.ErrRuntimeWaitFailed, err)
 	}
 	if !present {
-		if container.State == metadata.ContainerCreating && time.Since(container.UpdatedAt) > supervisorCreatingTimeout {
-			return failContainerFromCurrent(ctx, store, container.OperationID, container.ID, chamberErrors.ErrRuntimeStartFailed, fmt.Errorf("supervisor file was not created before recovery timeout"))
+		if startup || container.State != metadata.ContainerCreating || time.Since(container.UpdatedAt) > supervisorCreatingTimeout {
+			return failContainerFromCurrent(ctx, store, container.OperationID, container.ID, chamberErrors.ErrRuntimeStartFailed, fmt.Errorf("%s container supervisor file is missing", container.State))
 		}
 		return nil
+	}
+	if state.OperationID != container.OperationID {
+		alignedState, adopted, err := alignSupervisorStartOperation(ctx, store, container, state)
+		if err != nil {
+			return failContainerFromCurrent(ctx, store, container.OperationID, container.ID, chamberErrors.ErrRuntimeWaitFailed, err)
+		}
+		state = alignedState
+		container = adopted
 	}
 
 	switch state.Phase {
 	case supervisorPrepared:
-		if container.State == metadata.ContainerCreating && time.Since(container.UpdatedAt) > supervisorCreatingTimeout {
-			return failContainerFromCurrent(ctx, store, container.OperationID, container.ID, chamberErrors.ErrRuntimeStartFailed, fmt.Errorf("supervisor did not start before recovery timeout"))
-		}
-		return nil
+		return recoverPreparedSupervisor(ctx, store, container, state, startSupervisor, startup)
 	case supervisorStarted:
+		if state.SupervisorPID != 0 && (container.SupervisorPID != state.SupervisorPID || container.SupervisorStartTime != state.SupervisorStartTime) {
+			updated, err := store.SetContainerSupervisor(ctx, container.ID, container.State, state.SupervisorPID, state.SupervisorStartTime, time.Now().UTC())
+			if err != nil && !errors.Is(err, chamberErrors.ErrStateConflict) {
+				return err
+			}
+			if err == nil {
+				container = updated
+			}
+		}
 		if err := recordSupervisorStarted(ctx, store, container.ID); err != nil {
 			return err
 		}
-		return failContainerIfSupervisorProcessExited(ctx, store, container)
+		return failContainerIfSupervisorProcessExited(ctx, store, container, state.SupervisorPID, openContainer, runtimeConfig)
 	case supervisorCompleted:
 		return applySupervisorResult(ctx, store, container.OperationID, container.ID, *state.Result)
 	default:
@@ -250,13 +354,206 @@ func reconcileSupervisorContainer(ctx context.Context, store metadata.Store, con
 	}
 }
 
-func failContainerIfSupervisorProcessExited(ctx context.Context, store metadata.Store, container metadata.Container) error {
-	alive, err := supervisorProcessAlive(container.SupervisorPID)
+func alignSupervisorStartOperation(ctx context.Context, store metadata.Store, container metadata.Container, state supervisorFile) (supervisorFile, metadata.Container, error) {
+	if container.State == metadata.ContainerStarting && state.Phase == supervisorPrepared {
+		operation, err := store.GetOperation(ctx, container.OperationID)
+		if err != nil {
+			return state, container, fmt.Errorf("read admitted start operation %q: %w", container.OperationID, err)
+		}
+		if operation.Kind != metadata.StartOperation || operation.State != metadata.OperationRunning || operation.ResourceID != container.ID {
+			return state, container, fmt.Errorf("container operation %q is not a running start operation for container %q", operation.ID, container.ID)
+		}
+		state.OperationID = operation.ID
+		state.SupervisorPID = 0
+		state.SupervisorStartTime = 0
+		state.RuntimeName = ""
+		state.StartedAt = nil
+		state.Result = nil
+		if err := writeSupervisorFile(container.SupervisorPath, state); err != nil {
+			return state, container, err
+		}
+		return state, container, nil
+	}
+
+	operation, err := store.GetOperation(ctx, state.OperationID)
+	if err != nil {
+		return state, container, fmt.Errorf("read supervisor operation %q: %w", state.OperationID, err)
+	}
+	if operation.Kind != metadata.StartOperation || operation.State != metadata.OperationRunning || operation.ResourceID != container.ID {
+		return state, container, fmt.Errorf("supervisor operation %q is not a running start operation for container %q", operation.ID, container.ID)
+	}
+	if container.State != metadata.ContainerCreated {
+		return state, container, fmt.Errorf("cannot adopt start operation %q from container state %q", operation.ID, container.State)
+	}
+	if state.Phase == supervisorPrepared {
+		container.OperationID = operation.ID
+		return state, container, nil
+	}
+	updated, err := store.TransitionContainer(ctx, container.ID, metadata.ContainerCreated, metadata.ContainerUpdate{
+		OperationID:         operation.ID,
+		State:               metadata.ContainerStarting,
+		At:                  time.Now().UTC(),
+		SupervisorPID:       state.SupervisorPID,
+		SupervisorStartTime: state.SupervisorStartTime,
+		SupervisorPath:      container.SupervisorPath,
+		RuntimeRoot:         state.Runtime.RuntimeRoot,
+		StdoutPath:          state.StdoutPath,
+		StderrPath:          state.StderrPath,
+		BundlePath:          state.Bundle.BundlePath,
+	})
+	return state, updated, err
+}
+
+func recoverPreparedSupervisor(
+	ctx context.Context,
+	store metadata.Store,
+	container metadata.Container,
+	state supervisorFile,
+	startSupervisor startSupervisorFunc,
+	startup bool,
+) error {
+	operation, err := store.GetOperation(ctx, state.OperationID)
+	if err != nil {
+		return err
+	}
+	if container.State == metadata.ContainerCreating {
+		created, err := store.TransitionContainer(ctx, container.ID, metadata.ContainerCreating, metadata.ContainerUpdate{
+			State:          metadata.ContainerCreated,
+			At:             time.Now().UTC(),
+			BundlePath:     state.Bundle.BundlePath,
+			SupervisorPath: container.SupervisorPath,
+			RuntimeRoot:    state.Runtime.RuntimeRoot,
+			StdoutPath:     state.StdoutPath,
+			StderrPath:     state.StderrPath,
+		})
+		if err != nil {
+			return err
+		}
+		container = created
+		if operation.Kind == metadata.CreateOperation {
+			_, err := store.SucceedOperation(ctx, operation.ID)
+			return ignoreTerminalConflict(err)
+		}
+	}
+	if container.State == metadata.ContainerCreated && operation.Kind == metadata.CreateOperation {
+		if operation.State == metadata.OperationRunning {
+			_, err := store.SucceedOperation(ctx, operation.ID)
+			return ignoreTerminalConflict(err)
+		}
+		return nil
+	}
+	if operation.Kind != metadata.RunOperation && operation.Kind != metadata.StartOperation {
+		return failContainerFromCurrent(ctx, store, operation.ID, container.ID, chamberErrors.ErrRuntimeStartFailed, fmt.Errorf("prepared supervisor has unsupported operation kind %q", operation.Kind))
+	}
+	if operation.State != metadata.OperationRunning {
+		return failContainerFromCurrent(ctx, store, operation.ID, container.ID, chamberErrors.ErrRuntimeStartFailed, fmt.Errorf("prepared supervisor operation %q is %q", operation.ID, operation.State))
+	}
+	if state.SupervisorPID == 0 && container.SupervisorPID == 0 && time.Since(state.UpdatedAt) <= supervisorLaunchTimeout {
+		// The request that wrote this prepared record may still be between
+		// spawning the supervisor and its child recording process identity.
+		// Both startup and periodic recovery wait for this narrow handshake
+		// window so they cannot launch a duplicate supervisor.
+		return nil
+	}
+
+	pid := state.SupervisorPID
+	startTime := state.SupervisorStartTime
+	if pid == 0 {
+		pid = container.SupervisorPID
+		startTime = container.SupervisorStartTime
+	}
+	if pid > 0 {
+		alive, err := supervisorProcessMatches(pid, startTime)
+		if err != nil {
+			return err
+		}
+		if alive {
+			if container.State == metadata.ContainerCreated {
+				_, err = store.TransitionContainer(ctx, container.ID, metadata.ContainerCreated, metadata.ContainerUpdate{
+					OperationID:         operation.ID,
+					State:               metadata.ContainerStarting,
+					At:                  time.Now().UTC(),
+					SupervisorPID:       pid,
+					SupervisorStartTime: startTime,
+				})
+			} else if container.SupervisorPID != pid {
+				_, err = store.SetContainerSupervisor(ctx, container.ID, container.State, pid, startTime, time.Now().UTC())
+			}
+			return ignoreTerminalConflict(err)
+		}
+	}
+	if startSupervisor == nil {
+		if startup {
+			return fmt.Errorf("supervisor starter is required to recover prepared container %q", container.ID)
+		}
+		return nil
+	}
+	pid, waitSupervisor, err := startSupervisor(ctx, container.SupervisorPath)
+	if err != nil {
+		return failContainerFromCurrent(ctx, store, operation.ID, container.ID, chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeStartFailed), err)
+	}
+	launchedState, present, readErr := readSupervisorFile(container.SupervisorPath, operation.ID, container.ID)
+	if readErr != nil {
+		return readErr
+	}
+	if !present {
+		return fmt.Errorf("supervisor file disappeared after recovery launch")
+	}
+	if container.State == metadata.ContainerCreated {
+		_, err = store.TransitionContainer(ctx, container.ID, metadata.ContainerCreated, metadata.ContainerUpdate{
+			OperationID:         operation.ID,
+			State:               metadata.ContainerStarting,
+			At:                  time.Now().UTC(),
+			SupervisorPID:       pid,
+			SupervisorStartTime: launchedState.SupervisorStartTime,
+		})
+	} else {
+		_, err = store.SetContainerSupervisor(ctx, container.ID, container.State, pid, launchedState.SupervisorStartTime, time.Now().UTC())
+	}
+	if err != nil {
+		return err
+	}
+	go monitorSupervisor(context.Background(), store, operation.ID, container.ID, container.SupervisorPath, waitSupervisor)
+	return nil
+}
+
+func failContainerIfSupervisorProcessExited(
+	ctx context.Context,
+	store metadata.Store,
+	container metadata.Container,
+	supervisorPID int,
+	openContainer openContainerFunc,
+	runtimeConfig chamberRuntime.Config,
+) error {
+	pid := supervisorPID
+	startTime := container.SupervisorStartTime
+	if pid == 0 {
+		pid = container.SupervisorPID
+	}
+	alive, err := supervisorProcessMatches(pid, startTime)
 	if err != nil {
 		return err
 	}
 	if alive {
 		return nil
+	}
+	runtimeEvidence := "runtime state unavailable"
+	// Runtime state is liveness evidence only. A completed supervisor result is
+	// the durable authority for the container outcome, so a missing result must
+	// fail recoverably even when runc still reports a process state.
+	if openContainer != nil {
+		controlConfig := runtimeConfig
+		if strings.TrimSpace(container.RuntimeRoot) != "" {
+			controlConfig.RuntimeRoot = container.RuntimeRoot
+		}
+		handle, openErr := openContainer(ctx, controlConfig, container.ID)
+		if openErr != nil {
+			runtimeEvidence = fmt.Sprintf("runtime open failed: %v", openErr)
+		} else if runtimeState, stateErr := handle.State(ctx); stateErr != nil {
+			runtimeEvidence = fmt.Sprintf("runtime state failed: %v", stateErr)
+		} else {
+			runtimeEvidence = fmt.Sprintf("runtime state is %q", runtimeState.Status)
+		}
 	}
 	return failContainerFromCurrent(
 		ctx,
@@ -264,13 +561,13 @@ func failContainerIfSupervisorProcessExited(ctx context.Context, store metadata.
 		container.OperationID,
 		container.ID,
 		chamberErrors.ErrRuntimeWaitFailed,
-		fmt.Errorf("supervisor process %d exited without completed result", container.SupervisorPID),
+		fmt.Errorf("supervisor process %d exited without completed result; %s", pid, runtimeEvidence),
 	)
 }
 
 func processAlive(pid int) (bool, error) {
 	if pid <= 0 {
-		return true, nil
+		return false, nil
 	}
 	if err := syscall.Kill(pid, 0); err != nil {
 		if errors.Is(err, syscall.ESRCH) {
@@ -284,6 +581,47 @@ func processAlive(pid int) (bool, error) {
 	return true, nil
 }
 
+func processMatches(pid int, expectedStartTime uint64) (bool, error) {
+	if expectedStartTime == 0 {
+		return false, nil
+	}
+	alive, err := processAlive(pid)
+	if err != nil || !alive {
+		return alive, err
+	}
+	observedStartTime, err := processStartTime(pid)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return observedStartTime == expectedStartTime, nil
+}
+
+func processStartTime(pid int) (uint64, error) {
+	if pid <= 0 {
+		return 0, fmt.Errorf("%w: invalid supervisor pid %d", chamberErrors.ErrRuntimeControlFailed, pid)
+	}
+	content, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0, fmt.Errorf("%w: read supervisor process start time: %w", chamberErrors.ErrRuntimeControlFailed, err)
+	}
+	closingParen := bytes.LastIndexByte(content, ')')
+	if closingParen < 0 {
+		return 0, fmt.Errorf("%w: malformed supervisor process stat", chamberErrors.ErrRuntimeControlFailed)
+	}
+	fields := strings.Fields(string(content[closingParen+1:]))
+	if len(fields) <= 19 {
+		return 0, fmt.Errorf("%w: supervisor process stat has %d fields", chamberErrors.ErrRuntimeControlFailed, len(fields))
+	}
+	startTime, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%w: parse supervisor process start time: %w", chamberErrors.ErrRuntimeControlFailed, err)
+	}
+	return startTime, nil
+}
+
 func recordSupervisorStarted(ctx context.Context, store metadata.Store, containerID string) error {
 	container, err := store.GetContainer(ctx, containerID)
 	if err != nil {
@@ -294,8 +632,8 @@ func recordSupervisorStarted(ctx context.Context, store metadata.Store, containe
 		container.State == metadata.ContainerFailed {
 		return nil
 	}
-	if container.State == metadata.ContainerCreating {
-		_, err = store.TransitionContainer(ctx, containerID, metadata.ContainerCreating, metadata.ContainerUpdate{
+	if container.State == metadata.ContainerCreating || container.State == metadata.ContainerCreated {
+		_, err = store.TransitionContainer(ctx, containerID, container.State, metadata.ContainerUpdate{
 			State: metadata.ContainerStarting,
 			At:    time.Now().UTC(),
 		})
@@ -311,6 +649,13 @@ func recordSupervisorStarted(ctx context.Context, store metadata.Store, containe
 }
 
 func recordSupervisorExit(ctx context.Context, store metadata.Store, operationID string, containerID string, supervisorPath string, waitErr error) error {
+	container, err := store.GetContainer(ctx, containerID)
+	if err != nil {
+		return err
+	}
+	if container.State == metadata.ContainerExited || container.State == metadata.ContainerFailed {
+		return nil
+	}
 	state, present, err := readSupervisorFile(supervisorPath, operationID, containerID)
 	if err != nil {
 		return failContainerFromCurrent(ctx, store, operationID, containerID, chamberErrors.ErrRuntimeWaitFailed, err)
@@ -336,29 +681,18 @@ func applySupervisorResult(ctx context.Context, store metadata.Store, operationI
 		if exitCode != 0 {
 			code = chamberErrors.ErrContainerExitNonzero
 		}
-		if err := exitContainerFromCurrent(ctx, store, operationID, containerID, exitCode, code, result.ExitedAt); err != nil {
-			return err
-		}
+		operationState := metadata.OperationSucceeded
 		if exitCode == 0 {
-			_, err := store.SucceedOperation(ctx, operationID)
-			return ignoreTerminalConflict(err)
+			return exitContainerFromCurrent(ctx, store, operationID, containerID, exitCode, code, operationState, result.ExitedAt)
 		}
-		_, err := store.FailOperation(ctx, operationID, code)
-		return ignoreTerminalConflict(err)
+		operationState = metadata.OperationFailed
+		return exitContainerFromCurrent(ctx, store, operationID, containerID, exitCode, code, operationState, result.ExitedAt)
 	case chamberRuntime.ContainerResultStatusStartFailed:
 		code := supervisorResultCode(result, chamberErrors.ErrRuntimeStartFailed)
 		return failContainerFromCurrent(ctx, store, operationID, containerID, code, errors.New(result.Error))
 	case chamberRuntime.ContainerResultStatusCanceled:
 		code := supervisorResultCode(result, chamberErrors.ErrCanceled)
-		if err := transitionContainerFailedFromCurrent(ctx, store, containerID, code); err != nil {
-			return err
-		}
-		_, err := store.TransitionOperation(ctx, operationID, metadata.OperationRunning, metadata.OperationUpdate{
-			State:     metadata.OperationAborted,
-			At:        result.ExitedAt,
-			ErrorCode: code,
-		})
-		return ignoreTerminalConflict(err)
+		return failOrAbortContainerFromCurrent(ctx, store, operationID, containerID, code, metadata.OperationAborted, result.ExitedAt)
 	case chamberRuntime.ContainerResultStatusUnknown:
 		code := supervisorResultCode(result, chamberErrors.ErrRuntimeWaitFailed)
 		return failContainerFromCurrent(ctx, store, operationID, containerID, code, errors.New(result.Error))
@@ -367,21 +701,42 @@ func applySupervisorResult(ctx context.Context, store metadata.Store, operationI
 	}
 }
 
-func exitContainerFromCurrent(ctx context.Context, store metadata.Store, operationID string, containerID string, exitCode int, code chamberErrors.Code, at time.Time) error {
+func exitContainerFromCurrent(
+	ctx context.Context,
+	store metadata.Store,
+	operationID string,
+	containerID string,
+	exitCode int,
+	code chamberErrors.Code,
+	operationState metadata.OperationState,
+	at time.Time,
+) error {
 	container, err := store.GetContainer(ctx, containerID)
 	if err != nil {
 		return err
 	}
 	switch container.State {
 	case metadata.ContainerExited, metadata.ContainerFailed:
-		return nil
-	case metadata.ContainerCreating, metadata.ContainerStarting, metadata.ContainerRunning:
-		_, err := store.TransitionContainer(ctx, containerID, container.State, metadata.ContainerUpdate{
-			State:     metadata.ContainerExited,
-			At:        at,
-			ExitCode:  &exitCode,
-			ErrorCode: code,
+		_, err := store.TransitionOperation(ctx, operationID, metadata.OperationRunning, metadata.OperationUpdate{
+			State: operationState, At: at, ErrorCode: code,
 		})
+		return ignoreTerminalConflict(err)
+	case metadata.ContainerCreating, metadata.ContainerStarting, metadata.ContainerRunning:
+		_, _, err := store.TransitionContainerAndOperation(
+			ctx,
+			containerID,
+			container.State,
+			metadata.ContainerUpdate{
+				State:           metadata.ContainerExited,
+				At:              at,
+				ExitCode:        &exitCode,
+				ErrorCode:       code,
+				ClearSupervisor: true,
+			},
+			operationID,
+			metadata.OperationRunning,
+			metadata.OperationUpdate{State: operationState, At: at, ErrorCode: code},
+		)
 		return err
 	default:
 		return failContainerFromCurrent(ctx, store, operationID, containerID, chamberErrors.ErrRuntimeWaitFailed, fmt.Errorf("cannot mark container exited from state %q", container.State))
@@ -389,25 +744,60 @@ func exitContainerFromCurrent(ctx context.Context, store metadata.Store, operati
 }
 
 func failContainerFromCurrent(ctx context.Context, store metadata.Store, operationID string, containerID string, code chamberErrors.Code, err error) error {
-	transitionErr := transitionContainerFailedFromCurrent(ctx, store, containerID, code)
-	_, operationErr := store.FailOperation(ctx, operationID, code)
-	return errors.Join(err, transitionErr, ignoreTerminalConflict(operationErr))
-}
-
-func transitionContainerFailedFromCurrent(ctx context.Context, store metadata.Store, containerID string, code chamberErrors.Code) error {
 	container, getErr := store.GetContainer(ctx, containerID)
 	if getErr != nil {
-		return getErr
+		return errors.Join(err, getErr)
 	}
-	if container.State != metadata.ContainerFailed && container.State != metadata.ContainerExited {
-		_, transitionErr := store.TransitionContainer(ctx, containerID, container.State, metadata.ContainerUpdate{
-			State:     metadata.ContainerFailed,
-			At:        time.Now().UTC(),
-			ErrorCode: code,
-		})
-		return transitionErr
+	if container.State == metadata.ContainerExited || container.State == metadata.ContainerFailed {
+		_, operationErr := store.FailOperation(ctx, operationID, code)
+		return ignoreTerminalConflict(operationErr)
+	}
+	_, _, cleanupErr := admitContainerCleanup(ctx, store, containerID, metadata.CleanupOperation, false)
+	if errors.Is(cleanupErr, metadata.ErrAlreadyExists) || errors.Is(cleanupErr, chamberErrors.ErrStateConflict) {
+		cleanupErr = nil
+	}
+	_, _, transitionErr := store.FailContainerAndOperation(ctx, containerID, container.State, operationID, code)
+	if errors.Is(transitionErr, chamberErrors.ErrStateConflict) {
+		transitionErr = failOrAbortContainerFromCurrent(ctx, store, operationID, containerID, code, metadata.OperationFailed, time.Now().UTC())
+	}
+	recordErr := errors.Join(cleanupErr, transitionErr)
+	if recordErr != nil {
+		return errors.Join(err, recordErr)
 	}
 	return nil
+}
+
+func failOrAbortContainerFromCurrent(
+	ctx context.Context,
+	store metadata.Store,
+	operationID string,
+	containerID string,
+	code chamberErrors.Code,
+	operationState metadata.OperationState,
+	at time.Time,
+) error {
+	container, err := store.GetContainer(ctx, containerID)
+	if err != nil {
+		return err
+	}
+	if container.State == metadata.ContainerExited || container.State == metadata.ContainerFailed {
+		_, err := store.TransitionOperation(ctx, operationID, metadata.OperationRunning, metadata.OperationUpdate{
+			State: operationState, At: at, ErrorCode: code,
+		})
+		return ignoreTerminalConflict(err)
+	}
+	_, _, err = store.TransitionContainerAndOperation(
+		ctx,
+		containerID,
+		container.State,
+		metadata.ContainerUpdate{
+			State: metadata.ContainerFailed, At: at, ErrorCode: code, ClearSupervisor: true,
+		},
+		operationID,
+		metadata.OperationRunning,
+		metadata.OperationUpdate{State: operationState, At: at, ErrorCode: code},
+	)
+	return ignoreTerminalConflict(err)
 }
 
 func supervisorResultCode(result chamberRuntime.ContainerResult, fallback chamberErrors.Code) chamberErrors.Code {
@@ -464,6 +854,17 @@ func readSupervisorFile(path string, operationID string, containerID string) (su
 	return state, true, nil
 }
 
+func markSupervisorLaunched(path string, pid int, startTime uint64, at time.Time) error {
+	state, err := readRequiredSupervisorFile(path)
+	if err != nil {
+		return err
+	}
+	state.SupervisorPID = pid
+	state.SupervisorStartTime = startTime
+	state.UpdatedAt = at
+	return writeSupervisorFile(path, state)
+}
+
 func markSupervisorStarted(path string, runtimeName string, at time.Time) error {
 	state, err := readRequiredSupervisorFile(path)
 	if err != nil {
@@ -494,6 +895,39 @@ func completeSupervisorFile(path string, result chamberRuntime.ContainerResult) 
 	state.Result = &result
 	state.UpdatedAt = now
 	return writeSupervisorFile(path, state)
+}
+
+func pauseSupervisorAfterRuntimeExit(ctx context.Context, containerID string, result chamberRuntime.ContainerResult) error {
+	dir := strings.TrimSpace(os.Getenv(supervisorPauseAfterRuntimeExitDirEnv))
+	if dir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("%w: create supervisor pause directory: %w", chamberErrors.ErrFilesystemFailed, err)
+	}
+	signalPath := filepath.Join(dir, containerID+".runtime-exited.json")
+	releasePath := filepath.Join(dir, containerID+".release")
+	if err := writeSupervisorJSON(signalPath, map[string]any{
+		"container_id": containerID,
+		"result":       result,
+		"at":           time.Now().UTC(),
+	}); err != nil {
+		return err
+	}
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, err := os.Stat(releasePath); err == nil {
+			return nil
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("%w: inspect supervisor pause release file: %w", chamberErrors.ErrFilesystemFailed, err)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: supervisor pause canceled: %w", chamberErrors.ErrCanceled, ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 func validateSupervisorFile(state supervisorFile, operationID string, containerID string) error {

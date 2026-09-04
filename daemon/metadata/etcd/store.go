@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -25,6 +24,7 @@ const (
 	imagePrefix     = "/chamber/v0/images/by-reference/"
 	operationPrefix = "/chamber/v0/operations/"
 	containerPrefix = "/chamber/v0/containers/"
+	cleanupPrefix   = "/chamber/v0/cleanups/"
 )
 
 type Store struct {
@@ -167,6 +167,25 @@ func (s *Store) GetOperation(ctx context.Context, id string) (metadata.Operation
 	return getValue[metadata.Operation](ctx, s.client, operationKey(id))
 }
 
+func (s *Store) ListOperations(ctx context.Context) ([]metadata.Operation, error) {
+	response, err := s.client.Get(ctx, operationPrefix, clientv3.WithPrefix())
+	if err != nil {
+		return nil, mapEtcdError(err)
+	}
+	operations := make([]metadata.Operation, 0, len(response.Kvs))
+	for _, kv := range response.Kvs {
+		operation, err := unmarshalValue[metadata.Operation](kv.Value)
+		if err != nil {
+			return nil, err
+		}
+		operations = append(operations, cloneOperation(operation))
+	}
+	sort.Slice(operations, func(i, j int) bool {
+		return operations[i].ID < operations[j].ID
+	})
+	return operations, nil
+}
+
 func (s *Store) SucceedOperation(ctx context.Context, id string) (metadata.Operation, error) {
 	return s.TransitionOperation(ctx, id, metadata.OperationRunning, metadata.OperationUpdate{
 		State: metadata.OperationSucceeded,
@@ -200,10 +219,7 @@ func (s *Store) TransitionOperation(
 		return metadata.Operation{}, chamberErrors.ErrStateConflict
 	}
 
-	operation.State = update.State
-	operation.UpdatedAt = update.At
-	operation.FinishedAt = cloneTimePtr(&update.At)
-	operation.ErrorCode = update.ErrorCode
+	operation = applyOperationUpdate(operation, update)
 
 	if err := compareAndPut(ctx, s.client, key, modRevision, operation); err != nil {
 		return metadata.Operation{}, err
@@ -213,6 +229,80 @@ func (s *Store) TransitionOperation(
 
 func (s *Store) CreateContainer(ctx context.Context, container metadata.Container) error {
 	return createValue(ctx, s.client, containerKey(container.ID), container)
+}
+
+func (s *Store) CreateContainerAndOperation(ctx context.Context, container metadata.Container, operation metadata.Operation) error {
+	containerPayload, err := marshalValue(container)
+	if err != nil {
+		return err
+	}
+	operationPayload, err := marshalValue(operation)
+	if err != nil {
+		return err
+	}
+	containerKey := containerKey(container.ID)
+	operationKey := operationKey(operation.ID)
+	response, err := s.client.Txn(ctx).
+		If(
+			clientv3.Compare(clientv3.CreateRevision(containerKey), "=", 0),
+			clientv3.Compare(clientv3.CreateRevision(operationKey), "=", 0),
+		).
+		Then(
+			clientv3.OpPut(containerKey, containerPayload),
+			clientv3.OpPut(operationKey, operationPayload),
+		).
+		Commit()
+	if err != nil {
+		return mapEtcdError(err)
+	}
+	if !response.Succeeded {
+		return metadata.ErrAlreadyExists
+	}
+	return nil
+}
+
+func (s *Store) CreateOperationAndTransitionContainer(
+	ctx context.Context,
+	operation metadata.Operation,
+	containerID string,
+	containerFrom metadata.ContainerState,
+	containerUpdate metadata.ContainerUpdate,
+) (metadata.Container, error) {
+	containerStorageKey := containerKey(containerID)
+	container, containerRevision, err := getValueWithRevision[metadata.Container](ctx, s.client, containerStorageKey)
+	if err != nil {
+		return metadata.Container{}, err
+	}
+	if container.State != containerFrom || !metadata.IsContainerTransitionValid(containerFrom, containerUpdate.State) {
+		return metadata.Container{}, chamberErrors.ErrStateConflict
+	}
+	container = applyContainerUpdate(container, containerUpdate)
+	containerPayload, err := marshalValue(container)
+	if err != nil {
+		return metadata.Container{}, err
+	}
+	operationPayload, err := marshalValue(operation)
+	if err != nil {
+		return metadata.Container{}, err
+	}
+	operationStorageKey := operationKey(operation.ID)
+	response, err := s.client.Txn(ctx).
+		If(
+			clientv3.Compare(clientv3.ModRevision(containerStorageKey), "=", containerRevision),
+			clientv3.Compare(clientv3.CreateRevision(operationStorageKey), "=", 0),
+		).
+		Then(
+			clientv3.OpPut(containerStorageKey, containerPayload),
+			clientv3.OpPut(operationStorageKey, operationPayload),
+		).
+		Commit()
+	if err != nil {
+		return metadata.Container{}, mapEtcdError(err)
+	}
+	if !response.Succeeded {
+		return metadata.Container{}, chamberErrors.ErrStateConflict
+	}
+	return cloneContainer(container), nil
 }
 
 func (s *Store) GetContainer(ctx context.Context, id string) (metadata.Container, error) {
@@ -276,30 +366,83 @@ func (s *Store) TransitionContainer(
 		return metadata.Container{}, chamberErrors.ErrStateConflict
 	}
 
-	container.State = update.State
-	container.UpdatedAt = update.At
-	container.ExitCode = cloneIntPtr(update.ExitCode)
-	container.ErrorCode = update.ErrorCode
-	if update.StdoutPath != "" {
-		container.StdoutPath = update.StdoutPath
-	}
-	if update.StderrPath != "" {
-		container.StderrPath = update.StderrPath
-	}
-	if update.RuntimeRoot != "" {
-		container.RuntimeRoot = update.RuntimeRoot
-	}
-	if update.SupervisorPath != "" {
-		container.SupervisorPath = update.SupervisorPath
-	}
-	if update.SupervisorPID != 0 {
-		container.SupervisorPID = update.SupervisorPID
-	}
+	container = applyContainerUpdate(container, update)
 
 	if err := compareAndPut(ctx, s.client, key, modRevision, container); err != nil {
 		return metadata.Container{}, err
 	}
 	return cloneContainer(container), nil
+}
+
+func (s *Store) SetContainerSupervisor(ctx context.Context, id string, state metadata.ContainerState, pid int, startTime uint64, at time.Time) (metadata.Container, error) {
+	key := containerKey(id)
+	container, modRevision, err := getValueWithRevision[metadata.Container](ctx, s.client, key)
+	if err != nil {
+		return metadata.Container{}, err
+	}
+	if container.State != state {
+		return metadata.Container{}, chamberErrors.ErrStateConflict
+	}
+	container.SupervisorPID = pid
+	container.SupervisorStartTime = startTime
+	container.UpdatedAt = at
+	if err := compareAndPut(ctx, s.client, key, modRevision, container); err != nil {
+		return metadata.Container{}, err
+	}
+	return cloneContainer(container), nil
+}
+
+func (s *Store) TransitionContainerAndOperation(
+	ctx context.Context,
+	containerID string,
+	containerFrom metadata.ContainerState,
+	containerUpdate metadata.ContainerUpdate,
+	operationID string,
+	operationFrom metadata.OperationState,
+	operationUpdate metadata.OperationUpdate,
+) (metadata.Container, metadata.Operation, error) {
+	containerStorageKey := containerKey(containerID)
+	container, containerRevision, err := getValueWithRevision[metadata.Container](ctx, s.client, containerStorageKey)
+	if err != nil {
+		return metadata.Container{}, metadata.Operation{}, err
+	}
+	operationStorageKey := operationKey(operationID)
+	operation, operationRevision, err := getValueWithRevision[metadata.Operation](ctx, s.client, operationStorageKey)
+	if err != nil {
+		return metadata.Container{}, metadata.Operation{}, err
+	}
+	if container.State != containerFrom || operation.State != operationFrom ||
+		!metadata.IsContainerTransitionValid(containerFrom, containerUpdate.State) ||
+		!metadata.IsOperationTransitionValid(operationFrom, operationUpdate.State) {
+		return metadata.Container{}, metadata.Operation{}, chamberErrors.ErrStateConflict
+	}
+	container = applyContainerUpdate(container, containerUpdate)
+	operation = applyOperationUpdate(operation, operationUpdate)
+	containerPayload, err := marshalValue(container)
+	if err != nil {
+		return metadata.Container{}, metadata.Operation{}, err
+	}
+	operationPayload, err := marshalValue(operation)
+	if err != nil {
+		return metadata.Container{}, metadata.Operation{}, err
+	}
+	response, err := s.client.Txn(ctx).
+		If(
+			clientv3.Compare(clientv3.ModRevision(containerStorageKey), "=", containerRevision),
+			clientv3.Compare(clientv3.ModRevision(operationStorageKey), "=", operationRevision),
+		).
+		Then(
+			clientv3.OpPut(containerStorageKey, containerPayload),
+			clientv3.OpPut(operationStorageKey, operationPayload),
+		).
+		Commit()
+	if err != nil {
+		return metadata.Container{}, metadata.Operation{}, mapEtcdError(err)
+	}
+	if !response.Succeeded {
+		return metadata.Container{}, metadata.Operation{}, chamberErrors.ErrStateConflict
+	}
+	return cloneContainer(container), cloneOperation(operation), nil
 }
 
 func (s *Store) FailContainerAndOperation(
@@ -309,13 +452,92 @@ func (s *Store) FailContainerAndOperation(
 	operationID string,
 	code chamberErrors.Code,
 ) (metadata.Container, metadata.Operation, error) {
-	container, containerErr := s.TransitionContainer(ctx, containerID, from, metadata.ContainerUpdate{
-		State:     metadata.ContainerFailed,
-		At:        time.Now().UTC(),
-		ErrorCode: code,
+	now := time.Now().UTC()
+	return s.TransitionContainerAndOperation(
+		ctx,
+		containerID,
+		from,
+		metadata.ContainerUpdate{
+			OperationID:     operationID,
+			State:           metadata.ContainerFailed,
+			At:              now,
+			ErrorCode:       code,
+			ClearSupervisor: true,
+		},
+		operationID,
+		metadata.OperationRunning,
+		metadata.OperationUpdate{State: metadata.OperationFailed, At: now, ErrorCode: code},
+	)
+}
+
+func (s *Store) CreateCleanup(ctx context.Context, cleanup metadata.Cleanup) error {
+	return createValue(ctx, s.client, cleanupKey(cleanup.ContainerID), cleanup)
+}
+
+func (s *Store) ListCleanups(ctx context.Context) ([]metadata.Cleanup, error) {
+	response, err := s.client.Get(ctx, cleanupPrefix, clientv3.WithPrefix())
+	if err != nil {
+		return nil, mapEtcdError(err)
+	}
+	cleanups := make([]metadata.Cleanup, 0, len(response.Kvs))
+	for _, kv := range response.Kvs {
+		cleanup, err := unmarshalValue[metadata.Cleanup](kv.Value)
+		if err != nil {
+			return nil, err
+		}
+		cleanups = append(cleanups, cleanup)
+	}
+	sort.Slice(cleanups, func(i, j int) bool {
+		return cleanups[i].ContainerID < cleanups[j].ContainerID
 	})
-	operation, operationErr := s.FailOperation(ctx, operationID, code)
-	return container, operation, errors.Join(containerErr, operationErr)
+	return cleanups, nil
+}
+
+func (s *Store) ClaimCleanup(
+	ctx context.Context,
+	containerID string,
+	leaseID string,
+	at time.Time,
+	expiresAt time.Time,
+	reclaim bool,
+) (metadata.Cleanup, error) {
+	key := cleanupKey(containerID)
+	cleanup, modRevision, err := getValueWithRevision[metadata.Cleanup](ctx, s.client, key)
+	if err != nil {
+		return metadata.Cleanup{}, err
+	}
+	if !reclaim && cleanup.LeaseID != "" && cleanup.LeaseID != leaseID && cleanup.LeaseExpiresAt.After(at) {
+		return metadata.Cleanup{}, metadata.ErrLeaseHeld
+	}
+	cleanup.LeaseID = leaseID
+	cleanup.LeaseExpiresAt = expiresAt
+	cleanup.UpdatedAt = at
+	if err := compareAndPut(ctx, s.client, key, modRevision, cleanup); err != nil {
+		return metadata.Cleanup{}, err
+	}
+	return cleanup, nil
+}
+
+func (s *Store) DeleteCleanup(ctx context.Context, containerID string, leaseID string) error {
+	key := cleanupKey(containerID)
+	cleanup, modRevision, err := getValueWithRevision[metadata.Cleanup](ctx, s.client, key)
+	if err != nil {
+		return err
+	}
+	if cleanup.LeaseID != leaseID {
+		return metadata.ErrLeaseHeld
+	}
+	response, err := s.client.Txn(ctx).
+		If(clientv3.Compare(clientv3.ModRevision(key), "=", modRevision)).
+		Then(clientv3.OpDelete(key)).
+		Commit()
+	if err != nil {
+		return mapEtcdError(err)
+	}
+	if !response.Succeeded {
+		return chamberErrors.ErrStateConflict
+	}
+	return nil
 }
 
 func (s *Store) Close() error {
@@ -430,6 +652,10 @@ func containerKey(id string) string {
 	return containerPrefix + id
 }
 
+func cleanupKey(containerID string) string {
+	return cleanupPrefix + containerID
+}
+
 func unixURL(socketPath string) (url.URL, error) {
 	absolutePath, err := filepath.Abs(socketPath)
 	if err != nil {
@@ -471,6 +697,47 @@ func metadataFailure(format string, args ...any) error {
 func cloneOperation(operation metadata.Operation) metadata.Operation {
 	operation.FinishedAt = cloneTimePtr(operation.FinishedAt)
 	return operation
+}
+
+func applyOperationUpdate(operation metadata.Operation, update metadata.OperationUpdate) metadata.Operation {
+	operation.State = update.State
+	operation.UpdatedAt = update.At
+	operation.FinishedAt = cloneTimePtr(&update.At)
+	operation.ErrorCode = update.ErrorCode
+	return operation
+}
+
+func applyContainerUpdate(container metadata.Container, update metadata.ContainerUpdate) metadata.Container {
+	container.State = update.State
+	if update.OperationID != "" {
+		container.OperationID = update.OperationID
+	}
+	container.UpdatedAt = update.At
+	container.ExitCode = cloneIntPtr(update.ExitCode)
+	container.ErrorCode = update.ErrorCode
+	if update.StdoutPath != "" {
+		container.StdoutPath = update.StdoutPath
+	}
+	if update.StderrPath != "" {
+		container.StderrPath = update.StderrPath
+	}
+	if update.RuntimeRoot != "" {
+		container.RuntimeRoot = update.RuntimeRoot
+	}
+	if update.BundlePath != "" {
+		container.BundlePath = update.BundlePath
+	}
+	if update.SupervisorPath != "" {
+		container.SupervisorPath = update.SupervisorPath
+	}
+	if update.ClearSupervisor {
+		container.SupervisorPID = 0
+		container.SupervisorStartTime = 0
+	} else if update.SupervisorPID != 0 {
+		container.SupervisorPID = update.SupervisorPID
+		container.SupervisorStartTime = update.SupervisorStartTime
+	}
+	return container
 }
 
 func cloneContainer(container metadata.Container) metadata.Container {

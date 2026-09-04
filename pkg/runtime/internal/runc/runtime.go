@@ -748,6 +748,9 @@ func (c *runcContainer) DeleteLog(stream chamberRuntime.LogStream) error {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("%w: delete runtime log %q: %w", chamberErrors.ErrRuntimeControlFailed, path, err)
 	}
+	if err := os.Remove(filepath.Dir(path)); err != nil && !os.IsNotExist(err) && !errors.Is(err, syscall.ENOTEMPTY) {
+		return fmt.Errorf("%w: remove empty runtime log directory %q: %w", chamberErrors.ErrRuntimeControlFailed, filepath.Dir(path), err)
+	}
 	return nil
 }
 

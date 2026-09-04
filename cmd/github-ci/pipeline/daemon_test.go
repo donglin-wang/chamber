@@ -3,15 +3,56 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestGitSnapshotSHA256IdentifiesCurrentSourceSnapshot(t *testing.T) {
+	digest, err := gitSnapshotSHA256(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("gitSnapshotSHA256() error = %v", err)
+	}
+	decoded, err := hex.DecodeString(digest)
+	if err != nil || len(decoded) != 32 {
+		t.Fatalf("git snapshot digest = %q, decode error = %v", digest, err)
+	}
+}
+
+func TestRequireSourceSnapshotRejectsWorktreeChange(t *testing.T) {
+	repo := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	runGit("init", "--quiet")
+	path := filepath.Join(repo, "source.go")
+	if err := os.WriteFile(path, []byte("package source\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(initial) error = %v", err)
+	}
+	runGit("add", "source.go")
+	runGit("-c", "user.name=Chamber Test", "-c", "user.email=chamber@example.invalid", "commit", "--quiet", "-m", "initial")
+	digest, err := gitSnapshotSHA256(repo)
+	if err != nil {
+		t.Fatalf("gitSnapshotSHA256() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte("package changed\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(changed) error = %v", err)
+	}
+	if err := requireSourceSnapshot(repo, digest); err == nil {
+		t.Fatal("requireSourceSnapshot() error = nil, want changed-source failure")
+	}
+}
 
 func TestRunDaemonSupervisedWritesProofAndLogs(t *testing.T) {
 	workspace := t.TempDir()

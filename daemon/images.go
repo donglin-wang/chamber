@@ -37,8 +37,18 @@ func registerImageRoutes(mux *http.ServeMux, store metadata.Store, imageStore ch
 			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "reference is required")
 			return
 		}
+		lockKey, canonicalReference, err := canonicalImageOperationLockKey(request.Reference)
+		if err != nil {
+			writeDaemonError(w, err)
+			return
+		}
 
-		result, err := pullImage(r.Context(), store, imageStore, strings.TrimSpace(request.Reference))
+		var result pullImageResult
+		err = nil
+		operationCtx := context.WithoutCancel(r.Context())
+		daemonOperationLocks.with(lockKey, func() {
+			result, err = pullImage(operationCtx, store, imageStore, canonicalReference)
+		})
 		if err != nil {
 			writeDaemonError(w, err)
 			return

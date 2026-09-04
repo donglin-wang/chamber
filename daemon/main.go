@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,9 +16,13 @@ import (
 	"time"
 
 	chamberDaemonConfig "github.com/donglin-wang/chamber/daemon/config"
+	chamberMetadata "github.com/donglin-wang/chamber/daemon/metadata"
 	chamberEtcdMetadataStore "github.com/donglin-wang/chamber/daemon/metadata/etcd"
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
 	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
+	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
+	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
@@ -51,6 +56,16 @@ func run(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "runtime-supervisor" {
 		return runRuntimeSupervisor(ctx, args[1:])
 	}
+	if len(args) > 0 && args[0] == daemonActiveProbeCommand {
+		if len(args) != 1 {
+			return fmt.Errorf("%s does not accept arguments", daemonActiveProbeCommand)
+		}
+		if _, err := fmt.Fprintln(os.Stdout, daemonActiveProbeMarker); err != nil {
+			return err
+		}
+		time.Sleep(500 * time.Millisecond)
+		return nil
+	}
 	if len(args) > 0 && args[0] == "storage" {
 		return runStorage(args[1:], os.Getenv, os.Stdout)
 	}
@@ -68,6 +83,7 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 	configureLogging(cfg.Logging)
+	startupProbe := newDaemonStartupProbe()
 
 	lifetime, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
@@ -119,15 +135,18 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	store, err := chamberEtcdMetadataStore.Open(lifetime, cfg.Metadata, metadataWorkspace)
-	if err != nil {
+	if probeErr := startupProbe.record(daemonStartupScope{
+		Name: "metadata", Implementation: "etcd", Path: cfg.Metadata.Root,
+	}, err); probeErr != nil {
 		return fmt.Errorf("open metadata store: %w", err)
 	}
 	defer store.Close()
-	go watchSupervisorContainers(lifetime, store)
 
 	mux := newServer()
 	imageStore, err := chamberImageFactory.NewStoreWithWorkspace(imageConfig, imageWorkspace)
-	if err != nil {
+	if probeErr := startupProbe.record(daemonStartupScope{
+		Name: "image", Implementation: "oci-layout", Path: imageConfig.Root,
+	}, err); probeErr != nil {
 		return fmt.Errorf("create image store: %w", err)
 	}
 	registerImageRoutes(mux, store, imageStore)
@@ -136,8 +155,48 @@ func run(ctx context.Context, args []string) error {
 		bundleWorkspace,
 	)
 	if err != nil {
+		_ = startupProbe.record(daemonStartupScope{
+			Name: "bundle", Implementation: bundleConfig.Name, Path: bundleConfig.Root,
+		}, err)
 		return fmt.Errorf("create bundle provisioner: %w", err)
 	}
+	rt, err := chamberRuntimeFactory.NewRuntime(lifetime, runtimeConfig)
+	if err != nil {
+		_ = startupProbe.record(daemonStartupScope{
+			Name: "runtime", Implementation: runtimeConfig.Name, Path: runtimeConfig.RuntimeRoot,
+		}, err)
+		return fmt.Errorf("create runtime: %w", err)
+	}
+	executablePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve daemon executable for active startup probe: %w", err)
+	}
+	activeProbe := runDaemonActiveProbes(lifetime, cfg.TmpRoot, executablePath, provisioner, rt)
+	if activeProbe.RecoveryErr != nil {
+		probeErr := startupProbe.record(daemonStartupScope{
+			Name: "cleanup", Implementation: "leased", Path: filepath.Join(filepath.Dir(cfg.Metadata.Root), "supervisors"),
+		}, activeProbe.RecoveryErr)
+		return fmt.Errorf("reclaim abandoned active startup probe: %w", probeErr)
+	}
+	if probeErr := startupProbe.record(daemonStartupScope{
+		Name: "bundle", Implementation: bundleConfig.Name, Path: bundleConfig.Root,
+	}, activeProbe.ProvisionErr); probeErr != nil {
+		return errors.Join(probeErr, activeProbe.CleanupErr)
+	}
+	if probeErr := startupProbe.record(daemonStartupScope{
+		Name: "runtime", Implementation: runtimeConfig.Name, Path: runtimeConfig.RuntimeRoot,
+	}, activeProbe.RunErr); probeErr != nil {
+		return errors.Join(probeErr, activeProbe.CleanupErr)
+	}
+	reconcileErr := reconcileDaemonState(lifetime, store, runtimeConfig, provisioner)
+	if probeErr := startupProbe.record(daemonStartupScope{
+		Name: "cleanup", Implementation: "leased", Path: filepath.Join(filepath.Dir(cfg.Metadata.Root), "supervisors"),
+	}, errors.Join(activeProbe.CleanupErr, reconcileErr)); probeErr != nil {
+		return probeErr
+	}
+	go watchSupervisorContainers(lifetime, store, startSupervisorProcess, openRuntimeContainer, runtimeConfig)
+	go watchContainerCleanups(lifetime, store, runtimeConfig, provisioner, openRuntimeContainer, terminateSupervisorProcessGroup)
+	registerOperationRoutes(mux, store)
 	registerContainerRoutes(
 		mux,
 		store,
@@ -150,16 +209,33 @@ func run(ctx context.Context, args []string) error {
 		terminateSupervisorProcessGroup,
 	)
 
+	listener, err := daemonListener(cfg)
+	transportPath := cfg.SocketPath
+	transportName := "unix"
+	if cfg.HTTPAddr != "" {
+		transportPath = cfg.HTTPAddr
+		transportName = "tcp-development"
+	}
+	if probeErr := startupProbe.record(daemonStartupScope{
+		Name: "socket", Implementation: transportName, Path: transportPath,
+	}, err); probeErr != nil {
+		return err
+	}
+	defer listener.Close()
+	if cfg.HTTPAddr == "" {
+		defer os.Remove(cfg.SocketPath)
+	}
+	registerSystemRoutes(mux, startupProbe.result())
+
 	server := &http.Server{
-		Addr:              cfg.HTTPAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	slog.Default().Info("chamber daemon HTTP server listening", "http_addr", cfg.HTTPAddr)
+	slog.Default().Info("chamber daemon HTTP server listening", "addr", listener.Addr().String(), "network", listener.Addr().Network())
 	serveErr := make(chan error, 1)
 	go func() {
-		serveErr <- server.ListenAndServe()
+		serveErr <- server.Serve(listener)
 	}()
 
 	select {
@@ -178,6 +254,52 @@ func run(ctx context.Context, args []string) error {
 		}
 	}
 	return nil
+}
+
+func reconcileDaemonState(
+	ctx context.Context,
+	store chamberMetadata.Store,
+	runtimeConfig chamberRuntime.Config,
+	provisioner chamberBundle.Provisioner,
+) error {
+	if err := reconcileSupervisorContainers(ctx, store, startSupervisorProcess, openRuntimeContainer, runtimeConfig, true); err != nil {
+		return fmt.Errorf("reconcile supervisor containers: %w", err)
+	}
+	if err := reconcileContainerCleanups(ctx, store, runtimeConfig, provisioner, openRuntimeContainer, terminateSupervisorProcessGroup, true); err != nil {
+		return fmt.Errorf("reconcile container cleanups: %w", err)
+	}
+	if err := reconcileRunningOperations(ctx, store); err != nil {
+		return fmt.Errorf("reconcile running operations: %w", err)
+	}
+	return nil
+}
+
+func daemonListener(cfg chamberDaemonConfig.Config) (net.Listener, error) {
+	if cfg.HTTPAddr != "" {
+		listener, err := net.Listen("tcp", cfg.HTTPAddr)
+		if err != nil {
+			return nil, fmt.Errorf("listen HTTP TCP: %w", err)
+		}
+		return listener, nil
+	}
+	if cfg.SocketPath == "" {
+		return nil, fmt.Errorf("daemon socket path is required when http addr is empty")
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.SocketPath), 0o700); err != nil {
+		return nil, fmt.Errorf("create daemon socket directory: %w", err)
+	}
+	if err := os.Remove(cfg.SocketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("remove stale daemon socket: %w", err)
+	}
+	listener, err := net.Listen("unix", cfg.SocketPath)
+	if err != nil {
+		return nil, fmt.Errorf("listen HTTP Unix socket: %w", err)
+	}
+	if err := os.Chmod(cfg.SocketPath, 0o600); err != nil {
+		listener.Close()
+		return nil, fmt.Errorf("set daemon socket mode: %w", err)
+	}
+	return listener, nil
 }
 
 func parseArgs(args []string) (startupOptions, error) {

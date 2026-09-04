@@ -56,7 +56,7 @@ const openAPIJSON = `{
   "info": {
     "title": "Chamber Daemon API",
     "version": "v1",
-    "description": "HTTP-only Chamber daemon surface for pulling OCI images, running containers, listing containers, and reading stored logs."
+    "description": "Local Chamber daemon HTTP API for pulling OCI images, creating, starting, stopping, removing, listing containers, and reading stored logs. The daemon listens on a user-scoped Unix socket by default; TCP/HTTP is an explicit development option."
   },
   "paths": {
     "/healthz": {
@@ -135,6 +135,39 @@ const openAPIJSON = `{
         }
       }
     },
+    "/v1/containers/create": {
+      "post": {
+        "summary": "Create a prepared container without starting it",
+        "operationId": "createContainer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RunContainerRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Container prepared",
+            "headers": {
+              "X-Chamber-Operation-ID": {
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RunContainerResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/v1/containers/run": {
       "post": {
         "summary": "Create and start a container from a pulled image",
@@ -190,6 +223,163 @@ const openAPIJSON = `{
         }
       }
     },
+    "/v1/containers/{id}/start": {
+      "post": {
+        "summary": "Start a prepared container",
+        "operationId": "startContainer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Container start initiated",
+            "headers": {
+              "X-Chamber-Operation-ID": {
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Container" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/containers/{id}": {
+      "get": {
+        "summary": "Read one container record",
+        "operationId": "getContainer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Container record",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Container" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "summary": "Remove a container record and owned artifacts",
+        "operationId": "removeContainer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Container removed",
+            "headers": {
+              "X-Chamber-Operation-ID": {
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Container" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/containers/{id}/stop": {
+      "post": {
+        "summary": "Send SIGTERM to a running container without deleting artifacts",
+        "operationId": "stopContainer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stop signal delivered",
+            "headers": {
+              "X-Chamber-Operation-ID": {
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Container" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/containers/{id}/cancel": {
+      "post": {
+        "summary": "Force-cancel a container and clean up owned artifacts",
+        "operationId": "cancelContainer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Container canceled",
+            "headers": {
+              "X-Chamber-Operation-ID": {
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Container" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/v1/containers/{id}/logs": {
       "get": {
         "summary": "Read stored container logs",
@@ -214,6 +404,66 @@ const openAPIJSON = `{
           "400": { "$ref": "#/components/responses/Error" },
           "404": { "$ref": "#/components/responses/Error" },
           "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/operations": {
+      "get": {
+        "summary": "List durable daemon operations and pending cleanup work",
+        "operationId": "listOperations",
+        "responses": {
+          "200": {
+            "description": "Operations listed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListOperationsResponse" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/operations/{id}": {
+      "get": {
+        "summary": "Read one durable daemon operation",
+        "operationId": "getOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation record",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Operation" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/system/info": {
+      "get": {
+        "summary": "Read the selected daemon startup validation report",
+        "operationId": "systemInfo",
+        "responses": {
+          "200": {
+            "description": "Startup validation report",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SystemInfoResponse" }
+              }
+            }
+          }
         }
       }
     }
@@ -305,7 +555,7 @@ const openAPIJSON = `{
           "operation_id": { "type": "string" },
           "id": { "type": "string" },
           "image_digest": { "type": "string" },
-          "state": { "type": "string" }
+          "state": { "$ref": "#/components/schemas/ContainerState" }
         }
       },
       "ListContainersResponse": {
@@ -325,15 +575,89 @@ const openAPIJSON = `{
         "additionalProperties": false,
         "properties": {
           "id": { "type": "string" },
-          "operation_id": { "type": "string" },
+          "operation_id": {
+            "type": "string",
+            "description": "Execution operation that owns this container outcome. Control-operation IDs are returned in X-Chamber-Operation-ID."
+          },
           "image": { "type": "string" },
           "image_digest": { "type": "string" },
           "runtime": { "type": "string" },
-          "state": { "type": "string" },
+          "state": { "$ref": "#/components/schemas/ContainerState" },
           "created_at": { "type": "string", "format": "date-time" },
           "updated_at": { "type": "string", "format": "date-time" },
           "exit_code": { "type": "integer" },
           "error_code": { "type": "string" }
+        }
+      },
+      "ContainerState": {
+        "type": "string",
+        "enum": ["creating", "created", "starting", "running", "exited", "failed"]
+      },
+      "ListOperationsResponse": {
+        "type": "object",
+        "required": ["operations", "pending_cleanups"],
+        "additionalProperties": false,
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Operation" }
+          },
+          "pending_cleanups": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "Operation": {
+        "type": "object",
+        "required": ["id", "kind", "state", "resource_id", "started_at", "updated_at"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["pull", "create", "start", "run", "stop", "cancel", "remove", "cleanup"]
+          },
+          "state": {
+            "type": "string",
+            "enum": ["running", "succeeded", "failed", "aborted"]
+          },
+          "resource_id": { "type": "string" },
+          "trace_id": { "type": "string" },
+          "span_id": { "type": "string" },
+          "started_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "finished_at": { "type": "string", "format": "date-time" },
+          "error_code": { "type": "string" }
+        }
+      },
+      "SystemInfoResponse": {
+        "type": "object",
+        "required": ["startup_probe"],
+        "additionalProperties": false,
+        "properties": {
+          "startup_probe": { "$ref": "#/components/schemas/StartupProbe" }
+        }
+      },
+      "StartupProbe": {
+        "type": "object",
+        "required": ["passed", "scopes"],
+        "additionalProperties": false,
+        "properties": {
+          "passed": { "type": "boolean" },
+          "scopes": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StartupScope" }
+          }
+        }
+      },
+      "StartupScope": {
+        "type": "object",
+        "required": ["name", "passed"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "implementation": { "type": "string" },
+          "path": { "type": "string" },
+          "passed": { "type": "boolean" },
+          "error": { "type": "string" }
         }
       },
       "ErrorResponse": {

@@ -21,7 +21,10 @@ type traceContextKey struct{}
 func TestContainerValidTransition(t *testing.T) {
 	tests := map[metadata.StateTransition[metadata.ContainerState]]bool{
 		{From: metadata.ContainerCreating, To: metadata.ContainerStarting}: true,
+		{From: metadata.ContainerCreating, To: metadata.ContainerCreated}:  true,
 		{From: metadata.ContainerCreating, To: metadata.ContainerFailed}:   true,
+		{From: metadata.ContainerCreated, To: metadata.ContainerStarting}:  true,
+		{From: metadata.ContainerCreated, To: metadata.ContainerFailed}:    true,
 		{From: metadata.ContainerStarting, To: metadata.ContainerRunning}:  true,
 		{From: metadata.ContainerStarting, To: metadata.ContainerFailed}:   true,
 		{From: metadata.ContainerStarting, To: metadata.ContainerExited}:   true,
@@ -29,6 +32,7 @@ func TestContainerValidTransition(t *testing.T) {
 		{From: metadata.ContainerRunning, To: metadata.ContainerFailed}:    true,
 
 		{From: metadata.ContainerCreating, To: metadata.ContainerRunning}:       false,
+		{From: metadata.ContainerCreated, To: metadata.ContainerRunning}:        false,
 		{From: metadata.ContainerRunning, To: metadata.ContainerStarting}:       false,
 		{From: metadata.ContainerExited, To: metadata.ContainerRunning}:         false,
 		{From: metadata.ContainerFailed, To: metadata.ContainerRunning}:         false,
@@ -107,6 +111,10 @@ func TestStoreContract(t *testing.T) {
 			assertImageRoundTrip(t, store)
 			assertOperationLifecycle(t, store)
 			assertContainerLifecycle(t, store)
+			assertAtomicContainerAdmission(t, store)
+			assertAtomicStartAdmission(t, store)
+			assertAtomicContainerOperationTransition(t, store)
+			assertCleanupLeaseLifecycle(t, store)
 			assertTerminalHelpers(t, store)
 			assertConcurrentOperationCreate(t, store)
 			assertConcurrentOperationTransition(t, store)
@@ -114,6 +122,178 @@ func TestStoreContract(t *testing.T) {
 			assertConcurrentContainerTransition(t, store)
 			assertTraceFieldsAreExplicit(t, store)
 		})
+	}
+}
+
+func assertAtomicStartAdmission(t *testing.T, store metadata.Store) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Date(2026, 7, 11, 10, 11, 30, 0, time.UTC)
+	container := metadata.Container{
+		ID: "container-atomic-start", OperationID: "op-atomic-create", State: metadata.ContainerCreated,
+		ImageDigest: "sha256:start", ImageRef: "docker.io/library/alpine:latest", Runtime: "runc", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.CreateContainer(ctx, container); err != nil {
+		t.Fatalf("CreateContainer(start) error = %v", err)
+	}
+	operation := metadata.Operation{
+		ID: "op-atomic-start", Kind: metadata.StartOperation, State: metadata.OperationRunning,
+		ResourceID: container.ID, StartedAt: now, UpdatedAt: now,
+	}
+	started, err := store.CreateOperationAndTransitionContainer(ctx, operation, container.ID, metadata.ContainerCreated, metadata.ContainerUpdate{
+		OperationID: operation.ID, State: metadata.ContainerStarting, At: now,
+	})
+	if err != nil {
+		t.Fatalf("CreateOperationAndTransitionContainer() error = %v", err)
+	}
+	if started.State != metadata.ContainerStarting || started.OperationID != operation.ID {
+		t.Fatalf("started container = %#v", started)
+	}
+	conflict := operation
+	conflict.ID = "op-atomic-start-conflict"
+	if _, err := store.CreateOperationAndTransitionContainer(ctx, conflict, container.ID, metadata.ContainerCreated, metadata.ContainerUpdate{
+		OperationID: conflict.ID, State: metadata.ContainerStarting, At: now,
+	}); !errors.Is(err, chamberErrors.ErrStateConflict) {
+		t.Fatalf("CreateOperationAndTransitionContainer(conflict) error = %v, want state conflict", err)
+	}
+	if _, err := store.GetOperation(ctx, conflict.ID); !errors.Is(err, metadata.ErrNotFound) {
+		t.Fatalf("GetOperation(partial start) error = %v, want not found", err)
+	}
+}
+
+func assertAtomicContainerOperationTransition(t *testing.T, store metadata.Store) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Date(2026, 7, 11, 10, 11, 45, 0, time.UTC)
+	operation := metadata.Operation{
+		ID: "op-atomic-terminal", Kind: metadata.RunOperation, State: metadata.OperationRunning,
+		ResourceID: "container-atomic-terminal", StartedAt: now, UpdatedAt: now,
+	}
+	container := metadata.Container{
+		ID: operation.ResourceID, OperationID: operation.ID, State: metadata.ContainerRunning,
+		ImageDigest: "sha256:terminal", ImageRef: "docker.io/library/alpine:latest", Runtime: "runc",
+		SupervisorPID: 123, SupervisorStartTime: 456, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.CreateContainerAndOperation(ctx, container, operation); err != nil {
+		t.Fatalf("CreateContainerAndOperation(terminal) error = %v", err)
+	}
+	exitCode := 0
+	finished := now.Add(time.Second)
+	updatedContainer, updatedOperation, err := store.TransitionContainerAndOperation(
+		ctx, container.ID, metadata.ContainerRunning,
+		metadata.ContainerUpdate{State: metadata.ContainerExited, At: finished, ExitCode: &exitCode, ClearSupervisor: true},
+		operation.ID, metadata.OperationRunning,
+		metadata.OperationUpdate{State: metadata.OperationSucceeded, At: finished},
+	)
+	if err != nil {
+		t.Fatalf("TransitionContainerAndOperation() error = %v", err)
+	}
+	if updatedContainer.State != metadata.ContainerExited || updatedContainer.SupervisorPID != 0 || updatedContainer.SupervisorStartTime != 0 {
+		t.Fatalf("terminal container = %#v", updatedContainer)
+	}
+	if updatedOperation.State != metadata.OperationSucceeded {
+		t.Fatalf("terminal operation = %#v", updatedOperation)
+	}
+
+	operations, err := store.ListOperations(ctx)
+	if err != nil {
+		t.Fatalf("ListOperations() error = %v", err)
+	}
+	found := false
+	for _, listed := range operations {
+		if listed.ID == operation.ID && listed.State == metadata.OperationSucceeded {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("ListOperations() did not include terminal operation %q", operation.ID)
+	}
+}
+
+func assertAtomicContainerAdmission(t *testing.T, store metadata.Store) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Date(2026, 7, 11, 10, 11, 0, 0, time.UTC)
+	operation := metadata.Operation{
+		ID:         "op-atomic-admission",
+		Kind:       metadata.RunOperation,
+		State:      metadata.OperationRunning,
+		ResourceID: "container-atomic-admission",
+		StartedAt:  now,
+		UpdatedAt:  now,
+	}
+	container := metadata.Container{
+		ID:          operation.ResourceID,
+		OperationID: operation.ID,
+		ImageDigest: "sha256:atomic",
+		ImageRef:    "docker.io/library/alpine:latest",
+		Runtime:     "runc",
+		State:       metadata.ContainerCreating,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := store.CreateContainerAndOperation(ctx, container, operation); err != nil {
+		t.Fatalf("CreateContainerAndOperation() error = %v", err)
+	}
+	if _, err := store.GetContainer(ctx, container.ID); err != nil {
+		t.Fatalf("GetContainer(admitted) error = %v", err)
+	}
+	if _, err := store.GetOperation(ctx, operation.ID); err != nil {
+		t.Fatalf("GetOperation(admitted) error = %v", err)
+	}
+
+	conflictingOperation := operation
+	conflictingOperation.ID = "op-atomic-conflict"
+	if err := store.CreateContainerAndOperation(ctx, container, conflictingOperation); !errors.Is(err, metadata.ErrAlreadyExists) {
+		t.Fatalf("CreateContainerAndOperation(conflict) error = %v, want already exists", err)
+	}
+	if _, err := store.GetOperation(ctx, conflictingOperation.ID); !errors.Is(err, metadata.ErrNotFound) {
+		t.Fatalf("GetOperation(partial admission) error = %v, want not found", err)
+	}
+}
+
+func assertCleanupLeaseLifecycle(t *testing.T, store metadata.Store) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Date(2026, 7, 11, 10, 13, 0, 0, time.UTC)
+	cleanup := metadata.Cleanup{
+		ContainerID:    "container-cleanup-lease",
+		OperationID:    "op-cleanup-lease",
+		Kind:           metadata.RemoveOperation,
+		LeaseID:        "lease-original",
+		LeaseExpiresAt: now.Add(time.Minute),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := store.CreateCleanup(ctx, cleanup); err != nil {
+		t.Fatalf("CreateCleanup() error = %v", err)
+	}
+	cleanups, err := store.ListCleanups(ctx)
+	if err != nil {
+		t.Fatalf("ListCleanups() error = %v", err)
+	}
+	if len(cleanups) != 1 || cleanups[0] != cleanup {
+		t.Fatalf("ListCleanups() = %#v, want %#v", cleanups, cleanup)
+	}
+	if _, err := store.ClaimCleanup(ctx, cleanup.ContainerID, "lease-other", now, now.Add(time.Minute), false); !errors.Is(err, metadata.ErrLeaseHeld) {
+		t.Fatalf("ClaimCleanup(active lease) error = %v, want lease held", err)
+	}
+	reclaimed, err := store.ClaimCleanup(ctx, cleanup.ContainerID, "lease-recovery", now, now.Add(time.Minute), true)
+	if err != nil {
+		t.Fatalf("ClaimCleanup(reclaim) error = %v", err)
+	}
+	if reclaimed.LeaseID != "lease-recovery" {
+		t.Fatalf("reclaimed lease = %q, want lease-recovery", reclaimed.LeaseID)
+	}
+	if err := store.DeleteCleanup(ctx, cleanup.ContainerID, "lease-other"); !errors.Is(err, metadata.ErrLeaseHeld) {
+		t.Fatalf("DeleteCleanup(wrong lease) error = %v, want lease held", err)
+	}
+	if err := store.DeleteCleanup(ctx, cleanup.ContainerID, reclaimed.LeaseID); err != nil {
+		t.Fatalf("DeleteCleanup() error = %v", err)
+	}
+	cleanups, err = store.ListCleanups(ctx)
+	if err != nil || len(cleanups) != 0 {
+		t.Fatalf("ListCleanups(after delete) = %#v, %v; want empty", cleanups, err)
 	}
 }
 
@@ -375,27 +555,26 @@ func assertContainerLifecycle(t *testing.T, store metadata.Store) {
 	}
 
 	updated, err := store.TransitionContainer(ctx, container.ID, metadata.ContainerCreating, metadata.ContainerUpdate{
-		State:    metadata.ContainerFailed,
-		At:       exitedAt,
-		ExitCode: &exitCode,
+		OperationID: "op-start",
+		State:       metadata.ContainerCreated,
+		At:          exitedAt,
 	})
 	if err != nil {
 		t.Fatalf("TransitionContainer() error = %v", err)
 	}
-	if updated.State != metadata.ContainerFailed {
-		t.Fatalf("TransitionContainer() state = %q, want %q", updated.State, metadata.ContainerFailed)
+	if updated.State != metadata.ContainerCreated {
+		t.Fatalf("TransitionContainer() state = %q, want %q", updated.State, metadata.ContainerCreated)
 	}
-	if updated.ExitCode == nil || *updated.ExitCode != exitCode {
-		t.Fatalf("TransitionContainer() ExitCode = %v, want %d", updated.ExitCode, exitCode)
+	if updated.OperationID != "op-start" {
+		t.Fatalf("TransitionContainer() OperationID = %q, want op-start", updated.OperationID)
 	}
 
-	*updated.ExitCode = 0
 	reread, err := store.GetContainer(ctx, container.ID)
 	if err != nil {
 		t.Fatalf("GetContainer(after caller mutation) error = %v", err)
 	}
-	if reread.ExitCode == nil || *reread.ExitCode != exitCode {
-		t.Fatalf("GetContainer(after caller mutation) ExitCode = %v, want %d", reread.ExitCode, exitCode)
+	if reread.OperationID != "op-start" {
+		t.Fatalf("GetContainer(after caller mutation) OperationID = %q, want op-start", reread.OperationID)
 	}
 
 	_, err = store.TransitionContainer(ctx, container.ID, metadata.ContainerCreating, metadata.ContainerUpdate{
@@ -404,6 +583,27 @@ func assertContainerLifecycle(t *testing.T, store metadata.Store) {
 	})
 	if !errors.Is(err, chamberErrors.ErrStateConflict) {
 		t.Fatalf("TransitionContainer(stale from) error = %v, want %v", err, chamberErrors.ErrStateConflict)
+	}
+
+	updated, err = store.TransitionContainer(ctx, container.ID, metadata.ContainerCreated, metadata.ContainerUpdate{
+		State:    metadata.ContainerFailed,
+		At:       exitedAt.Add(2 * time.Second),
+		ExitCode: &exitCode,
+	})
+	if err != nil {
+		t.Fatalf("TransitionContainer(created to failed) error = %v", err)
+	}
+	if updated.ExitCode == nil || *updated.ExitCode != exitCode {
+		t.Fatalf("TransitionContainer() ExitCode = %v, want %d", updated.ExitCode, exitCode)
+	}
+
+	*updated.ExitCode = 0
+	reread, err = store.GetContainer(ctx, container.ID)
+	if err != nil {
+		t.Fatalf("GetContainer(after caller mutation) error = %v", err)
+	}
+	if reread.ExitCode == nil || *reread.ExitCode != exitCode {
+		t.Fatalf("GetContainer(after caller mutation) ExitCode = %v, want %d", reread.ExitCode, exitCode)
 	}
 
 	_, err = store.TransitionContainer(ctx, container.ID, metadata.ContainerFailed, metadata.ContainerUpdate{

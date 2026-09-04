@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -137,6 +139,7 @@ func TestRunContainerRecordsPreciseProvisionerErrorCode(t *testing.T) {
 		fakeProvisioner{err: fmt.Errorf("%w: bad mount", chamberErrors.ErrInvalidBundleMount)},
 		t.TempDir(),
 		fakeStartSupervisor(nil),
+		nil,
 		"docker.io/library/alpine:latest",
 		[]string{"/bin/true"},
 		nil,
@@ -161,6 +164,7 @@ func TestRunContainerRecordsPreciseSupervisorErrorCode(t *testing.T) {
 		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
 		t.TempDir(),
 		fakeStartSupervisor(fmt.Errorf("%w: launch canceled", chamberErrors.ErrCanceled)),
+		nil,
 		"docker.io/library/alpine:latest",
 		[]string{"/bin/true"},
 		nil,
@@ -236,6 +240,7 @@ func TestRunContainerRequestsNonTerminalProcess(t *testing.T) {
 		},
 		t.TempDir(),
 		fakeStartSupervisor(nil),
+		nil,
 		"docker.io/library/alpine:latest",
 		[]string{"/bin/true"},
 		nil,
@@ -309,6 +314,7 @@ func TestRunContainerCanonicalizesImageBeforeLookup(t *testing.T) {
 		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
 		t.TempDir(),
 		fakeStartSupervisor(nil),
+		nil,
 		"alpine",
 		[]string{"/bin/true"},
 		nil,
@@ -334,6 +340,7 @@ func TestRunContainerPassesImagePlatformToProvisioner(t *testing.T) {
 		},
 		t.TempDir(),
 		fakeStartSupervisor(nil),
+		nil,
 		"docker.io/library/alpine:latest",
 		[]string{"/bin/true"},
 		nil,
@@ -343,6 +350,251 @@ func TestRunContainerPassesImagePlatformToProvisioner(t *testing.T) {
 	}
 	if provisionRequest.ImagePlatform.Architecture != "arm64" {
 		t.Fatalf("ImagePlatform = %#v, want persisted platform", provisionRequest.ImagePlatform)
+	}
+}
+
+func TestRunContainerSurvivesCanceledClientContextAfterAdmission(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/containers/run", strings.NewReader(`{
+		"image":"docker.io/library/alpine:latest",
+		"command":["/bin/true"]
+	}`)).WithContext(ctx)
+
+	mux := newServer()
+	registerContainerRoutes(
+		mux,
+		store,
+		fakeImageStore{},
+		chamberRuntime.Config{Name: "fake"},
+		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
+		t.TempDir(),
+		fakeStartSupervisor(nil),
+		fakeOpenContainer(nil),
+		nil,
+	)
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body.String())
+	}
+}
+
+func TestCreateContainerPreparesBundleWithoutStarting(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+
+	result, err := createContainer(
+		context.Background(),
+		store,
+		fakeImageStore{},
+		chamberRuntime.Config{Name: "fake", RuntimeRoot: "/tmp/chamber-test/runtime"},
+		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
+		t.TempDir(),
+		"docker.io/library/alpine:latest",
+		[]string{"/bin/true"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("createContainer() error = %v", err)
+	}
+	if result.operation.Kind != metadata.CreateOperation || result.operation.State != metadata.OperationSucceeded {
+		t.Fatalf("create operation = %#v, want succeeded create operation", result.operation)
+	}
+	if result.container.State != metadata.ContainerCreated {
+		t.Fatalf("container state = %q, want %q", result.container.State, metadata.ContainerCreated)
+	}
+	state, err := readRequiredSupervisorFile(result.container.SupervisorPath)
+	if err != nil {
+		t.Fatalf("readRequiredSupervisorFile() error = %v", err)
+	}
+	if state.Phase != supervisorPrepared || state.OperationID != result.operation.ID {
+		t.Fatalf("supervisor state = %#v, want prepared for create operation", state)
+	}
+}
+
+func TestStartContainerTakesLifecycleOwnershipAndLaunchesSupervisor(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+	created, err := createContainer(
+		context.Background(),
+		store,
+		fakeImageStore{},
+		chamberRuntime.Config{Name: "fake", RuntimeRoot: "/tmp/chamber-test/runtime"},
+		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
+		t.TempDir(),
+		"docker.io/library/alpine:latest",
+		[]string{"/bin/true"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("createContainer() error = %v", err)
+	}
+
+	started, err := startContainer(
+		context.Background(),
+		store,
+		fakeStartSupervisor(nil),
+		nil,
+		created.container.ID,
+	)
+	if err != nil {
+		t.Fatalf("startContainer() error = %v", err)
+	}
+	if started.operation.Kind != metadata.StartOperation || started.operation.State != metadata.OperationRunning {
+		t.Fatalf("start operation = %#v, want running start operation", started.operation)
+	}
+	if started.operation.ID == created.operation.ID {
+		t.Fatalf("start operation ID = create operation ID %q, want independent lifecycle operation", created.operation.ID)
+	}
+	if started.container.State != metadata.ContainerStarting {
+		t.Fatalf("container state = %q, want %q", started.container.State, metadata.ContainerStarting)
+	}
+	if started.container.OperationID != started.operation.ID {
+		t.Fatalf("container operation ID = %q, want start operation %q", started.container.OperationID, started.operation.ID)
+	}
+	state, err := readRequiredSupervisorFile(started.container.SupervisorPath)
+	if err != nil {
+		t.Fatalf("readRequiredSupervisorFile() error = %v", err)
+	}
+	if state.Phase != supervisorPrepared || state.OperationID != started.operation.ID {
+		t.Fatalf("supervisor state = %#v, want prepared for start operation", state)
+	}
+}
+
+func TestStartContainerLaunchFailureSchedulesDurableCleanup(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+	created, err := createContainer(
+		context.Background(), store, fakeImageStore{},
+		chamberRuntime.Config{Name: "fake", RuntimeRoot: "/tmp/chamber-test/runtime"},
+		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
+		t.TempDir(), "docker.io/library/alpine:latest", []string{"/bin/true"}, nil,
+	)
+	if err != nil {
+		t.Fatalf("createContainer() error = %v", err)
+	}
+
+	result, err := startContainer(context.Background(), store, fakeStartSupervisor(errors.New("launch failed")), nil, created.container.ID)
+	if err == nil {
+		t.Fatal("startContainer() error = nil, want launch failure")
+	}
+	if result.container.State != metadata.ContainerFailed || result.operation.State != metadata.OperationFailed {
+		t.Fatalf("failed start result = %#v", result)
+	}
+	cleanups, listErr := store.ListCleanups(context.Background())
+	if listErr != nil || len(cleanups) != 1 || cleanups[0].ContainerID != created.container.ID {
+		t.Fatalf("ListCleanups() = %#v, %v; want durable cleanup", cleanups, listErr)
+	}
+}
+
+func TestPrepareContainerSupervisorWriteFailureSchedulesDurableCleanup(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+	supervisorRoot := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(supervisorRoot, []byte("file"), 0o600); err != nil {
+		t.Fatalf("WriteFile(supervisor root) error = %v", err)
+	}
+	operation, containerID, err := newContainerAdmission(metadata.RunOperation)
+	if err != nil {
+		t.Fatalf("newContainerAdmission() error = %v", err)
+	}
+
+	result, err := prepareContainer(
+		context.Background(), store, fakeImageStore{},
+		chamberRuntime.Config{Name: "fake", RuntimeRoot: "/tmp/chamber-test/runtime"},
+		fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
+		supervisorRoot, operation, containerID, "docker.io/library/alpine:latest", []string{"/bin/true"}, nil,
+	)
+	if err == nil {
+		t.Fatal("prepareContainer() error = nil, want supervisor write failure")
+	}
+	if result.container.State != metadata.ContainerFailed || result.operation.State != metadata.OperationFailed {
+		t.Fatalf("failed prepare result = %#v", result)
+	}
+	cleanups, listErr := store.ListCleanups(context.Background())
+	if listErr != nil || len(cleanups) != 1 || cleanups[0].ContainerID != result.container.ID {
+		t.Fatalf("ListCleanups() = %#v, %v; want durable cleanup", cleanups, listErr)
+	}
+}
+
+func TestRunContainerHoldsContainerLockFromPreparationThroughLaunch(t *testing.T) {
+	store := memory.NewMemoryStore()
+	putTestImage(t, store)
+	pauseDir := t.TempDir()
+	t.Setenv(daemonLifecyclePauseDirEnv, pauseDir)
+	t.Setenv(daemonLifecyclePausePointEnv, daemonPauseAfterPrepared)
+
+	var starts atomic.Int32
+	startSupervisor := func(_ context.Context, path string) (int, func() error, error) {
+		starts.Add(1)
+		if err := markSupervisorLaunched(path, 1234, 77, time.Now().UTC()); err != nil {
+			return 0, nil, err
+		}
+		if err := markSupervisorStarted(path, "fake", time.Now().UTC()); err != nil {
+			return 0, nil, err
+		}
+		return 1234, nil, nil
+	}
+	type result struct {
+		run runContainerResult
+		err error
+	}
+	runDone := make(chan result, 1)
+	go func() {
+		run, err := runContainer(
+			context.Background(), store, fakeImageStore{},
+			chamberRuntime.Config{Name: "fake", RuntimeRoot: "/tmp/chamber-test/runtime"},
+			fakeProvisioner{bundlePath: "/tmp/chamber-test/provisioner-owned/container"},
+			t.TempDir(), startSupervisor, nil,
+			"docker.io/library/alpine:latest", []string{"/bin/true"}, nil,
+		)
+		runDone <- result{run: run, err: err}
+	}()
+
+	var signalPath string
+	deadline := time.Now().Add(2 * time.Second)
+	for signalPath == "" && time.Now().Before(deadline) {
+		matches, err := filepath.Glob(filepath.Join(pauseDir, "*."+daemonPauseAfterPrepared+".json"))
+		if err != nil {
+			t.Fatalf("Glob(pause evidence) error = %v", err)
+		}
+		if len(matches) > 0 {
+			signalPath = matches[0]
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if signalPath == "" {
+		t.Fatal("prepared pause evidence was not written")
+	}
+
+	reconcileDone := make(chan error, 1)
+	go func() {
+		reconcileDone <- reconcileSupervisorContainers(context.Background(), store, startSupervisor, nil, chamberRuntime.Config{Name: "fake"}, false)
+	}()
+	select {
+	case err := <-reconcileDone:
+		t.Fatalf("reconciliation escaped the active container lock: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	releasePath := strings.TrimSuffix(signalPath, ".json") + ".release"
+	if err := os.WriteFile(releasePath, []byte("release\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(release) error = %v", err)
+	}
+	completed := <-runDone
+	if completed.err != nil {
+		t.Fatalf("runContainer() error = %v", completed.err)
+	}
+	if err := <-reconcileDone; err != nil {
+		t.Fatalf("reconcileSupervisorContainers() error = %v", err)
+	}
+	if starts.Load() != 1 {
+		t.Fatalf("supervisor starts = %d, want 1", starts.Load())
 	}
 }
 
@@ -376,8 +628,9 @@ func TestCancelContainerForcesRuntimeAndBundleCleanup(t *testing.T) {
 	handle := &fakeContainerHandle{id: container.ID}
 	var openedConfig chamberRuntime.Config
 	var terminatedPID int
+	var terminatedStartTime uint64
 
-	canceled, err := cancelContainer(
+	result, err := cancelContainer(
 		context.Background(),
 		store,
 		chamberRuntime.Config{Name: "fake", RuntimeRoot: "/runtime/from-config"},
@@ -392,14 +645,22 @@ func TestCancelContainerForcesRuntimeAndBundleCleanup(t *testing.T) {
 			}
 			return handle, nil
 		},
-		func(pid int) error {
+		func(pid int, startTime uint64) error {
 			terminatedPID = pid
+			terminatedStartTime = startTime
 			return nil
 		},
 		container.ID,
 	)
 	if err != nil {
 		t.Fatalf("cancelContainer() error = %v", err)
+	}
+	canceled := result.container
+	if result.operation.Kind != metadata.CancelOperation || result.operation.State != metadata.OperationSucceeded {
+		t.Fatalf("cancel operation = %#v, want succeeded cancel operation", result.operation)
+	}
+	if result.operation.ID == container.OperationID {
+		t.Fatalf("cancel operation ID = run operation ID %q, want independent lifecycle operation", container.OperationID)
 	}
 	if !handle.deleted || !handle.deleteForce {
 		t.Fatalf("runtime delete deleted=%v force=%v, want forced delete", handle.deleted, handle.deleteForce)
@@ -413,6 +674,9 @@ func TestCancelContainerForcesRuntimeAndBundleCleanup(t *testing.T) {
 	if terminatedPID != container.SupervisorPID {
 		t.Fatalf("terminated supervisor PID = %d, want %d", terminatedPID, container.SupervisorPID)
 	}
+	if terminatedStartTime != container.SupervisorStartTime {
+		t.Fatalf("terminated supervisor start time = %d, want %d", terminatedStartTime, container.SupervisorStartTime)
+	}
 	if canceled.State != metadata.ContainerFailed || canceled.ErrorCode != chamberErrors.ErrCanceled {
 		t.Fatalf("canceled container = %#v, want failed/canceled", canceled)
 	}
@@ -422,6 +686,139 @@ func TestCancelContainerForcesRuntimeAndBundleCleanup(t *testing.T) {
 	}
 	if operation.State != metadata.OperationAborted || operation.ErrorCode != chamberErrors.ErrCanceled {
 		t.Fatalf("operation = %#v, want aborted/canceled", operation)
+	}
+}
+
+func TestStopContainerSignalsRuntimeWithoutCleanup(t *testing.T) {
+	store := memory.NewMemoryStore()
+	container := createTestContainer(t, store, metadata.ContainerRunning)
+	handle := &fakeContainerHandle{id: container.ID}
+	var openedConfig chamberRuntime.Config
+
+	stopped, err := stopContainer(
+		context.Background(),
+		store,
+		chamberRuntime.Config{Name: "fake", RuntimeRoot: "/runtime/from-config"},
+		func(ctx context.Context, config chamberRuntime.Config, containerID string) (chamberRuntime.ContainerHandle, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			openedConfig = config
+			if containerID != container.ID {
+				t.Fatalf("containerID = %q, want %q", containerID, container.ID)
+			}
+			return handle, nil
+		},
+		container.ID,
+	)
+	if err != nil {
+		t.Fatalf("stopContainer() error = %v", err)
+	}
+	if stopped.operation.Kind != metadata.StopOperation || stopped.operation.State != metadata.OperationSucceeded {
+		t.Fatalf("stop operation = %#v, want succeeded stop operation", stopped.operation)
+	}
+	if stopped.operation.ID == container.OperationID {
+		t.Fatalf("stop operation ID = run operation ID %q, want independent lifecycle operation", container.OperationID)
+	}
+	if openedConfig.RuntimeRoot != container.RuntimeRoot {
+		t.Fatalf("runtime root = %q, want persisted container runtime root %q", openedConfig.RuntimeRoot, container.RuntimeRoot)
+	}
+	if handle.signal != syscall.SIGTERM {
+		t.Fatalf("signal = %v, want SIGTERM", handle.signal)
+	}
+	if handle.deleted || handle.deletedStdout || handle.deletedStderr {
+		t.Fatalf("runtime cleanup handle = %#v, want signal only", handle)
+	}
+	if stopped.container.State != metadata.ContainerRunning {
+		t.Fatalf("container state = %q, want unchanged running state", stopped.container.State)
+	}
+	operation, err := store.GetOperation(context.Background(), stopped.operation.ID)
+	if err != nil {
+		t.Fatalf("GetOperation(stop) error = %v", err)
+	}
+	if operation.State != metadata.OperationSucceeded {
+		t.Fatalf("stored stop operation state = %q, want succeeded", operation.State)
+	}
+}
+
+func TestStopContainerRejectsCreatingContainer(t *testing.T) {
+	store := memory.NewMemoryStore()
+	container := createTestContainer(t, store, metadata.ContainerCreating)
+
+	_, err := stopContainer(
+		context.Background(),
+		store,
+		chamberRuntime.Config{Name: "fake"},
+		fakeOpenContainer(nil),
+		container.ID,
+	)
+	if err == nil {
+		t.Fatal("stopContainer(creating) error = nil, want state conflict")
+	}
+	if !errors.Is(err, chamberErrors.ErrStateConflict) {
+		t.Fatalf("stopContainer(creating) error = %v, want state conflict", err)
+	}
+}
+
+func TestStopContainerRouteReturnsStopOperationHeader(t *testing.T) {
+	store := memory.NewMemoryStore()
+	container := createTestContainer(t, store, metadata.ContainerRunning)
+	handle := &fakeContainerHandle{id: container.ID}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/containers/"+container.ID+"/stop", strings.NewReader(`{}`))
+
+	mux := newServer()
+	registerContainerRoutes(
+		mux,
+		store,
+		nil,
+		chamberRuntime.Config{Name: "fake"},
+		nil,
+		t.TempDir(),
+		fakeStartSupervisor(nil),
+		func(ctx context.Context, _ chamberRuntime.Config, containerID string) (chamberRuntime.ContainerHandle, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			if containerID != container.ID {
+				t.Fatalf("containerID = %q, want %q", containerID, container.ID)
+			}
+			return handle, nil
+		},
+		nil,
+	)
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	stopOperationID := recorder.Header().Get("X-Chamber-Operation-ID")
+	if stopOperationID == "" {
+		t.Fatal("X-Chamber-Operation-ID = empty, want stop operation id")
+	}
+	if stopOperationID == container.OperationID {
+		t.Fatalf("X-Chamber-Operation-ID = run operation ID %q, want stop operation id", stopOperationID)
+	}
+	var response containerResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode stop response: %v", err)
+	}
+	if response.OperationID != container.OperationID {
+		t.Fatalf("response execution operation id = %q, want %q", response.OperationID, container.OperationID)
+	}
+	if response.OperationID == stopOperationID {
+		t.Fatalf("response operation id should remain execution ownership, not stop operation %q", stopOperationID)
+	}
+	operation, err := store.GetOperation(context.Background(), stopOperationID)
+	if err != nil {
+		t.Fatalf("GetOperation(stop) error = %v", err)
+	}
+	if operation.Kind != metadata.StopOperation || operation.ResourceID != container.ID {
+		t.Fatalf("stop operation = %#v, want stop operation for container", operation)
+	}
+	if handle.signal != syscall.SIGTERM {
+		t.Fatalf("signal = %v, want SIGTERM", handle.signal)
 	}
 }
 
@@ -438,7 +835,7 @@ func TestRemoveContainerDeletesArtifactsAndMetadata(t *testing.T) {
 		t.Fatalf("WriteFile(supervisor log) error = %v", err)
 	}
 
-	removedContainer, err := removeContainer(
+	result, err := removeContainer(
 		context.Background(),
 		store,
 		chamberRuntime.Config{Name: "fake"},
@@ -457,6 +854,13 @@ func TestRemoveContainerDeletesArtifactsAndMetadata(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("removeContainer() error = %v", err)
+	}
+	removedContainer := result.container
+	if result.operation.Kind != metadata.RemoveOperation || result.operation.State != metadata.OperationSucceeded {
+		t.Fatalf("remove operation = %#v, want succeeded remove operation", result.operation)
+	}
+	if result.operation.ID == container.OperationID {
+		t.Fatalf("remove operation ID = run operation ID %q, want independent lifecycle operation", container.OperationID)
 	}
 	if removedContainer.ID != container.ID {
 		t.Fatalf("removed container ID = %q, want %q", removedContainer.ID, container.ID)
@@ -491,18 +895,19 @@ func createTestContainer(t *testing.T, store metadata.Store, state metadata.Cont
 		t.Fatalf("CreateOperation() error = %v", err)
 	}
 	container := metadata.Container{
-		ID:             operation.ResourceID,
-		OperationID:    operation.ID,
-		ImageRef:       "docker.io/library/alpine:latest",
-		ImageDigest:    "sha256:image",
-		BundlePath:     "/tmp/chamber-test/bundles/" + operation.ResourceID,
-		Runtime:        "fake",
-		RuntimeRoot:    "/tmp/chamber-test/runtime",
-		SupervisorPath: "/tmp/chamber-test/supervisors/" + operation.ResourceID + "/supervisor.json",
-		SupervisorPID:  1234,
-		State:          state,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                  operation.ResourceID,
+		OperationID:         operation.ID,
+		ImageRef:            "docker.io/library/alpine:latest",
+		ImageDigest:         "sha256:image",
+		BundlePath:          "/tmp/chamber-test/bundles/" + operation.ResourceID,
+		Runtime:             "fake",
+		RuntimeRoot:         "/tmp/chamber-test/runtime",
+		SupervisorPath:      "/tmp/chamber-test/supervisors/" + operation.ResourceID + "/supervisor.json",
+		SupervisorPID:       1234,
+		SupervisorStartTime: 77,
+		State:               state,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 	if err := store.CreateContainer(context.Background(), container); err != nil {
 		t.Fatalf("CreateContainer() error = %v", err)
@@ -630,6 +1035,7 @@ type fakeContainerHandle struct {
 	deletedStdout  bool
 	deletedStderr  bool
 	deleteLogError error
+	signal         os.Signal
 }
 
 func (h *fakeContainerHandle) ID() string {
@@ -648,7 +1054,8 @@ func (h *fakeContainerHandle) State(context.Context) (chamberRuntime.ContainerSt
 	return chamberRuntime.ContainerState{ContainerID: h.id, Status: chamberRuntime.ContainerStatusRunning}, nil
 }
 
-func (h *fakeContainerHandle) Signal(context.Context, os.Signal) error {
+func (h *fakeContainerHandle) Signal(_ context.Context, signal os.Signal) error {
+	h.signal = signal
 	return nil
 }
 

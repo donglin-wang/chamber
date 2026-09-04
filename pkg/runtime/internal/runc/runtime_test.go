@@ -1091,6 +1091,12 @@ func TestDeleteLogRemovesSelectedStream(t *testing.T) {
 		t.Fatalf("stdout log stat error = %v, want not exist", err)
 	}
 	assertFileContent(t, stderrPath, "stderr")
+	if err := container.DeleteLog(chamberRuntime.StderrLogStream); err != nil {
+		t.Fatalf("DeleteLog(stderr) error = %v", err)
+	}
+	if _, err := os.Stat(logDir); !os.IsNotExist(err) {
+		t.Fatalf("empty log directory stat error = %v, want not exist", err)
+	}
 }
 
 func sha256Hex(content []byte) string {
