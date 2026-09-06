@@ -15,14 +15,14 @@ import (
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
-func TestReconcileCleanupReconstructsOperationAndFinishesForcedRemove(t *testing.T) {
+func TestReconcileCleanupReconstructsOperationAndFinishesForcedDelete(t *testing.T) {
 	store := memory.NewMemoryStore()
 	container := createTestContainer(t, store, metadata.ContainerRunning)
 	now := time.Now().UTC()
 	cleanup := metadata.Cleanup{
 		ContainerID: container.ID,
-		OperationID: "operation-recovered-remove",
-		Kind:        metadata.RemoveOperation,
+		OperationID: "operation-recovered-delete",
+		Kind:        metadata.DeleteOperation,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -53,8 +53,8 @@ func TestReconcileCleanupReconstructsOperationAndFinishesForcedRemove(t *testing
 	if err != nil {
 		t.Fatalf("GetOperation() error = %v", err)
 	}
-	if operation.State != metadata.OperationSucceeded || operation.Kind != metadata.RemoveOperation {
-		t.Fatalf("cleanup operation = %#v, want succeeded remove", operation)
+	if operation.State != metadata.OperationSucceeded || operation.Kind != metadata.DeleteOperation {
+		t.Fatalf("cleanup operation = %#v, want succeeded delete", operation)
 	}
 	cleanups, err := store.ListCleanups(context.Background())
 	if err != nil || len(cleanups) != 0 {
@@ -68,7 +68,7 @@ func TestReconcileCleanupReconstructsOperationAndFinishesForcedRemove(t *testing
 	}
 }
 
-func TestRemoveCleanupDeletesContainerWhenSourceOperationIsAlreadyTerminal(t *testing.T) {
+func TestDeleteCleanupDeletesContainerWhenSourceOperationIsAlreadyTerminal(t *testing.T) {
 	store := memory.NewMemoryStore()
 	container := createTestContainer(t, store, metadata.ContainerRunning)
 	if _, err := store.SucceedOperation(context.Background(), container.OperationID); err != nil {
@@ -77,8 +77,8 @@ func TestRemoveCleanupDeletesContainerWhenSourceOperationIsAlreadyTerminal(t *te
 	now := time.Now().UTC()
 	cleanup := metadata.Cleanup{
 		ContainerID: container.ID,
-		OperationID: "operation-terminal-source-remove",
-		Kind:        metadata.RemoveOperation,
+		OperationID: "operation-terminal-source-delete",
+		Kind:        metadata.DeleteOperation,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -116,17 +116,24 @@ func TestRemoveCleanupDeletesContainerWhenSourceOperationIsAlreadyTerminal(t *te
 	}
 }
 
-func TestCancelCleanupFailsContainerWhenSourceOperationIsAlreadyTerminal(t *testing.T) {
+func TestDecommissionCleanupRetainsContainerAndEvidence(t *testing.T) {
 	store := memory.NewMemoryStore()
-	container := createTestContainer(t, store, metadata.ContainerRunning)
+	container := createTestContainer(t, store, metadata.ContainerExited)
 	if _, err := store.SucceedOperation(context.Background(), container.OperationID); err != nil {
 		t.Fatalf("SucceedOperation(source) error = %v", err)
+	}
+	supervisorDir := filepath.Dir(container.SupervisorPath)
+	if err := os.MkdirAll(supervisorDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(supervisor) error = %v", err)
+	}
+	if err := os.WriteFile(container.SupervisorPath, []byte("evidence"), 0o600); err != nil {
+		t.Fatalf("WriteFile(supervisor) error = %v", err)
 	}
 	now := time.Now().UTC()
 	cleanup := metadata.Cleanup{
 		ContainerID: container.ID,
-		OperationID: "operation-terminal-source-cancel",
-		Kind:        metadata.CancelOperation,
+		OperationID: "operation-terminal-source-decommission",
+		Kind:        metadata.DecommissionOperation,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -152,8 +159,11 @@ func TestCancelCleanupFailsContainerWhenSourceOperationIsAlreadyTerminal(t *test
 	if err != nil {
 		t.Fatalf("GetContainer() error = %v", err)
 	}
-	if updated.State != metadata.ContainerFailed || updated.ErrorCode != chamberErrors.ErrCanceled {
-		t.Fatalf("container = %#v, want failed with canceled error", updated)
+	if updated.State != metadata.ContainerDecommissioned {
+		t.Fatalf("container state = %q, want %q", updated.State, metadata.ContainerDecommissioned)
+	}
+	if _, err := os.Stat(container.SupervisorPath); err != nil {
+		t.Fatalf("Stat(supervisor evidence) error = %v, want retained evidence", err)
 	}
 	operation, err := store.GetOperation(context.Background(), cleanup.OperationID)
 	if err != nil {
@@ -170,8 +180,8 @@ func TestPeriodicCleanupReconciliationRespectsActiveLease(t *testing.T) {
 	now := time.Now().UTC()
 	cleanup := metadata.Cleanup{
 		ContainerID:    container.ID,
-		OperationID:    "operation-leased-remove",
-		Kind:           metadata.RemoveOperation,
+		OperationID:    "operation-leased-delete",
+		Kind:           metadata.DeleteOperation,
 		LeaseID:        "request-lease",
 		LeaseExpiresAt: now.Add(time.Minute),
 		CreatedAt:      now,

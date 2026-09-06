@@ -621,16 +621,27 @@ func TestGetContainerByIDReturnsState(t *testing.T) {
 	}
 }
 
-func TestCancelContainerForcesRuntimeAndBundleCleanup(t *testing.T) {
+func TestDecommissionContainerRemovesExecutionResourcesAndRetainsEvidence(t *testing.T) {
 	store := memory.NewMemoryStore()
-	container := createTestContainer(t, store, metadata.ContainerRunning)
+	container := createTestContainer(t, store, metadata.ContainerExited)
+	if _, err := store.SucceedOperation(context.Background(), container.OperationID); err != nil {
+		t.Fatalf("SucceedOperation(source) error = %v", err)
+	}
 	var removed chamberBundle.ProvisionedBundle
 	handle := &fakeContainerHandle{id: container.ID}
 	var openedConfig chamberRuntime.Config
-	var terminatedPID int
-	var terminatedStartTime uint64
+	supervisorDir := filepath.Dir(container.SupervisorPath)
+	if err := os.MkdirAll(supervisorDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(supervisorDir) error = %v", err)
+	}
+	if err := os.WriteFile(container.SupervisorPath, []byte("evidence"), 0o600); err != nil {
+		t.Fatalf("WriteFile(supervisor evidence) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(supervisorDir, "stdout.log"), []byte("done\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(supervisor log) error = %v", err)
+	}
 
-	result, err := cancelContainer(
+	result, err := decommissionContainer(
 		context.Background(),
 		store,
 		chamberRuntime.Config{Name: "fake", RuntimeRoot: "/runtime/from-config"},
@@ -645,25 +656,24 @@ func TestCancelContainerForcesRuntimeAndBundleCleanup(t *testing.T) {
 			}
 			return handle, nil
 		},
-		func(pid int, startTime uint64) error {
-			terminatedPID = pid
-			terminatedStartTime = startTime
-			return nil
-		},
+		nil,
 		container.ID,
 	)
 	if err != nil {
-		t.Fatalf("cancelContainer() error = %v", err)
+		t.Fatalf("decommissionContainer() error = %v", err)
 	}
-	canceled := result.container
-	if result.operation.Kind != metadata.CancelOperation || result.operation.State != metadata.OperationSucceeded {
-		t.Fatalf("cancel operation = %#v, want succeeded cancel operation", result.operation)
+	decommissioned := result.container
+	if result.operation.Kind != metadata.DecommissionOperation || result.operation.State != metadata.OperationSucceeded {
+		t.Fatalf("decommission operation = %#v, want succeeded decommission operation", result.operation)
 	}
 	if result.operation.ID == container.OperationID {
-		t.Fatalf("cancel operation ID = run operation ID %q, want independent lifecycle operation", container.OperationID)
+		t.Fatalf("decommission operation ID = run operation ID %q, want independent lifecycle operation", container.OperationID)
 	}
 	if !handle.deleted || !handle.deleteForce {
 		t.Fatalf("runtime delete deleted=%v force=%v, want forced delete", handle.deleted, handle.deleteForce)
+	}
+	if handle.deletedStdout || handle.deletedStderr {
+		t.Fatalf("runtime log deletion stdout=%v stderr=%v, want logs retained", handle.deletedStdout, handle.deletedStderr)
 	}
 	if removed.ContainerID != container.ID || removed.BundlePath != container.BundlePath {
 		t.Fatalf("removed bundle = %#v, want container bundle", removed)
@@ -671,21 +681,76 @@ func TestCancelContainerForcesRuntimeAndBundleCleanup(t *testing.T) {
 	if openedConfig.RuntimeRoot != container.RuntimeRoot {
 		t.Fatalf("runtime root = %q, want persisted container runtime root %q", openedConfig.RuntimeRoot, container.RuntimeRoot)
 	}
-	if terminatedPID != container.SupervisorPID {
-		t.Fatalf("terminated supervisor PID = %d, want %d", terminatedPID, container.SupervisorPID)
+	if _, err := os.Stat(container.SupervisorPath); err != nil {
+		t.Fatalf("Stat(supervisor evidence) error = %v, want retained evidence", err)
 	}
-	if terminatedStartTime != container.SupervisorStartTime {
-		t.Fatalf("terminated supervisor start time = %d, want %d", terminatedStartTime, container.SupervisorStartTime)
+	if _, err := os.Stat(filepath.Join(supervisorDir, "stdout.log")); err != nil {
+		t.Fatalf("Stat(supervisor log) error = %v, want retained log", err)
 	}
-	if canceled.State != metadata.ContainerFailed || canceled.ErrorCode != chamberErrors.ErrCanceled {
-		t.Fatalf("canceled container = %#v, want failed/canceled", canceled)
+	if decommissioned.State != metadata.ContainerDecommissioned {
+		t.Fatalf("container state = %q, want %q", decommissioned.State, metadata.ContainerDecommissioned)
 	}
 	operation, err := store.GetOperation(context.Background(), container.OperationID)
 	if err != nil {
 		t.Fatalf("GetOperation() error = %v", err)
 	}
-	if operation.State != metadata.OperationAborted || operation.ErrorCode != chamberErrors.ErrCanceled {
-		t.Fatalf("operation = %#v, want aborted/canceled", operation)
+	if operation.State != metadata.OperationSucceeded {
+		t.Fatalf("source operation state = %q, want preserved succeeded state", operation.State)
+	}
+}
+
+func TestDecommissionContainerRejectsRunningContainer(t *testing.T) {
+	store := memory.NewMemoryStore()
+	container := createTestContainer(t, store, metadata.ContainerRunning)
+
+	_, err := decommissionContainer(
+		context.Background(),
+		store,
+		chamberRuntime.Config{Name: "fake"},
+		fakeProvisioner{},
+		fakeOpenContainer(nil),
+		nil,
+		container.ID,
+	)
+	if !errors.Is(err, chamberErrors.ErrStateConflict) {
+		t.Fatalf("decommissionContainer(running) error = %v, want state conflict", err)
+	}
+}
+
+func TestStartContainerRejectsDecommissionedContainer(t *testing.T) {
+	store := memory.NewMemoryStore()
+	container := createTestContainer(t, store, metadata.ContainerCreated)
+	if _, err := store.SucceedOperation(context.Background(), container.OperationID); err != nil {
+		t.Fatalf("SucceedOperation(source) error = %v", err)
+	}
+	decommissioned, err := decommissionContainer(
+		context.Background(),
+		store,
+		chamberRuntime.Config{Name: "fake"},
+		fakeProvisioner{},
+		fakeOpenContainer(nil),
+		nil,
+		container.ID,
+	)
+	if err != nil {
+		t.Fatalf("decommissionContainer(created) error = %v", err)
+	}
+	if decommissioned.container.State != metadata.ContainerDecommissioned || decommissioned.container.ErrorCode != "" {
+		t.Fatalf("decommissioned container = %#v, want clean terminal state", decommissioned.container)
+	}
+
+	_, err = startContainer(
+		context.Background(),
+		store,
+		func(context.Context, string) (int, func() error, error) {
+			t.Fatal("start supervisor called for decommissioned container")
+			return 0, nil, nil
+		},
+		nil,
+		container.ID,
+	)
+	if !errors.Is(err, chamberErrors.ErrStateConflict) {
+		t.Fatalf("startContainer(decommissioned) error = %v, want state conflict", err)
 	}
 }
 
@@ -822,7 +887,7 @@ func TestStopContainerRouteReturnsStopOperationHeader(t *testing.T) {
 	}
 }
 
-func TestRemoveContainerDeletesArtifactsAndMetadata(t *testing.T) {
+func TestDeleteContainerDeletesArtifactsEvidenceAndMetadata(t *testing.T) {
 	store := memory.NewMemoryStore()
 	container := createTestContainer(t, store, metadata.ContainerExited)
 	var removed chamberBundle.ProvisionedBundle
@@ -835,7 +900,7 @@ func TestRemoveContainerDeletesArtifactsAndMetadata(t *testing.T) {
 		t.Fatalf("WriteFile(supervisor log) error = %v", err)
 	}
 
-	result, err := removeContainer(
+	result, err := deleteContainer(
 		context.Background(),
 		store,
 		chamberRuntime.Config{Name: "fake"},
@@ -853,14 +918,14 @@ func TestRemoveContainerDeletesArtifactsAndMetadata(t *testing.T) {
 		container.ID,
 	)
 	if err != nil {
-		t.Fatalf("removeContainer() error = %v", err)
+		t.Fatalf("deleteContainer() error = %v", err)
 	}
 	removedContainer := result.container
-	if result.operation.Kind != metadata.RemoveOperation || result.operation.State != metadata.OperationSucceeded {
-		t.Fatalf("remove operation = %#v, want succeeded remove operation", result.operation)
+	if result.operation.Kind != metadata.DeleteOperation || result.operation.State != metadata.OperationSucceeded {
+		t.Fatalf("delete operation = %#v, want succeeded delete operation", result.operation)
 	}
 	if result.operation.ID == container.OperationID {
-		t.Fatalf("remove operation ID = run operation ID %q, want independent lifecycle operation", container.OperationID)
+		t.Fatalf("delete operation ID = run operation ID %q, want independent lifecycle operation", container.OperationID)
 	}
 	if removedContainer.ID != container.ID {
 		t.Fatalf("removed container ID = %q, want %q", removedContainer.ID, container.ID)
@@ -876,6 +941,40 @@ func TestRemoveContainerDeletesArtifactsAndMetadata(t *testing.T) {
 	}
 	if _, err := store.GetContainer(context.Background(), container.ID); !errors.Is(err, metadata.ErrNotFound) {
 		t.Fatalf("GetContainer(removed) error = %v, want %v", err, metadata.ErrNotFound)
+	}
+	deleteOperation, err := store.GetOperation(context.Background(), result.operation.ID)
+	if err != nil {
+		t.Fatalf("GetOperation(delete) error = %v", err)
+	}
+	if deleteOperation.Kind != metadata.DeleteOperation || deleteOperation.State != metadata.OperationSucceeded {
+		t.Fatalf("persisted delete operation = %#v, want retained successful audit record", deleteOperation)
+	}
+}
+
+func TestDeleteDecommissionedContainerRemovesRetainedLogs(t *testing.T) {
+	store := memory.NewMemoryStore()
+	container := createTestContainer(t, store, metadata.ContainerDecommissioned)
+	handle := &fakeContainerHandle{id: container.ID}
+
+	_, err := deleteContainer(
+		context.Background(),
+		store,
+		chamberRuntime.Config{Name: "fake"},
+		fakeProvisioner{},
+		func(context.Context, chamberRuntime.Config, string) (chamberRuntime.ContainerHandle, error) {
+			return handle, nil
+		},
+		nil,
+		container.ID,
+	)
+	if err != nil {
+		t.Fatalf("deleteContainer(decommissioned) error = %v", err)
+	}
+	if !handle.deleted || !handle.deletedStdout || !handle.deletedStderr {
+		t.Fatalf("runtime cleanup handle = %#v, want state and retained logs deleted", handle)
+	}
+	if _, err := store.GetContainer(context.Background(), container.ID); !errors.Is(err, metadata.ErrNotFound) {
+		t.Fatalf("GetContainer(deleted) error = %v, want %v", err, metadata.ErrNotFound)
 	}
 }
 

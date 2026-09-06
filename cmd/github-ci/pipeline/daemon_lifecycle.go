@@ -24,13 +24,13 @@ import (
 )
 
 const (
-	daemonLifecycleStateCreated  = "created"
-	daemonLifecycleStateStarting = "starting"
-	daemonLifecycleStateRunning  = "running"
-	daemonLifecycleStateExited   = "exited"
-	daemonLifecycleStateFailed   = "failed"
+	daemonLifecycleStateCreated        = "created"
+	daemonLifecycleStateStarting       = "starting"
+	daemonLifecycleStateRunning        = "running"
+	daemonLifecycleStateExited         = "exited"
+	daemonLifecycleStateFailed         = "failed"
+	daemonLifecycleStateDecommissioned = "decommissioned"
 
-	daemonLifecycleErrorCanceled           = "canceled"
 	daemonLifecycleErrorContainerNonZero   = "container_exit_nonzero"
 	daemonLifecycleErrorRuntimeStartFailed = "runtime_start_failed"
 	daemonLifecycleErrorRuntimeWaitFailed  = "runtime_wait_failed"
@@ -59,6 +59,7 @@ type daemonLifecycleCase struct {
 	StdoutPath        string                   `json:"stdout_path,omitempty"`
 	StderrPath        string                   `json:"stderr_path,omitempty"`
 	Artifacts         map[string]string        `json:"artifacts,omitempty"`
+	Decommission      map[string]bool          `json:"decommission_artifact_removed,omitempty"`
 	Cleanup           map[string]bool          `json:"cleanup,omitempty"`
 	Polls             []containerRecord        `json:"polls,omitempty"`
 	ListPolls         [][]containerRecord      `json:"list_polls,omitempty"`
@@ -383,23 +384,32 @@ func RunDaemonLifecycle(ctx context.Context, cfg Config) (exitCode int, runErr e
 		return 1, fmt.Errorf("%s final state=%s error=%s, want failed/%s", killed.Name, killed.FinalState, killed.ErrorCode, daemonLifecycleErrorRuntimeWaitFailed)
 	}
 
-	canceled, err := run.runCase(ctx, "cancel-forced-cleanup", []string{"/bin/sh", "-c", "echo cancel-started; sleep 30"})
+	decommissioned, err := run.runCase(ctx, "decommission-retains-evidence", []string{"/bin/sh", "-c", "echo decommissioned"})
 	if err != nil {
 		return 1, err
 	}
-	if err := run.waitState(ctx, canceled, daemonLifecycleStateRunning); err != nil {
+	if err := run.waitTerminal(ctx, decommissioned); err != nil {
 		return 1, err
 	}
-	if err := run.cancelContainer(ctx, canceled); err != nil {
+	if err := run.readLogs(ctx, decommissioned); err != nil {
 		return 1, err
 	}
-	if err := run.waitTerminal(ctx, canceled); err != nil {
+	if err := run.decommissionContainer(ctx, decommissioned); err != nil {
 		return 1, err
 	}
-	if canceled.FinalState != daemonLifecycleStateFailed || canceled.ErrorCode != daemonLifecycleErrorCanceled {
-		return 1, fmt.Errorf("%s final state=%s error=%s, want failed/%s", canceled.Name, canceled.FinalState, canceled.ErrorCode, daemonLifecycleErrorCanceled)
+	if err := run.waitState(ctx, decommissioned, daemonLifecycleStateDecommissioned); err != nil {
+		return 1, err
 	}
-	if err := daemonLifecycleVerifyArtifactsRemoved(canceled); err != nil {
+	if err := run.readLogs(ctx, decommissioned); err != nil {
+		return 1, err
+	}
+	if err := daemonLifecycleRequireLogContains(decommissioned.StdoutPath, "decommissioned"); err != nil {
+		return 1, err
+	}
+	if err := daemonLifecycleVerifyDecommissioned(decommissioned); err != nil {
+		return 1, err
+	}
+	if err := run.requireStartRejected(ctx, decommissioned); err != nil {
 		return 1, err
 	}
 
@@ -410,7 +420,7 @@ func RunDaemonLifecycle(ctx context.Context, cfg Config) (exitCode int, runErr e
 	if err := run.waitState(ctx, forceDeleted, daemonLifecycleStateRunning); err != nil {
 		return 1, err
 	}
-	if err := run.removeContainer(ctx, forceDeleted); err != nil {
+	if err := run.deleteContainer(ctx, forceDeleted); err != nil {
 		return 1, err
 	}
 	if err := daemonLifecycleVerifyArtifactsRemoved(forceDeleted); err != nil {
@@ -440,8 +450,8 @@ func RunDaemonLifecycle(ctx context.Context, cfg Config) (exitCode int, runErr e
 		return 1, err
 	}
 
-	for _, c := range []*daemonLifecycleCase{creatingCrash, earlyStartCrash, success, failing, separate, starting, testSuite, runtimeExited, disconnected, restart, killed, canceled, stopped} {
-		if err := run.removeContainer(ctx, c); err != nil {
+	for _, c := range []*daemonLifecycleCase{creatingCrash, earlyStartCrash, success, failing, separate, starting, testSuite, runtimeExited, disconnected, restart, killed, decommissioned, stopped} {
+		if err := run.deleteContainer(ctx, c); err != nil {
 			return 1, err
 		}
 		if err := daemonLifecycleVerifyArtifactsRemoved(c); err != nil {
@@ -1119,8 +1129,8 @@ func (r *daemonLifecycleRun) recordSupervisorProcess(ctx context.Context, c *dae
 	return nil
 }
 
-func (r *daemonLifecycleRun) cancelContainer(ctx context.Context, c *daemonLifecycleCase) error {
-	_, err := daemonLifecyclePostJSON(ctx, r.daemonURL+"/v1/containers/"+c.ContainerID+"/cancel", map[string]string{}, filepath.Join(r.evidenceDir, c.Name, "cancel.json"))
+func (r *daemonLifecycleRun) decommissionContainer(ctx context.Context, c *daemonLifecycleCase) error {
+	_, err := daemonLifecyclePostJSON(ctx, r.daemonURL+"/v1/containers/"+c.ContainerID+"/decommission", map[string]string{}, filepath.Join(r.evidenceDir, c.Name, "decommission.json"))
 	return err
 }
 
@@ -1129,12 +1139,23 @@ func (r *daemonLifecycleRun) stopContainer(ctx context.Context, c *daemonLifecyc
 	return err
 }
 
-func (r *daemonLifecycleRun) removeContainer(ctx context.Context, c *daemonLifecycleCase) error {
+func (r *daemonLifecycleRun) deleteContainer(ctx context.Context, c *daemonLifecycleCase) error {
 	if _, err := daemonLifecycleDoJSON(ctx, http.MethodDelete, r.daemonURL+"/v1/containers/"+c.ContainerID, nil, filepath.Join(r.evidenceDir, c.Name, "delete.json")); err != nil {
 		return fmt.Errorf("delete container %s: %w", c.ContainerID, err)
 	}
 	if _, err := daemonLifecycleGetBytes(ctx, r.daemonURL+"/v1/containers/"+c.ContainerID, ""); err == nil {
 		return fmt.Errorf("container %s still exists after delete", c.ContainerID)
+	}
+	return nil
+}
+
+func (r *daemonLifecycleRun) requireStartRejected(ctx context.Context, c *daemonLifecycleCase) error {
+	_, err := daemonLifecyclePostJSON(ctx, r.daemonURL+"/v1/containers/"+c.ContainerID+"/start", map[string]string{}, filepath.Join(r.evidenceDir, c.Name, "restart-rejected.json"))
+	if err == nil {
+		return fmt.Errorf("start decommissioned container %s unexpectedly succeeded", c.ContainerID)
+	}
+	if !strings.Contains(err.Error(), "HTTP 409") {
+		return fmt.Errorf("start decommissioned container %s: got %w, want HTTP 409", c.ContainerID, err)
 	}
 	return nil
 }
@@ -1425,6 +1446,29 @@ func daemonLifecycleVerifyArtifactsRemoved(c *daemonLifecycleCase) error {
 		c.Cleanup[name] = removed
 		if !removed {
 			return fmt.Errorf("%s artifact %s remains at %s (stat error: %v)", c.Name, name, path, err)
+		}
+	}
+	return nil
+}
+
+func daemonLifecycleVerifyDecommissioned(c *daemonLifecycleCase) error {
+	c.Decommission = make(map[string]bool)
+	for _, name := range []string{"bundle", "runtime"} {
+		path := c.Artifacts[name]
+		_, err := os.Stat(path)
+		removed := os.IsNotExist(err)
+		c.Decommission[name] = removed
+		if !removed {
+			return fmt.Errorf("%s artifact %s remains at %s (stat error: %v)", c.Name, name, path, err)
+		}
+	}
+	for _, name := range []string{"runtimeStdout", "runtimeStderr", "supervisor"} {
+		path := c.Artifacts[name]
+		_, err := os.Stat(path)
+		retained := err == nil
+		c.Decommission[name] = !retained
+		if !retained {
+			return fmt.Errorf("%s evidence %s missing at %s (stat error: %v)", c.Name, name, path, err)
 		}
 	}
 	return nil

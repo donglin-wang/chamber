@@ -30,7 +30,7 @@ func admitContainerCleanup(
 	if err != nil {
 		return metadata.Cleanup{}, metadata.Operation{}, operationError("", chamberErrors.ErrMetadataFailed, err)
 	}
-	if kind != metadata.CancelOperation && kind != metadata.RemoveOperation && kind != metadata.CleanupOperation {
+	if kind != metadata.DecommissionOperation && kind != metadata.DeleteOperation && kind != metadata.CleanupOperation {
 		return metadata.Cleanup{}, metadata.Operation{}, fmt.Errorf("%w: unsupported cleanup operation kind %q", chamberErrors.ErrInvalidRequest, kind)
 	}
 
@@ -106,7 +106,7 @@ func executeContainerCleanup(
 	}
 
 	container, err := store.GetContainer(ctx, cleanup.ContainerID)
-	if errors.Is(err, metadata.ErrNotFound) && cleanup.Kind == metadata.RemoveOperation {
+	if errors.Is(err, metadata.ErrNotFound) && cleanup.Kind == metadata.DeleteOperation {
 		completed, completeErr := completeContainerCleanup(ctx, store, cleanup, operation)
 		return metadata.Container{ID: cleanup.ContainerID, OperationID: operation.ID}, completed, completeErr
 	}
@@ -122,7 +122,10 @@ func executeContainerCleanup(
 		cleanupTarget.SupervisorPID = cleanup.SupervisorPID
 		cleanupTarget.SupervisorStartTime = cleanup.SupervisorStartTime
 	}
-	if container.State != metadata.ContainerExited && container.State != metadata.ContainerFailed {
+	if container.State != metadata.ContainerExited &&
+		container.State != metadata.ContainerFailed &&
+		container.State != metadata.ContainerDecommissioned &&
+		!(cleanup.Kind == metadata.DecommissionOperation && container.State == metadata.ContainerCreated) {
 		originalOperationID := container.OperationID
 		now := time.Now().UTC()
 		updated, _, transitionErr := store.TransitionContainerAndOperation(
@@ -155,13 +158,37 @@ func executeContainerCleanup(
 
 	cleanupContainer := cleanupTarget
 	cleanupContainer.OperationID = operation.ID
-	removeSupervisorEvidence := cleanup.Kind != metadata.CleanupOperation
-	if err := deleteContainerArtifacts(ctx, runtimeConfig, provisioner, openContainer, terminateSupervisor, cleanupContainer, removeSupervisorEvidence); err != nil {
+	removeLogsAndEvidence := cleanup.Kind == metadata.DeleteOperation
+	if err := deleteContainerArtifacts(ctx, runtimeConfig, provisioner, openContainer, terminateSupervisor, cleanupContainer, removeLogsAndEvidence); err != nil {
 		code := chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeControlFailed)
 		return container, operation, operationError(operation.ID, code, err)
 	}
 
-	if cleanup.Kind == metadata.RemoveOperation {
+	if cleanup.Kind == metadata.DecommissionOperation && container.State != metadata.ContainerDecommissioned {
+		now := time.Now().UTC()
+		decommissioned, completed, err := store.TransitionContainerAndOperation(
+			ctx,
+			container.ID,
+			container.State,
+			metadata.ContainerUpdate{
+				State:           metadata.ContainerDecommissioned,
+				At:              now,
+				ExitCode:        container.ExitCode,
+				ErrorCode:       container.ErrorCode,
+				ClearSupervisor: true,
+			},
+			operation.ID,
+			metadata.OperationRunning,
+			metadata.OperationUpdate{State: metadata.OperationSucceeded, At: now},
+		)
+		if err != nil {
+			return container, operation, operationError(operation.ID, chamberErrors.ErrMetadataFailed, err)
+		}
+		container = decommissioned
+		operation = completed
+	}
+
+	if cleanup.Kind == metadata.DeleteOperation {
 		removed, err := store.DeleteContainer(ctx, container.ID)
 		if err != nil && !errors.Is(err, metadata.ErrNotFound) {
 			return container, operation, operationError(operation.ID, chamberErrors.ErrMetadataFailed, err)

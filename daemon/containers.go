@@ -244,17 +244,17 @@ func registerContainerRoutes(
 		writeOperationJSON(w, http.StatusOK, result.operation.ID, newContainerResponse(result.container))
 	})
 
-	mux.HandleFunc("POST /v1/containers/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /v1/containers/{id}/decommission", func(w http.ResponseWriter, r *http.Request) {
 		containerID := strings.TrimSpace(r.PathValue("id"))
 		if containerID == "" {
 			writeError(w, http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "container id is required")
 			return
 		}
 		operationCtx := context.WithoutCancel(r.Context())
-		var result cancelContainerResult
+		var result decommissionContainerResult
 		var err error
 		daemonOperationLocks.with("container:"+containerID, func() {
-			result, err = cancelContainer(
+			result, err = decommissionContainer(
 				operationCtx,
 				store,
 				runtimeConfig,
@@ -303,10 +303,10 @@ func registerContainerRoutes(
 			return
 		}
 		operationCtx := context.WithoutCancel(r.Context())
-		var result removeContainerResult
+		var result deleteContainerResult
 		var err error
 		daemonOperationLocks.with("container:"+containerID, func() {
-			result, err = removeContainer(
+			result, err = deleteContainer(
 				operationCtx,
 				store,
 				runtimeConfig,
@@ -427,7 +427,7 @@ func terminateSupervisorProcessGroup(pid int, startTime uint64) error {
 	}
 }
 
-func removeContainer(
+func deleteContainer(
 	ctx context.Context,
 	store metadata.Store,
 	runtimeConfig chamberRuntime.Config,
@@ -435,19 +435,19 @@ func removeContainer(
 	openContainer openContainerFunc,
 	terminateSupervisor terminateSupervisorFunc,
 	containerID string,
-) (removeContainerResult, error) {
+) (deleteContainerResult, error) {
 	if store == nil {
-		return removeContainerResult{}, fmt.Errorf("metadata store is required")
+		return deleteContainerResult{}, fmt.Errorf("metadata store is required")
 	}
-	cleanup, operation, err := admitContainerCleanup(ctx, store, containerID, metadata.RemoveOperation, true)
+	cleanup, operation, err := admitContainerCleanup(ctx, store, containerID, metadata.DeleteOperation, true)
 	if err != nil {
-		return removeContainerResult{}, err
+		return deleteContainerResult{}, err
 	}
 	container, operation, err := executeContainerCleanup(ctx, store, runtimeConfig, provisioner, openContainer, terminateSupervisor, cleanup)
-	return removeContainerResult{operation: operation, container: container}, err
+	return deleteContainerResult{operation: operation, container: container}, err
 }
 
-type removeContainerResult struct {
+type deleteContainerResult struct {
 	operation metadata.Operation
 	container metadata.Container
 }
@@ -549,7 +549,7 @@ func deleteContainerArtifacts(
 	openContainer openContainerFunc,
 	terminateSupervisor terminateSupervisorFunc,
 	container metadata.Container,
-	removeSupervisorEvidence bool,
+	removeLogsAndEvidence bool,
 ) error {
 	if provisioner == nil {
 		return fmt.Errorf("bundle provisioner is required")
@@ -563,7 +563,8 @@ func deleteContainerArtifacts(
 			return operationError(container.OperationID, code, err)
 		}
 	}
-	if container.State != metadata.ContainerCreated && container.State != metadata.ContainerCreating {
+	if container.State != metadata.ContainerCreated &&
+		container.State != metadata.ContainerCreating {
 		controlConfig := runtimeConfig
 		if strings.TrimSpace(container.RuntimeRoot) != "" {
 			controlConfig.RuntimeRoot = container.RuntimeRoot
@@ -578,11 +579,13 @@ func deleteContainerArtifacts(
 				code := chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeControlFailed)
 				return operationError(container.OperationID, code, err)
 			}
-			if err := handle.DeleteLog(chamberRuntime.StdoutLogStream); err != nil && !errors.Is(err, chamberErrors.ErrLogNotFound) {
-				return operationError(container.OperationID, chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeControlFailed), err)
-			}
-			if err := handle.DeleteLog(chamberRuntime.StderrLogStream); err != nil && !errors.Is(err, chamberErrors.ErrLogNotFound) {
-				return operationError(container.OperationID, chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeControlFailed), err)
+			if removeLogsAndEvidence {
+				if err := handle.DeleteLog(chamberRuntime.StdoutLogStream); err != nil && !errors.Is(err, chamberErrors.ErrLogNotFound) {
+					return operationError(container.OperationID, chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeControlFailed), err)
+				}
+				if err := handle.DeleteLog(chamberRuntime.StderrLogStream); err != nil && !errors.Is(err, chamberErrors.ErrLogNotFound) {
+					return operationError(container.OperationID, chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeControlFailed), err)
+				}
 			}
 		}
 	}
@@ -592,7 +595,7 @@ func deleteContainerArtifacts(
 	}); err != nil {
 		return operationError(container.OperationID, chamberErrors.ErrBundlePrepareFailed, err)
 	}
-	if removeSupervisorEvidence && strings.TrimSpace(container.SupervisorPath) != "" {
+	if removeLogsAndEvidence && strings.TrimSpace(container.SupervisorPath) != "" {
 		if err := os.RemoveAll(filepath.Dir(container.SupervisorPath)); err != nil {
 			return operationError(container.OperationID, chamberErrors.ErrFilesystemFailed, err)
 		}
@@ -600,12 +603,12 @@ func deleteContainerArtifacts(
 	return nil
 }
 
-type cancelContainerResult struct {
+type decommissionContainerResult struct {
 	operation metadata.Operation
 	container metadata.Container
 }
 
-func cancelContainer(
+func decommissionContainer(
 	ctx context.Context,
 	store metadata.Store,
 	runtimeConfig chamberRuntime.Config,
@@ -613,23 +616,40 @@ func cancelContainer(
 	openContainer openContainerFunc,
 	terminateSupervisor terminateSupervisorFunc,
 	containerID string,
-) (cancelContainerResult, error) {
+) (decommissionContainerResult, error) {
 	if store == nil {
-		return cancelContainerResult{}, fmt.Errorf("metadata store is required")
+		return decommissionContainerResult{}, fmt.Errorf("metadata store is required")
 	}
 	if provisioner == nil {
-		return cancelContainerResult{}, fmt.Errorf("bundle provisioner is required")
+		return decommissionContainerResult{}, fmt.Errorf("bundle provisioner is required")
 	}
 	if openContainer == nil {
-		return cancelContainerResult{}, fmt.Errorf("runtime opener is required")
+		return decommissionContainerResult{}, fmt.Errorf("runtime opener is required")
+	}
+	container, err := store.GetContainer(ctx, containerID)
+	if errors.Is(err, metadata.ErrNotFound) {
+		return decommissionContainerResult{}, operationError("", chamberErrors.ErrContainerNotFound, err)
+	}
+	if err != nil {
+		return decommissionContainerResult{}, operationError("", chamberErrors.ErrMetadataFailed, err)
+	}
+	if container.State != metadata.ContainerCreated &&
+		container.State != metadata.ContainerExited &&
+		container.State != metadata.ContainerFailed &&
+		container.State != metadata.ContainerDecommissioned {
+		return decommissionContainerResult{container: container}, operationError(
+			"",
+			chamberErrors.ErrStateConflict,
+			fmt.Errorf("%w: cannot decommission container %q while state is %q", chamberErrors.ErrStateConflict, container.ID, container.State),
+		)
 	}
 
-	cleanup, operation, err := admitContainerCleanup(ctx, store, containerID, metadata.CancelOperation, true)
+	cleanup, operation, err := admitContainerCleanup(ctx, store, containerID, metadata.DecommissionOperation, true)
 	if err != nil {
-		return cancelContainerResult{}, err
+		return decommissionContainerResult{}, err
 	}
-	container, operation, err := executeContainerCleanup(ctx, store, runtimeConfig, provisioner, openContainer, terminateSupervisor, cleanup)
-	return cancelContainerResult{operation: operation, container: container}, err
+	container, operation, err = executeContainerCleanup(ctx, store, runtimeConfig, provisioner, openContainer, terminateSupervisor, cleanup)
+	return decommissionContainerResult{operation: operation, container: container}, err
 }
 
 func looksAlreadyDeleted(err error) bool {

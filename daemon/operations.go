@@ -125,8 +125,21 @@ func reconcileRunningOperations(ctx context.Context, store metadata.Store) error
 				}
 				_, err = store.FailOperation(ctx, operation.ID, code)
 				reconcileErr = errors.Join(reconcileErr, ignoreTerminalConflict(err))
+			case metadata.ContainerDecommissioned:
+				if operation.Kind == metadata.CreateOperation {
+					_, err = store.SucceedOperation(ctx, operation.ID)
+				} else if container.ExitCode != nil && *container.ExitCode == 0 {
+					_, err = store.SucceedOperation(ctx, operation.ID)
+				} else {
+					code := container.ErrorCode
+					if code == "" {
+						code = chamberErrors.ErrCanceled
+					}
+					_, err = store.FailOperation(ctx, operation.ID, code)
+				}
+				reconcileErr = errors.Join(reconcileErr, ignoreTerminalConflict(err))
 			}
-		case metadata.CancelOperation, metadata.RemoveOperation, metadata.CleanupOperation:
+		case metadata.DecommissionOperation, metadata.DeleteOperation, metadata.CleanupOperation:
 			if _, linked := cleanupOperations[operation.ID]; !linked {
 				_, err = store.FailOperation(ctx, operation.ID, chamberErrors.ErrCanceled)
 				reconcileErr = errors.Join(reconcileErr, ignoreTerminalConflict(err))

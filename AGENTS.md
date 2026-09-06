@@ -47,7 +47,7 @@ The SDK layer is deliberately lower-level than the daemon:
 The daemon layer adds the reliability contract:
 
 - One daemon is the single authority over its mutable node-local state.
-- Concurrent pull, run, list, remove, cancel, log, and GC requests are expected.
+- Concurrent pull, run, list, stop, decommission, delete, log, and GC requests are expected.
 - Mutating operations should have durable operation records and explicit state transitions.
 - Destructive work must be lease-aware and recoverable.
 - The CLI and other clients should talk to the daemon API; they should not read or mutate daemon storage directly.
@@ -267,7 +267,7 @@ Public API changes require a full caller audit in the same turn:
 The daemon should support:
 
 - image pull/list/remove;
-- container create/start/run/stop/remove/list;
+- container create/start/run/stop/decommission/delete/list;
 - logs;
 - operation status/cancel;
 - system info/events;

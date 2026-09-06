@@ -21,7 +21,9 @@ func TestReconcileRunningOperationsFailsUnprovenWorkAndKeepsOwnedWork(t *testing
 		{ID: "run-owned", Kind: metadata.RunOperation, State: metadata.OperationRunning, ResourceID: "running-container", StartedAt: now, UpdatedAt: now},
 		{ID: "create-finished", Kind: metadata.CreateOperation, State: metadata.OperationRunning, ResourceID: "created-container", StartedAt: now, UpdatedAt: now},
 		{ID: "run-failed", Kind: metadata.RunOperation, State: metadata.OperationRunning, ResourceID: "failed-container", StartedAt: now, UpdatedAt: now},
+		{ID: "run-decommissioned", Kind: metadata.RunOperation, State: metadata.OperationRunning, ResourceID: "decommissioned-container", StartedAt: now, UpdatedAt: now},
 		{ID: "stop-completed", Kind: metadata.StopOperation, State: metadata.OperationRunning, ResourceID: "exited-container", StartedAt: now, UpdatedAt: now},
+		{ID: "decommission-orphan", Kind: metadata.DecommissionOperation, State: metadata.OperationRunning, ResourceID: "decommissioned-container", StartedAt: now, UpdatedAt: now},
 	}
 	for _, operation := range operations {
 		if err := store.CreateOperation(context.Background(), operation); err != nil {
@@ -33,10 +35,12 @@ func TestReconcileRunningOperationsFailsUnprovenWorkAndKeepsOwnedWork(t *testing
 	if err := store.PutImage(context.Background(), metadata.Image{Reference: operations[0].ResourceID, Digest: "sha256:image", PulledAt: now, LastUsedAt: now}); err != nil {
 		t.Fatalf("PutImage() error = %v", err)
 	}
+	exitCode := 0
 	for _, container := range []metadata.Container{
 		{ID: "running-container", OperationID: "run-owned", State: metadata.ContainerRunning, CreatedAt: now, UpdatedAt: now},
 		{ID: "created-container", OperationID: "create-finished", State: metadata.ContainerCreated, CreatedAt: now, UpdatedAt: now},
 		{ID: "failed-container", OperationID: "run-failed", State: metadata.ContainerFailed, ErrorCode: "runtime_wait_failed", CreatedAt: now, UpdatedAt: now},
+		{ID: "decommissioned-container", OperationID: "run-decommissioned", State: metadata.ContainerDecommissioned, ExitCode: &exitCode, CreatedAt: now, UpdatedAt: now},
 		{ID: "exited-container", OperationID: "run-exited", State: metadata.ContainerExited, CreatedAt: now, UpdatedAt: now},
 	} {
 		if err := store.CreateContainer(context.Background(), container); err != nil {
@@ -48,12 +52,14 @@ func TestReconcileRunningOperationsFailsUnprovenWorkAndKeepsOwnedWork(t *testing
 		t.Fatalf("reconcileRunningOperations() error = %v", err)
 	}
 	want := map[string]metadata.OperationState{
-		"pull-completed":  metadata.OperationFailed,
-		"start-orphan":    metadata.OperationFailed,
-		"run-owned":       metadata.OperationRunning,
-		"create-finished": metadata.OperationSucceeded,
-		"run-failed":      metadata.OperationFailed,
-		"stop-completed":  metadata.OperationFailed,
+		"pull-completed":      metadata.OperationFailed,
+		"start-orphan":        metadata.OperationFailed,
+		"run-owned":           metadata.OperationRunning,
+		"create-finished":     metadata.OperationSucceeded,
+		"run-failed":          metadata.OperationFailed,
+		"run-decommissioned":  metadata.OperationSucceeded,
+		"stop-completed":      metadata.OperationFailed,
+		"decommission-orphan": metadata.OperationFailed,
 	}
 	for id, state := range want {
 		operation, err := store.GetOperation(context.Background(), id)

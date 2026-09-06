@@ -33,12 +33,13 @@ type Image struct {
 type ContainerState string
 
 const (
-	ContainerCreating ContainerState = "creating"
-	ContainerCreated  ContainerState = "created"
-	ContainerStarting ContainerState = "starting"
-	ContainerRunning  ContainerState = "running"
-	ContainerExited   ContainerState = "exited"
-	ContainerFailed   ContainerState = "failed"
+	ContainerCreating       ContainerState = "creating"
+	ContainerCreated        ContainerState = "created"
+	ContainerStarting       ContainerState = "starting"
+	ContainerRunning        ContainerState = "running"
+	ContainerExited         ContainerState = "exited"
+	ContainerFailed         ContainerState = "failed"
+	ContainerDecommissioned ContainerState = "decommissioned"
 )
 
 type Container struct {
@@ -71,14 +72,14 @@ type Container struct {
 type OperationKind string
 
 const (
-	PullOperation    OperationKind = "pull"
-	CreateOperation  OperationKind = "create"
-	StartOperation   OperationKind = "start"
-	RunOperation     OperationKind = "run"
-	StopOperation    OperationKind = "stop"
-	CancelOperation  OperationKind = "cancel"
-	RemoveOperation  OperationKind = "remove"
-	CleanupOperation OperationKind = "cleanup"
+	PullOperation         OperationKind = "pull"
+	CreateOperation       OperationKind = "create"
+	StartOperation        OperationKind = "start"
+	RunOperation          OperationKind = "run"
+	StopOperation         OperationKind = "stop"
+	DecommissionOperation OperationKind = "decommission"
+	DeleteOperation       OperationKind = "delete"
+	CleanupOperation      OperationKind = "cleanup"
 )
 
 type OperationState string
@@ -103,9 +104,9 @@ type Operation struct {
 	ErrorCode  chamberErrors.Code `json:"error_code,omitempty"`
 }
 
-// Cleanup is the durable intent to reclaim one container's runtime and bundle
-// resources. Explicit cancel and remove operations also delete retained logs
-// and supervisor evidence. Record existence means cleanup is not yet complete.
+// Cleanup is the durable intent to reclaim one container's execution resources.
+// Delete operations additionally remove retained logs, supervisor evidence, and
+// the container record. Record existence means cleanup is not yet complete.
 // Lease fields prevent a periodic reconciler from racing the request that
 // admitted the cleanup. Supervisor identity is copied here so a crash after
 // terminalizing the container cannot lose authority to stop that exact process.
@@ -127,17 +128,20 @@ type StateTransition[T ~string] struct {
 }
 
 var validContainerTransitions = map[StateTransition[ContainerState]]bool{
-	{ContainerCreating, ContainerStarting}: true,
-	{ContainerCreating, ContainerCreated}:  true,
-	{ContainerCreating, ContainerFailed}:   true,
-	{ContainerCreating, ContainerExited}:   true,
-	{ContainerCreated, ContainerStarting}:  true,
-	{ContainerCreated, ContainerFailed}:    true,
-	{ContainerStarting, ContainerRunning}:  true,
-	{ContainerStarting, ContainerFailed}:   true,
-	{ContainerStarting, ContainerExited}:   true,
-	{ContainerRunning, ContainerExited}:    true,
-	{ContainerRunning, ContainerFailed}:    true,
+	{ContainerCreating, ContainerStarting}:      true,
+	{ContainerCreating, ContainerCreated}:       true,
+	{ContainerCreating, ContainerFailed}:        true,
+	{ContainerCreating, ContainerExited}:        true,
+	{ContainerCreated, ContainerStarting}:       true,
+	{ContainerCreated, ContainerFailed}:         true,
+	{ContainerStarting, ContainerRunning}:       true,
+	{ContainerStarting, ContainerFailed}:        true,
+	{ContainerStarting, ContainerExited}:        true,
+	{ContainerRunning, ContainerExited}:         true,
+	{ContainerRunning, ContainerFailed}:         true,
+	{ContainerCreated, ContainerDecommissioned}: true,
+	{ContainerExited, ContainerDecommissioned}:  true,
+	{ContainerFailed, ContainerDecommissioned}:  true,
 }
 
 var validOperationTransitions = map[StateTransition[OperationState]]bool{

@@ -629,7 +629,8 @@ func recordSupervisorStarted(ctx context.Context, store metadata.Store, containe
 	}
 	if container.State == metadata.ContainerRunning ||
 		container.State == metadata.ContainerExited ||
-		container.State == metadata.ContainerFailed {
+		container.State == metadata.ContainerFailed ||
+		container.State == metadata.ContainerDecommissioned {
 		return nil
 	}
 	if container.State == metadata.ContainerCreating || container.State == metadata.ContainerCreated {
@@ -653,7 +654,9 @@ func recordSupervisorExit(ctx context.Context, store metadata.Store, operationID
 	if err != nil {
 		return err
 	}
-	if container.State == metadata.ContainerExited || container.State == metadata.ContainerFailed {
+	if container.State == metadata.ContainerExited ||
+		container.State == metadata.ContainerFailed ||
+		container.State == metadata.ContainerDecommissioned {
 		return nil
 	}
 	state, present, err := readSupervisorFile(supervisorPath, operationID, containerID)
@@ -716,7 +719,7 @@ func exitContainerFromCurrent(
 		return err
 	}
 	switch container.State {
-	case metadata.ContainerExited, metadata.ContainerFailed:
+	case metadata.ContainerExited, metadata.ContainerFailed, metadata.ContainerDecommissioned:
 		_, err := store.TransitionOperation(ctx, operationID, metadata.OperationRunning, metadata.OperationUpdate{
 			State: operationState, At: at, ErrorCode: code,
 		})
@@ -748,7 +751,9 @@ func failContainerFromCurrent(ctx context.Context, store metadata.Store, operati
 	if getErr != nil {
 		return errors.Join(err, getErr)
 	}
-	if container.State == metadata.ContainerExited || container.State == metadata.ContainerFailed {
+	if container.State == metadata.ContainerExited ||
+		container.State == metadata.ContainerFailed ||
+		container.State == metadata.ContainerDecommissioned {
 		_, operationErr := store.FailOperation(ctx, operationID, code)
 		return ignoreTerminalConflict(operationErr)
 	}
@@ -780,7 +785,9 @@ func failOrAbortContainerFromCurrent(
 	if err != nil {
 		return err
 	}
-	if container.State == metadata.ContainerExited || container.State == metadata.ContainerFailed {
+	if container.State == metadata.ContainerExited ||
+		container.State == metadata.ContainerFailed ||
+		container.State == metadata.ContainerDecommissioned {
 		_, err := store.TransitionOperation(ctx, operationID, metadata.OperationRunning, metadata.OperationUpdate{
 			State: operationState, At: at, ErrorCode: code,
 		})

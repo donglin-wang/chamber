@@ -283,8 +283,8 @@ const openAPIJSON = `{
         }
       },
       "delete": {
-        "summary": "Remove a container record and owned artifacts",
-        "operationId": "removeContainer",
+        "summary": "Delete a container, its execution resources, logs, and evidence",
+        "operationId": "deleteContainer",
         "parameters": [
           {
             "name": "id",
@@ -295,7 +295,7 @@ const openAPIJSON = `{
         ],
         "responses": {
           "200": {
-            "description": "Container removed",
+            "description": "Container deleted",
             "headers": {
               "X-Chamber-Operation-ID": {
                 "schema": { "type": "string" }
@@ -347,10 +347,10 @@ const openAPIJSON = `{
         }
       }
     },
-    "/v1/containers/{id}/cancel": {
+    "/v1/containers/{id}/decommission": {
       "post": {
-        "summary": "Force-cancel a container and clean up owned artifacts",
-        "operationId": "cancelContainer",
+        "summary": "Decommission a non-running container while retaining logs, evidence, and its record",
+        "operationId": "decommissionContainer",
         "parameters": [
           {
             "name": "id",
@@ -361,7 +361,7 @@ const openAPIJSON = `{
         ],
         "responses": {
           "200": {
-            "description": "Container canceled",
+            "description": "Container decommissioned",
             "headers": {
               "X-Chamber-Operation-ID": {
                 "schema": { "type": "string" }
@@ -591,7 +591,7 @@ const openAPIJSON = `{
       },
       "ContainerState": {
         "type": "string",
-        "enum": ["creating", "created", "starting", "running", "exited", "failed"]
+        "enum": ["creating", "created", "starting", "running", "exited", "failed", "decommissioned"]
       },
       "ListOperationsResponse": {
         "type": "object",
@@ -613,7 +613,7 @@ const openAPIJSON = `{
           "id": { "type": "string" },
           "kind": {
             "type": "string",
-            "enum": ["pull", "create", "start", "run", "stop", "cancel", "remove", "cleanup"]
+            "enum": ["pull", "create", "start", "run", "stop", "decommission", "delete", "cleanup"]
           },
           "state": {
             "type": "string",

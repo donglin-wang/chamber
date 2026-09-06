@@ -168,7 +168,7 @@ container, polls daemon container state, and writes `input.json`,
 `healthz.json`, `pull.json`, `run.json`, `polls.json`, `stdout.log`,
 `stderr.log`, and `proof.json`. The `daemon-lifecycle` stage owns a temporary
 `chamberd`, exercises success, nonzero exit, daemon restart, supervisor-loss
-recovery, cancellation, removal, and root cleanup, and writes the full
+recovery, decommissioning, deletion, and root cleanup, and writes the full
 `proof.json` matrix beside its per-case logs.
 
 ### Ring 3: Chamber-Hosted Cluster Test
@@ -294,7 +294,8 @@ The proof should include:
 - one daemon-supervised Chamber CI container running `go test ./...`;
 - daemon restart while the supervisor process is still running;
 - supervisor process failure or kill with explicit daemon recovery state;
-- successful cancellation and forced cleanup;
+- successful decommissioning with retained logs and supervisor evidence;
+- deletion with complete artifact and container-record cleanup;
 - stdout/stderr log reads after daemon restart;
 - cleanup verification under daemon, bundle, and runtime roots.
 
@@ -312,14 +313,17 @@ truth.
 
 ### Implementation Plan
 
-- Split container lifecycle into create, start, run, stop, remove, list, state,
-  logs, and cancel operations.
+- Split container lifecycle into create, start, run, stop, decommission, delete,
+  list, state, and logs operations.
+- Make `decommissioned` a terminal durable state: runtime state and the OCI
+  bundle are absent, logs, supervisor evidence, and the container record remain,
+  and no transition back to `starting` is valid.
 - Add daemon startup reconciliation for `creating`, `starting`, and `running`
   container records.
 - Reconcile daemon records with supervisor files, supervisor PIDs, runtime
   state, and cleanup records.
 - Add operation-scoped locks for image references, containers, and cleanup.
-- Add stop/remove endpoints before adding richer orchestration.
+- Add stop/decommission/delete endpoints before adding richer orchestration.
 - Add log tailing only after log ownership and read behavior are stable.
 - Make bundle and runtime cleanup lease-aware.
 - Keep the daemon API over a user-scoped Unix socket by default; keep TCP/HTTP
@@ -339,7 +343,10 @@ The proof matrix should cover:
 - daemon restart after the runtime process has already exited but before the
   daemon recorded completion;
 - client disconnect immediately after `POST /containers/run`;
-- stop and remove of a running test container;
+- stop of a running test container;
+- decommission of a terminal container, retained log/evidence reads, and a
+  rejected restart;
+- forced delete of a running test container;
 - cleanup after successful exit;
 - cleanup after forced delete;
 - repeated list/log/state calls during the run.
@@ -694,7 +701,7 @@ The next practical sequence is:
    spawn logic using the daemon binary.
 7. Add daemon reconciliation on top of supervisor files, runtime state, and
    cleanup records.
-8. Add daemon stop/remove/log/state endpoints.
+8. Add daemon stop/decommission/delete/log/state endpoints.
 9. Add the aggregate daemon probe.
 10. Design the minimal `pkg/network` contracts and network probe.
 11. Build the first two-container Chamber network proof.
