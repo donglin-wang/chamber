@@ -29,10 +29,11 @@ import (
 )
 
 const (
-	daemonActiveProbeCommand = "active-probe"
-	daemonActiveProbeID      = "daemon-active-probe"
-	daemonActiveProbeMarker  = "chamber-daemon-active-probe-ok"
-	daemonActiveProbeRef     = "chamber.local/daemon-active-probe:latest"
+	daemonActiveProbeCommand  = "active-probe"
+	daemonActiveProbeID       = "daemon-active-probe"
+	daemonActiveProbeBundleID = "daemon-active-probe-bundle"
+	daemonActiveProbeMarker   = "chamber-daemon-active-probe-ok"
+	daemonActiveProbeRef      = "chamber.local/daemon-active-probe:latest"
 )
 
 type daemonActiveProbeResult struct {
@@ -66,7 +67,7 @@ func runDaemonActiveProbes(
 	}
 	terminal := false
 	bundle, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
-		ContainerID:   daemonActiveProbeID,
+		BundleID:      daemonActiveProbeBundleID,
 		ImageLayout:   layoutRoot,
 		ImageRef:      daemonActiveProbeRef,
 		ImageDigest:   imageDigest,
@@ -101,7 +102,12 @@ func reclaimAbandonedDaemonActiveProbe(
 		recoveryErr = errors.Join(recoveryErr, fmt.Errorf("open abandoned daemon active probe container: %w", err))
 	}
 	recoveryErr = errors.Join(recoveryErr, provisioner.Remove(context.Background(), chamberBundle.ProvisionedBundle{
-		ContainerID: daemonActiveProbeID,
+		BundleID: daemonActiveProbeBundleID,
+	}))
+	// Before bundle IDs were separated, the active probe used its container ID
+	// as its bundle storage ID. Reclaim that deterministic legacy location too.
+	recoveryErr = errors.Join(recoveryErr, provisioner.Remove(context.Background(), chamberBundle.ProvisionedBundle{
+		BundleID: daemonActiveProbeID,
 	}))
 	recoveryErr = errors.Join(recoveryErr, os.RemoveAll(probeRoot))
 	if recoveryErr != nil {
@@ -247,7 +253,10 @@ func appendDaemonActiveProbeLayerFile(tarWriter *tar.Writer, layerFile daemonAct
 }
 
 func runDaemonActiveProbeContainer(ctx context.Context, rt chamberRuntime.Runtime, bundle chamberBundle.ProvisionedBundle) (probeErr error) {
-	container, err := rt.Run(ctx, chamberRuntime.RunRequest{Bundle: bundle})
+	container, err := rt.Run(ctx, chamberRuntime.RunRequest{
+		ContainerID: daemonActiveProbeID,
+		BundlePath:  bundle.BundlePath,
+	})
 	if err != nil {
 		return fmt.Errorf("run daemon active probe container: %w", err)
 	}

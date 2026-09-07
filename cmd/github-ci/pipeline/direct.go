@@ -153,8 +153,10 @@ func RunDirectSDK(ctx context.Context, cfg Config) (int, error) {
 	logging.Info(ctx, "CI runtime ready", "runtime", descriptor.Name, "version", descriptor.Version, "path", descriptor.BinaryPath)
 
 	terminal := false
+	containerID := "chamber-ci-" + uuid.NewString()
+	bundleID := "chamber-ci-bundle-" + uuid.NewString()
 	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
-		ContainerID:   "chamber-ci-" + uuid.NewString(),
+		BundleID:      bundleID,
 		ImageLayout:   imageLayout,
 		ImageRef:      image.Reference,
 		ImageDigest:   image.Digest,
@@ -180,9 +182,10 @@ func RunDirectSDK(ctx context.Context, cfg Config) (int, error) {
 	}
 
 	container, err := runtime.Run(ctx, chamberRuntime.RunRequest{
-		Bundle: provisioned,
-		Stdout: cfg.Stdout,
-		Stderr: cfg.Stderr,
+		ContainerID: containerID,
+		BundlePath:  provisioned.BundlePath,
+		Stdout:      cfg.Stdout,
+		Stderr:      cfg.Stderr,
 	})
 	if err != nil {
 		return 1, fmt.Errorf("run CI container: %w", err)

@@ -99,6 +99,8 @@ func publicError(err error, daemonErr *daemonError) (int, string, string) {
 		return http.StatusBadRequest, string(chamberErrors.ErrInvalidRequest), "invalid request"
 	case code == chamberErrors.ErrInvalidContainerID, errors.Is(err, chamberErrors.ErrInvalidContainerID):
 		return http.StatusBadRequest, string(chamberErrors.ErrInvalidContainerID), "invalid container id"
+	case code == chamberErrors.ErrInvalidBundleID, errors.Is(err, chamberErrors.ErrInvalidBundleID):
+		return http.StatusBadRequest, string(chamberErrors.ErrInvalidBundleID), "invalid bundle id"
 	case code == chamberErrors.ErrInvalidImageReference, errors.Is(err, chamberErrors.ErrInvalidImageReference):
 		return http.StatusBadRequest, string(chamberErrors.ErrInvalidImageReference), "invalid image reference"
 	case code == chamberErrors.ErrInvalidImageLayout, errors.Is(err, chamberErrors.ErrInvalidImageLayout):

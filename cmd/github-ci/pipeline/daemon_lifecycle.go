@@ -1020,7 +1020,7 @@ func (r *daemonLifecycleRun) newCaseFromContainerRecord(name string, container c
 		ExitCode:    container.ExitCode,
 		ErrorCode:   container.ErrorCode,
 		Artifacts: map[string]string{
-			"bundle":        filepath.Join(r.roots["bundles"], container.ID),
+			"bundle":        filepath.Join(r.roots["bundles"], "bundle-"+container.ID),
 			"runtime":       filepath.Join(r.roots["runtime"], container.ID),
 			"runtimeStdout": filepath.Join(r.roots["runtime"], "logs", container.ID, string(chamberRuntime.StdoutLogStream)+".log"),
 			"runtimeStderr": filepath.Join(r.roots["runtime"], "logs", container.ID, string(chamberRuntime.StderrLogStream)+".log"),

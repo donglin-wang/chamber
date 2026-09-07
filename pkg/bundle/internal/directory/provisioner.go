@@ -22,7 +22,6 @@ import (
 	securejoin "github.com/cyphar/filepath-securejoin"
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
-	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
@@ -84,7 +83,7 @@ func (p *Provisioner) Provision(
 	if p.config.Root == "" {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
 	}
-	if err := containerid.Validate(request.ContainerID); err != nil {
+	if err := chamberBundle.ValidateBundleID(request.BundleID); err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
 	if request.ImageLayout == "" {
@@ -99,14 +98,14 @@ func (p *Provisioner) Provision(
 	}
 
 	bundleRoot := p.config.Root
-	finalBundle := filepath.Join(bundleRoot, request.ContainerID)
+	finalBundle := filepath.Join(bundleRoot, request.BundleID)
 	chamberLogging.InfoWith(p.logger, ctx, "provisioning bundle",
-		"container_id", request.ContainerID,
+		"bundle_id", request.BundleID,
 		"image_ref", imageRef,
 		"image_layout", request.ImageLayout,
 		"bundle_path", finalBundle,
 	)
-	tmpBundle, err := p.workspace.MkdirTemp(".", "."+request.ContainerID+".tmp-*")
+	tmpBundle, err := p.workspace.MkdirTemp(".", "."+request.BundleID+".tmp-*")
 	if err != nil {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: create temporary bundle: %v", chamberErrors.ErrFilesystemFailed, err)
 	}
@@ -164,11 +163,11 @@ func (p *Provisioner) Provision(
 	committed = true
 
 	provisioned := chamberBundle.ProvisionedBundle{
-		ContainerID: request.ContainerID,
-		BundlePath:  finalBundle,
+		BundleID:   request.BundleID,
+		BundlePath: finalBundle,
 	}
 	chamberLogging.InfoWith(p.logger, ctx, "provisioned bundle",
-		"container_id", provisioned.ContainerID,
+		"bundle_id", provisioned.BundleID,
 		"bundle_path", provisioned.BundlePath,
 	)
 	return provisioned, nil
@@ -187,10 +186,10 @@ func (p *Provisioner) Remove(ctx context.Context, bundle chamberBundle.Provision
 	if strings.TrimSpace(p.config.Root) == "" {
 		return fmt.Errorf("%w: bundle root is required", chamberErrors.ErrInvalidRequest)
 	}
-	if err := containerid.Validate(bundle.ContainerID); err != nil {
+	if err := chamberBundle.ValidateBundleID(bundle.BundleID); err != nil {
 		return err
 	}
-	bundlePath := filepath.Join(p.config.Root, bundle.ContainerID)
+	bundlePath := filepath.Join(p.config.Root, bundle.BundleID)
 	if strings.TrimSpace(bundle.BundlePath) != "" {
 		expected, err := filepath.Abs(bundlePath)
 		if err != nil {
@@ -206,17 +205,17 @@ func (p *Provisioner) Remove(ctx context.Context, bundle chamberBundle.Provision
 	}
 
 	chamberLogging.InfoWith(p.logger, ctx, "removing bundle",
-		"container_id", bundle.ContainerID,
+		"bundle_id", bundle.BundleID,
 		"bundle_path", bundlePath,
 	)
-	if err := removeTemporaryBundles(ctx, p.workspace.TmpRoot(), bundle.ContainerID); err != nil {
+	if err := removeTemporaryBundles(ctx, p.workspace.TmpRoot(), bundle.BundleID); err != nil {
 		return err
 	}
 	if err := removeRuntimeMutatedBundle(ctx, bundlePath); err != nil {
 		return err
 	}
 	chamberLogging.InfoWith(p.logger, ctx, "removed bundle",
-		"container_id", bundle.ContainerID,
+		"bundle_id", bundle.BundleID,
 		"bundle_path", bundlePath,
 	)
 	return nil

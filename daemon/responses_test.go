@@ -39,6 +39,13 @@ func TestPublicErrorMapsSharedCodes(t *testing.T) {
 			message: "invalid container id",
 		},
 		{
+			name:    "wrapped invalid bundle id",
+			err:     fmt.Errorf("validate: %w", chamberErrors.ErrInvalidBundleID),
+			status:  http.StatusBadRequest,
+			code:    string(chamberErrors.ErrInvalidBundleID),
+			message: "invalid bundle id",
+		},
+		{
 			name:    "wrapped invalid image reference",
 			err:     fmt.Errorf("validate: %w", chamberErrors.ErrInvalidImageReference),
 			status:  http.StatusBadRequest,

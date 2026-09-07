@@ -56,6 +56,36 @@ func TestReconcileSupervisorAppliesCompletedPhase(t *testing.T) {
 	}
 }
 
+func TestReadSupervisorFileMigratesVersionOneBundleContainerID(t *testing.T) {
+	container := createSupervisorContainer(t, memory.NewMemoryStore(), metadata.ContainerCreated, time.Now().UTC())
+	state := supervisorStateForContainer(t, container, supervisorPrepared)
+	state.Version = supervisorFileVersionWithBundleContainerID
+	legacy := supervisorFileWire{
+		supervisorFile: state,
+		Bundle: supervisorBundleWire{
+			ContainerID: container.ID,
+			BundlePath:  container.BundlePath,
+		},
+	}
+	if err := writeSupervisorJSON(container.SupervisorPath, legacy); err != nil {
+		t.Fatalf("writeSupervisorJSON() error = %v", err)
+	}
+
+	migrated, present, err := readSupervisorFile(container.SupervisorPath, container.OperationID, container.ID)
+	if err != nil {
+		t.Fatalf("readSupervisorFile() error = %v", err)
+	}
+	if !present {
+		t.Fatal("readSupervisorFile() present = false, want true")
+	}
+	if migrated.Version != supervisorFileVersion {
+		t.Fatalf("migrated version = %d, want %d", migrated.Version, supervisorFileVersion)
+	}
+	if migrated.Bundle.BundleID != container.ID || migrated.Bundle.BundlePath != container.BundlePath {
+		t.Fatalf("migrated bundle = %#v, want legacy container ID as bundle ID", migrated.Bundle)
+	}
+}
+
 func TestReconcileSupervisorRejectsWrongContainerResult(t *testing.T) {
 	store := memory.NewMemoryStore()
 	container := createSupervisorContainer(t, store, metadata.ContainerRunning, time.Now().UTC())
@@ -449,6 +479,7 @@ func createSupervisorContainerWithPID(t *testing.T, store metadata.Store, state 
 		OperationID:         operationID,
 		ImageDigest:         "sha256:image",
 		ImageRef:            "docker.io/library/alpine:latest",
+		BundleID:            "bundle-" + containerID,
 		BundlePath:          filepath.Join(root, "bundle"),
 		StdoutPath:          filepath.Join(root, "stdout.log"),
 		StderrPath:          filepath.Join(root, "stderr.log"),
@@ -481,8 +512,8 @@ func supervisorStateForContainer(t *testing.T, container metadata.Container, pha
 			RuntimeRoot: container.RuntimeRoot,
 		},
 		Bundle: chamberBundle.ProvisionedBundle{
-			ContainerID: container.ID,
-			BundlePath:  container.BundlePath,
+			BundleID:   container.BundleID,
+			BundlePath: container.BundlePath,
 		},
 		StdoutPath: container.StdoutPath,
 		StderrPath: container.StderrPath,

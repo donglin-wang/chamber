@@ -8,7 +8,6 @@ import (
 	"os"
 	"time"
 
-	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
@@ -55,8 +54,11 @@ const (
 
 // RunRequest describes one container launch from a provisioned bundle.
 type RunRequest struct {
-	// Bundle is the provisioned OCI runtime bundle to run.
-	Bundle chamberBundle.ProvisionedBundle
+	// ContainerID is the caller-chosen runtime identity for the container.
+	ContainerID string
+
+	// BundlePath is the ready OCI runtime bundle directory to run.
+	BundlePath string
 
 	// Stdin is connected to the container's standard input when non-nil.
 	Stdin io.Reader
@@ -161,7 +163,7 @@ func RunAndWait(ctx context.Context, rt Runtime, request RunRequest, started fun
 	if rt == nil {
 		err := fmt.Errorf("%w: runtime is required", chamberErrors.ErrInvalidRequest)
 		return ContainerResult{
-			ContainerID: request.Bundle.ContainerID,
+			ContainerID: request.ContainerID,
 			Status:      ContainerResultStatusStartFailed,
 			ErrorCode:   chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeStartFailed),
 			Error:       err.Error(),
@@ -172,7 +174,7 @@ func RunAndWait(ctx context.Context, rt Runtime, request RunRequest, started fun
 	container, err := rt.Run(ctx, request)
 	if err != nil {
 		return ContainerResult{
-			ContainerID: request.Bundle.ContainerID,
+			ContainerID: request.ContainerID,
 			Status:      ContainerResultStatusStartFailed,
 			ErrorCode:   chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeStartFailed),
 			Error:       err.Error(),

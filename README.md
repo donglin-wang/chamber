@@ -74,8 +74,9 @@ For one container run, callers should:
 2. Call `Container.Delete` with `force` set to `true` when runtime state may still exist
    or the container may still be running. This delegates to `runc delete
    --force`.
-3. Remove `ProvisionedBundle.BundlePath` when the unpacked bundle is no longer
-   needed.
+3. Call `Provisioner.Remove` with the returned `ProvisionedBundle` when the
+   runnable bundle and any provisioner-owned mounts, snapshots, or layers are
+   no longer needed.
 4. Call `Container.DeleteLog` for default stdout/stderr logs when they are no
    longer needed, or remove `<RuntimeRoot>/logs/<containerID>` directly.
 5. Decide separately when to remove shared image layouts and the cached runtime
@@ -148,8 +149,10 @@ func main() {
 		panic(err)
 	}
 	terminal := false
+	bundleID := "demo-bundle"
+	containerID := "demo-container"
 	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
-		ContainerID:   "demo",
+		BundleID:      bundleID,
 		ImageLayout:   imageLayout,
 		ImageRef:      image.Reference,
 		ImageDigest:   image.Digest,
@@ -168,9 +171,10 @@ func main() {
 		panic(err)
 	}
 	container, err := runc.Run(ctx, chamberRuntime.RunRequest{
-		Bundle: provisioned,
-		Stdout: []io.Writer{os.Stdout},
-		Stderr: []io.Writer{os.Stderr},
+		ContainerID: containerID,
+		BundlePath:  provisioned.BundlePath,
+		Stdout:      []io.Writer{os.Stdout},
+		Stderr:      []io.Writer{os.Stderr},
 	})
 	if err != nil {
 		panic(err)
@@ -179,9 +183,9 @@ func main() {
 		_ = container.Delete(context.Background(), true)
 		_ = container.DeleteLog(chamberRuntime.StdoutLogStream)
 		_ = container.DeleteLog(chamberRuntime.StderrLogStream)
-		_ = os.RemoveAll(provisioned.BundlePath)
+		_ = provisioner.Remove(context.Background(), provisioned)
 	}()
-	result, err := container.Wait()
+	result, err := container.Wait(ctx)
 	if err != nil {
 		panic(err)
 	}

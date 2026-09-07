@@ -218,10 +218,10 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("%w: runtime launch canceled before start: %w", chamberErrors.ErrCanceled, err)
 	}
-	if request.Bundle.BundlePath == "" {
+	if request.BundlePath == "" {
 		return nil, fmt.Errorf("%w: runtime bundle path is required", chamberErrors.ErrInvalidRequest)
 	}
-	containerID := request.Bundle.ContainerID
+	containerID := request.ContainerID
 	if err := containerid.Validate(containerID); err != nil {
 		return nil, err
 	}
@@ -229,7 +229,7 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 	if binaryPath == "" {
 		return nil, fmt.Errorf("%w: runtime binary is required", chamberErrors.ErrInvalidRequest)
 	}
-	if err := validateSupportedBundleSpec(request.Bundle.BundlePath); err != nil {
+	if err := validateSupportedBundleSpec(request.BundlePath); err != nil {
 		return nil, err
 	}
 	stateRoot, err := r.stateRoot()
@@ -238,7 +238,7 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 	}
 	chamberLogging.InfoWith(r.logger, ctx, "starting runtime container",
 		"container_id", containerID,
-		"bundle_path", request.Bundle.BundlePath,
+		"bundle_path", request.BundlePath,
 		"state_root", stateRoot,
 	)
 	stdout, stderr, err := r.openLogs(containerID)
@@ -259,7 +259,7 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 	}
 
 	cmd := subprocess.Command(binaryPath, "--root", stateRoot, "run", containerID)
-	cmd.Dir = request.Bundle.BundlePath
+	cmd.Dir = request.BundlePath
 	cmd.Stdin = request.Stdin
 	cmd.Stdout = outputWriter(stdout, request.Stdout)
 	cmd.Stderr = outputWriter(stderr, request.Stderr)

@@ -219,6 +219,9 @@ func TestRunContainerStoresProvisionedBundlePath(t *testing.T) {
 	if container.BundlePath != provisionedBundlePath {
 		t.Fatalf("BundlePath = %q, want provisioner-returned path %q", container.BundlePath, provisionedBundlePath)
 	}
+	if container.BundleID == "" || container.BundleID == container.ID {
+		t.Fatalf("BundleID = %q, want non-empty identity distinct from container ID %q", container.BundleID, container.ID)
+	}
 	if container.Runtime != "fake" {
 		t.Fatalf("Runtime = %q, want fake runtime descriptor name", container.Runtime)
 	}
@@ -675,7 +678,7 @@ func TestDecommissionContainerRemovesExecutionResourcesAndRetainsEvidence(t *tes
 	if handle.deletedStdout || handle.deletedStderr {
 		t.Fatalf("runtime log deletion stdout=%v stderr=%v, want logs retained", handle.deletedStdout, handle.deletedStderr)
 	}
-	if removed.ContainerID != container.ID || removed.BundlePath != container.BundlePath {
+	if removed.BundleID != container.BundleID || removed.BundlePath != container.BundlePath {
 		t.Fatalf("removed bundle = %#v, want container bundle", removed)
 	}
 	if openedConfig.RuntimeRoot != container.RuntimeRoot {
@@ -696,6 +699,31 @@ func TestDecommissionContainerRemovesExecutionResourcesAndRetainsEvidence(t *tes
 	}
 	if operation.State != metadata.OperationSucceeded {
 		t.Fatalf("source operation state = %q, want preserved succeeded state", operation.State)
+	}
+}
+
+func TestDeleteContainerArtifactsUsesLegacyContainerIDAsBundleID(t *testing.T) {
+	container := metadata.Container{
+		ID:         "legacy-container",
+		BundlePath: "/tmp/chamber-test/bundles/legacy-container",
+		State:      metadata.ContainerCreated,
+	}
+	var removed chamberBundle.ProvisionedBundle
+
+	err := deleteContainerArtifacts(
+		context.Background(),
+		chamberRuntime.Config{},
+		fakeProvisioner{remove: &removed},
+		fakeOpenContainer(nil),
+		nil,
+		container,
+		false,
+	)
+	if err != nil {
+		t.Fatalf("deleteContainerArtifacts() error = %v", err)
+	}
+	if removed.BundleID != container.ID || removed.BundlePath != container.BundlePath {
+		t.Fatalf("removed legacy bundle = %#v, want container ID fallback", removed)
 	}
 }
 
@@ -933,7 +961,7 @@ func TestDeleteContainerDeletesArtifactsEvidenceAndMetadata(t *testing.T) {
 	if !handle.deleted || !handle.deleteForce || !handle.deletedStdout || !handle.deletedStderr {
 		t.Fatalf("runtime cleanup handle = %#v, want forced delete and log deletion", handle)
 	}
-	if removed.ContainerID != container.ID || removed.BundlePath != container.BundlePath {
+	if removed.BundleID != container.BundleID || removed.BundlePath != container.BundlePath {
 		t.Fatalf("removed bundle = %#v, want container bundle", removed)
 	}
 	if _, err := os.Stat(supervisorDir); !os.IsNotExist(err) {
@@ -998,6 +1026,7 @@ func createTestContainer(t *testing.T, store metadata.Store, state metadata.Cont
 		OperationID:         operation.ID,
 		ImageRef:            "docker.io/library/alpine:latest",
 		ImageDigest:         "sha256:image",
+		BundleID:            "bundle-" + operation.ResourceID,
 		BundlePath:          "/tmp/chamber-test/bundles/" + operation.ResourceID,
 		Runtime:             "fake",
 		RuntimeRoot:         "/tmp/chamber-test/runtime",
@@ -1090,8 +1119,8 @@ func (p fakeProvisioner) Provision(ctx context.Context, request chamberBundle.Pr
 		*p.request = request
 	}
 	return chamberBundle.ProvisionedBundle{
-		ContainerID: request.ContainerID,
-		BundlePath:  p.bundlePath,
+		BundleID:   request.BundleID,
+		BundlePath: p.bundlePath,
 	}, nil
 }
 

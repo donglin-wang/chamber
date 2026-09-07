@@ -182,8 +182,10 @@ func runTinyContainerPreflight(ctx context.Context, cfg config) error {
 		return err
 	}
 	terminal := false
+	containerID := "chamber-ci-preflight-" + uuid.NewString()
+	bundleID := "chamber-ci-preflight-bundle-" + uuid.NewString()
 	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
-		ContainerID:   "chamber-ci-preflight-" + uuid.NewString(),
+		BundleID:      bundleID,
 		ImageLayout:   imageLayout,
 		ImageRef:      image.Reference,
 		ImageDigest:   image.Digest,
@@ -201,7 +203,10 @@ func runTinyContainerPreflight(ctx context.Context, cfg config) error {
 			logging.Error(ctx, "remove preflight bundle failed", "bundle", provisioned.BundlePath, "error", err)
 		}
 	}()
-	container, err := runtime.Run(ctx, chamberRuntime.RunRequest{Bundle: provisioned})
+	container, err := runtime.Run(ctx, chamberRuntime.RunRequest{
+		ContainerID: containerID,
+		BundlePath:  provisioned.BundlePath,
+	})
 	if err != nil {
 		return err
 	}

@@ -168,7 +168,7 @@ The shared layout makes `ImageRef` alone too weak when a layout can contain more
 
 ```go
 type ProvisionRequest struct {
-    ContainerID string
+    BundleID string
     ImageLayout string
     ImageRef    string
     ImageDigest string

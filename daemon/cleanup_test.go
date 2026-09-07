@@ -63,7 +63,7 @@ func TestReconcileCleanupReconstructsOperationAndFinishesForcedDelete(t *testing
 	if !handle.deleted || !handle.deleteForce {
 		t.Fatalf("runtime handle = %#v, want forced delete", handle)
 	}
-	if removed.ContainerID != container.ID || removed.BundlePath != container.BundlePath {
+	if removed.BundleID != container.BundleID || removed.BundlePath != container.BundlePath {
 		t.Fatalf("removed bundle = %#v, want container bundle", removed)
 	}
 }

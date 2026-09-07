@@ -20,9 +20,10 @@ func TestCodeIsStringAndError(t *testing.T) {
 	}
 }
 
-func TestRuntimeSDKErrorCodes(t *testing.T) {
+func TestSDKErrorCodes(t *testing.T) {
 	tests := map[Code]string{
 		ErrInvalidContainerID:    "invalid_container_id",
+		ErrInvalidBundleID:       "invalid_bundle_id",
 		ErrInvalidImageReference: "invalid_image_reference",
 		ErrInvalidImageLayout:    "invalid_image_layout",
 		ErrInvalidBundleMount:    "invalid_bundle_mount",

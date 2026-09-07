@@ -2,9 +2,14 @@ package bundle
 
 import (
 	"context"
+	"fmt"
+	"regexp"
 
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
+	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
+
+var validBundleID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 
 // Mount describes one filesystem mount visible inside the container. For
 // ProvisionRequest.Mounts, Source is a host path and Target is an absolute
@@ -25,10 +30,16 @@ type Mount struct {
 	Options []string `json:"options,omitempty"`
 }
 
-// ProvisionedBundle describes a ready OCI runtime bundle.
+// ProvisionedBundle identifies a ready OCI runtime bundle and the
+// provisioner-owned storage lifecycle associated with it. BundleID is not a
+// runtime container ID; callers may choose the same value for both concepts
+// when they intentionally have a one-to-one relationship.
 type ProvisionedBundle struct {
-	// ContainerID is the validated container ID associated with this bundle.
-	ContainerID string
+	// BundleID is the stable identity used by the provisioner for staging,
+	// recovery, and removal across storage implementations. A provisioner may
+	// use it to find implementation-private state such as overlay layers,
+	// snapshots, or mount records.
+	BundleID string
 
 	// BundlePath is the final bundle directory passed to a runtime.
 	BundlePath string
@@ -36,8 +47,9 @@ type ProvisionedBundle struct {
 
 // ProvisionRequest describes one image-to-bundle provisioning operation.
 type ProvisionRequest struct {
-	// ContainerID is the caller-chosen ID for the bundle and eventual container.
-	ContainerID string
+	// BundleID is the caller-chosen storage identity for this bundle. It is
+	// independent from any runtime container ID.
+	BundleID string
 
 	// ImageLayout is the path to a valid OCI image layout.
 	ImageLayout string
@@ -56,6 +68,15 @@ type ProvisionRequest struct {
 
 	// Mounts are provisioner-applied mounts to add to the bundle spec.
 	Mounts []Mount
+}
+
+// ValidateBundleID checks that id can safely identify provisioner-owned paths
+// and durable storage resources.
+func ValidateBundleID(id string) error {
+	if !validBundleID.MatchString(id) || id == "." || id == ".." {
+		return fmt.Errorf("%w: invalid bundle ID %q", chamberErrors.ErrInvalidBundleID, id)
+	}
+	return nil
 }
 
 // ProcessSpec describes optional process overrides for the OCI runtime spec.
@@ -104,13 +125,13 @@ type Provisioner interface {
 	// Descriptor returns implementation identity.
 	Descriptor() Descriptor
 
-	// Provision creates the OCI runtime bundle for one container. It owns image
-	// unpacking, spec generation or patching, temporary staging, and the atomic
-	// move into the final bundle directory.
+	// Provision creates a runnable OCI bundle view. It owns image unpacking,
+	// spec generation or patching, temporary staging, and any storage resources
+	// needed to make BundlePath ready for a runtime.
 	Provision(ctx context.Context, request ProvisionRequest) (ProvisionedBundle, error)
 
-	// Remove deletes a provisioned bundle and any runtime-mutated rootfs
-	// contents owned by this provisioner. Missing bundles are treated as already
-	// removed.
+	// Remove releases all provisioner-owned resources for a bundle, including
+	// mounts, snapshots, layers, and runtime-mutated rootfs contents when the
+	// implementation uses them. Missing bundles are treated as already removed.
 	Remove(ctx context.Context, bundle ProvisionedBundle) error
 }

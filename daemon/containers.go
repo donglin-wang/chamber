@@ -589,9 +589,15 @@ func deleteContainerArtifacts(
 			}
 		}
 	}
+	bundleID := container.BundleID
+	if bundleID == "" {
+		// Supervisor file version 1 and its matching container records used the
+		// runtime container ID as the bundle storage ID.
+		bundleID = container.ID
+	}
 	if err := provisioner.Remove(ctx, chamberBundle.ProvisionedBundle{
-		ContainerID: container.ID,
-		BundlePath:  container.BundlePath,
+		BundleID:   bundleID,
+		BundlePath: container.BundlePath,
 	}); err != nil {
 		return operationError(container.OperationID, chamberErrors.ErrBundlePrepareFailed, err)
 	}
@@ -883,11 +889,15 @@ func prepareContainer(
 	stdoutPath := filepath.Join(supervisorDir, "stdout.log")
 	stderrPath := filepath.Join(supervisorDir, "stderr.log")
 	now := time.Now().UTC()
+	// The daemon intentionally chooses a distinct bundle identity while keeping
+	// its one-to-one mapping deterministic for admission recovery.
+	bundleID := "bundle-" + containerID
 	container := metadata.Container{
 		ID:             containerID,
 		OperationID:    operationID,
 		ImageDigest:    image.Digest,
 		ImageRef:       image.Reference,
+		BundleID:       bundleID,
 		StdoutPath:     stdoutPath,
 		StderrPath:     stderrPath,
 		Runtime:        runtimeName,
@@ -905,7 +915,7 @@ func prepareContainer(
 	}
 
 	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
-		ContainerID:   containerID,
+		BundleID:      bundleID,
 		ImageLayout:   imageLayout,
 		ImageRef:      image.Reference,
 		ImageDigest:   image.Digest,
@@ -922,6 +932,10 @@ func prepareContainer(
 	}
 	if strings.TrimSpace(provisioned.BundlePath) == "" {
 		err := fmt.Errorf("bundle provisioner returned empty bundle path")
+		return failContainerAdmission(ctx, store, operation, container, chamberErrors.ErrBundlePrepareFailed, err)
+	}
+	if provisioned.BundleID != bundleID {
+		err := fmt.Errorf("bundle provisioner returned bundle ID %q, want %q", provisioned.BundleID, bundleID)
 		return failContainerAdmission(ctx, store, operation, container, chamberErrors.ErrBundlePrepareFailed, err)
 	}
 
@@ -945,6 +959,7 @@ func prepareContainer(
 	created, err := store.TransitionContainer(ctx, containerID, metadata.ContainerCreating, metadata.ContainerUpdate{
 		State:          metadata.ContainerCreated,
 		At:             time.Now().UTC(),
+		BundleID:       provisioned.BundleID,
 		BundlePath:     provisioned.BundlePath,
 		StdoutPath:     stdoutPath,
 		StderrPath:     stderrPath,

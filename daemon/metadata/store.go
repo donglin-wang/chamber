@@ -49,6 +49,7 @@ type Container struct {
 	SpanID      string `json:"span_id,omitempty"`
 	ImageDigest string `json:"image_digest"`
 	ImageRef    string `json:"image_ref"`
+	BundleID    string `json:"bundle_id"`
 	BundlePath  string `json:"bundle_path"`
 	StdoutPath  string `json:"stdout_path,omitempty"`
 	StderrPath  string `json:"stderr_path,omitempty"`
@@ -227,6 +228,7 @@ type ContainerUpdate struct {
 	StdoutPath  string
 	StderrPath  string
 	RuntimeRoot string
+	BundleID    string
 	BundlePath  string
 
 	SupervisorPath      string

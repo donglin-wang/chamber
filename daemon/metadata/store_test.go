@@ -447,6 +447,7 @@ func assertTerminalHelpers(t *testing.T, store metadata.Store) {
 		OperationID: failing.ID,
 		ImageDigest: "sha256:helper",
 		ImageRef:    "docker.io/library/alpine:latest",
+		BundleID:    "bundle-container-helper-fail",
 		BundlePath:  "/tmp/chamber/bundles/container-helper-fail",
 		Runtime:     "runc",
 		State:       metadata.ContainerStarting,
@@ -497,6 +498,7 @@ func assertContainerLifecycle(t *testing.T, store metadata.Store) {
 		SpanID:      "span-1",
 		ImageDigest: "sha256:abc123",
 		ImageRef:    "docker.io/library/alpine:latest",
+		BundleID:    "bundle-container-1",
 		BundlePath:  "/tmp/chamber/bundles/container-1",
 		Runtime:     "runc",
 		State:       metadata.ContainerCreating,
@@ -522,6 +524,7 @@ func assertContainerLifecycle(t *testing.T, store metadata.Store) {
 	second := container
 	second.ID = "container-0"
 	second.OperationID = "op-0"
+	second.BundleID = "bundle-container-0"
 	second.BundlePath = "/tmp/chamber/bundles/container-0"
 	if err := store.CreateContainer(ctx, second); err != nil {
 		t.Fatalf("CreateContainer(second) error = %v", err)
@@ -730,6 +733,7 @@ func assertConcurrentContainerTransition(t *testing.T, store metadata.Store) {
 		OperationID: "op-concurrent-transition",
 		ImageDigest: "sha256:concurrent",
 		ImageRef:    "docker.io/library/alpine:latest",
+		BundleID:    "bundle-container-concurrent-transition",
 		BundlePath:  "/tmp/chamber/bundles/container-concurrent-transition",
 		Runtime:     "runc",
 		State:       metadata.ContainerRunning,
@@ -782,6 +786,7 @@ func assertTraceFieldsAreExplicit(t *testing.T, store metadata.Store) {
 		OperationID: operation.ID,
 		ImageDigest: "sha256:trace",
 		ImageRef:    "docker.io/library/alpine:latest",
+		BundleID:    "bundle-container-explicit-trace",
 		BundlePath:  "/tmp/chamber/bundles/container-explicit-trace",
 		Runtime:     "runc",
 		State:       metadata.ContainerCreating,

@@ -25,20 +25,24 @@ func TestDaemonActiveProbesProvisionRunReadLogsAndCleanup(t *testing.T) {
 	provisioner := &activeProbeProvisioner{bundleRoot: t.TempDir()}
 	abandonedContainer := &activeProbeContainer{id: daemonActiveProbeID}
 	container := &activeProbeContainer{id: daemonActiveProbeID}
+	probeRuntime := &activeProbeRuntime{openContainer: abandonedContainer, runContainer: container}
 	result := runDaemonActiveProbes(
 		context.Background(),
 		t.TempDir(),
 		executablePath,
 		provisioner,
-		&activeProbeRuntime{openContainer: abandonedContainer, runContainer: container},
+		probeRuntime,
 	)
 	if err := errors.Join(result.RecoveryErr, result.ProvisionErr, result.RunErr, result.CleanupErr); err != nil {
 		t.Fatalf("runDaemonActiveProbes() error = %v", err)
 	}
-	if provisioner.request.ImageRef != daemonActiveProbeRef || len(provisioner.request.Process.Args) != 2 {
+	if provisioner.request.BundleID != daemonActiveProbeBundleID || provisioner.request.ImageRef != daemonActiveProbeRef || len(provisioner.request.Process.Args) != 2 {
 		t.Fatalf("provision request = %#v", provisioner.request)
 	}
-	if provisioner.removeCalls != 2 || !abandonedContainer.deleted || !container.deleted || len(container.deletedLogs) != 2 {
+	if probeRuntime.runRequest.ContainerID != daemonActiveProbeID || probeRuntime.runRequest.BundlePath == "" {
+		t.Fatalf("runtime request = %#v", probeRuntime.runRequest)
+	}
+	if provisioner.removeCalls != 3 || !abandonedContainer.deleted || !container.deleted || len(container.deletedLogs) != 2 {
 		t.Fatalf("cleanup: provisioner remove calls=%d abandoned deleted=%v container deleted=%v deleted logs=%v", provisioner.removeCalls, abandonedContainer.deleted, container.deleted, container.deletedLogs)
 	}
 }
@@ -63,7 +67,7 @@ func TestDaemonActiveProbeReportsRuntimeFailureAndStillCleansBundle(t *testing.T
 	if result.RecoveryErr != nil || result.ProvisionErr != nil || !errors.Is(result.RunErr, runFailure) || result.CleanupErr != nil {
 		t.Fatalf("active probe result = %#v", result)
 	}
-	if provisioner.removeCalls != 2 {
+	if provisioner.removeCalls != 3 {
 		t.Fatal("provisioned active probe bundle was not removed after runtime failure")
 	}
 }
@@ -86,7 +90,7 @@ func TestDaemonActiveProbeReclaimsAbandonedDeterministicProbeBeforeStarting(t *t
 		t.Fatalf("WriteFile(abandoned layout marker) error = %v", err)
 	}
 	bundleRoot := t.TempDir()
-	abandonedBundle := filepath.Join(bundleRoot, daemonActiveProbeID)
+	abandonedBundle := filepath.Join(bundleRoot, daemonActiveProbeBundleID)
 	if err := os.MkdirAll(abandonedBundle, 0o700); err != nil {
 		t.Fatalf("MkdirAll(abandoned bundle) error = %v", err)
 	}
@@ -108,8 +112,8 @@ func TestDaemonActiveProbeReclaimsAbandonedDeterministicProbeBeforeStarting(t *t
 	if provisioner.staleMarkerAtProvision {
 		t.Fatal("Provision observed abandoned layout marker after preflight cleanup")
 	}
-	if provisioner.removeCalls != 2 {
-		t.Fatalf("provisioner Remove calls = %d, want preflight and final cleanup", provisioner.removeCalls)
+	if provisioner.removeCalls != 3 {
+		t.Fatalf("provisioner Remove calls = %d, want current and legacy preflight cleanup plus final cleanup", provisioner.removeCalls)
 	}
 	if _, err := os.Stat(probeRoot); !os.IsNotExist(err) {
 		t.Fatalf("active probe root stat error = %v, want not exist", err)
@@ -143,18 +147,18 @@ func (p *activeProbeProvisioner) Provision(ctx context.Context, request chamberB
 		}
 	}
 	p.request = request
-	bundlePath := filepath.Join(p.bundleRoot, request.ContainerID)
+	bundlePath := filepath.Join(p.bundleRoot, request.BundleID)
 	if err := os.MkdirAll(bundlePath, 0o700); err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
-	return chamberBundle.ProvisionedBundle{ContainerID: request.ContainerID, BundlePath: bundlePath}, nil
+	return chamberBundle.ProvisionedBundle{BundleID: request.BundleID, BundlePath: bundlePath}, nil
 }
 
 func (p *activeProbeProvisioner) Remove(_ context.Context, bundle chamberBundle.ProvisionedBundle) error {
 	p.removeCalls++
 	bundlePath := bundle.BundlePath
 	if bundlePath == "" {
-		bundlePath = filepath.Join(p.bundleRoot, bundle.ContainerID)
+		bundlePath = filepath.Join(p.bundleRoot, bundle.BundleID)
 	}
 	return os.RemoveAll(bundlePath)
 }
@@ -163,6 +167,7 @@ type activeProbeRuntime struct {
 	openContainer chamberRuntime.ContainerHandle
 	runContainer  chamberRuntime.Container
 	openedID      string
+	runRequest    chamberRuntime.RunRequest
 	runErr        error
 }
 
@@ -170,7 +175,8 @@ func (r *activeProbeRuntime) Descriptor() chamberRuntime.Descriptor {
 	return chamberRuntime.Descriptor{Name: "active-probe-fake"}
 }
 
-func (r *activeProbeRuntime) Run(context.Context, chamberRuntime.RunRequest) (chamberRuntime.Container, error) {
+func (r *activeProbeRuntime) Run(_ context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Container, error) {
+	r.runRequest = request
 	return r.runContainer, r.runErr
 }
 

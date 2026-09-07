@@ -39,7 +39,7 @@ func TestNewUsesCurrentUserIDMap(t *testing.T) {
 	}
 }
 
-func TestRemoveReclaimsContainerTemporaryBundles(t *testing.T) {
+func TestRemoveReclaimsBundleTemporaryDirectories(t *testing.T) {
 	root := filepath.Join(privateTempDir(t), "bundles")
 	tmpRoot := filepath.Join(privateTempDir(t), "bundle-tmp")
 	workspace, err := hostfs.NewWorkspace(hostfs.Config{
@@ -53,8 +53,8 @@ func TestRemoveReclaimsContainerTemporaryBundles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	containerID := "container-temp-cleanup"
-	target := filepath.Join(tmpRoot, "."+containerID+".tmp-abcd")
+	bundleID := "bundle-temp-cleanup"
+	target := filepath.Join(tmpRoot, "."+bundleID+".tmp-abcd")
 	unrelated := filepath.Join(tmpRoot, ".other-container.tmp-abcd")
 	for _, path := range []string{target, unrelated} {
 		if err := os.MkdirAll(path, 0o700); err != nil {
@@ -62,7 +62,7 @@ func TestRemoveReclaimsContainerTemporaryBundles(t *testing.T) {
 		}
 	}
 
-	if err := provisioner.Remove(context.Background(), chamberBundle.ProvisionedBundle{ContainerID: containerID}); err != nil {
+	if err := provisioner.Remove(context.Background(), chamberBundle.ProvisionedBundle{BundleID: bundleID}); err != nil {
 		t.Fatalf("Remove() error = %v", err)
 	}
 	if _, err := os.Stat(target); !errors.Is(err, os.ErrNotExist) {
@@ -93,7 +93,7 @@ func TestProvisionClassifiesMissingImageLayoutAsInvalidRequest(t *testing.T) {
 	}
 
 	_, err = provisioner.Provision(context.Background(), chamberBundle.ProvisionRequest{
-		ContainerID: "container-1",
+		BundleID:    "bundle-1",
 		ImageLayout: filepath.Join(t.TempDir(), "missing-layout"),
 		ImageRef:    "docker.io/library/golang:1.26.4-bookworm",
 	})
@@ -130,7 +130,7 @@ func TestProvisionCanonicalizesImageRefBeforeUnpack(t *testing.T) {
 	}
 
 	provisioned, err := provisioner.Provision(context.Background(), chamberBundle.ProvisionRequest{
-		ContainerID: "container-1",
+		BundleID:    "bundle-1",
 		ImageLayout: imageLayout,
 		ImageRef:    "docker.io/library/golang:1.26.4-bookworm",
 	})
@@ -146,6 +146,9 @@ func TestProvisionCanonicalizesImageRefBeforeUnpack(t *testing.T) {
 	if provisioned.BundlePath == "" {
 		t.Fatal("Provision() BundlePath = empty, want provisioned bundle")
 	}
+	if provisioned.BundleID != "bundle-1" {
+		t.Fatalf("Provision() BundleID = %q, want bundle-1", provisioned.BundleID)
+	}
 	if _, err := os.Stat(filepath.Join(provisioned.BundlePath, "config.json")); err != nil {
 		t.Fatalf("provisioned config.json missing: %v", err)
 	}
@@ -160,10 +163,10 @@ func TestRemoveTreatsMissingBundleAsRemoved(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	bundlePath := filepath.Join(root, "container-1")
+	bundlePath := filepath.Join(root, "bundle-1")
 	err = provisioner.Remove(context.Background(), chamberBundle.ProvisionedBundle{
-		ContainerID: "container-1",
-		BundlePath:  bundlePath,
+		BundleID:   "bundle-1",
+		BundlePath: bundlePath,
 	})
 	if err != nil {
 		t.Fatalf("Remove() error = %v", err)
@@ -179,7 +182,7 @@ func TestRemoveDeletesRuntimeMutatedReadOnlyBundle(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	bundlePath := filepath.Join(root, "container-1")
+	bundlePath := filepath.Join(root, "bundle-1")
 	moduleDir := filepath.Join(bundlePath, "rootfs", "go", "pkg", "mod", "go.yaml.in", "yaml", "v2@v2.4.3")
 	if err := os.MkdirAll(moduleDir, 0700); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -192,8 +195,8 @@ func TestRemoveDeletesRuntimeMutatedReadOnlyBundle(t *testing.T) {
 	}
 
 	err = provisioner.Remove(context.Background(), chamberBundle.ProvisionedBundle{
-		ContainerID: "container-1",
-		BundlePath:  bundlePath,
+		BundleID:   "bundle-1",
+		BundlePath: bundlePath,
 	})
 	if err != nil {
 		t.Fatalf("Remove() error = %v", err)
@@ -213,8 +216,8 @@ func TestRemoveRejectsBundleOutsideProvisionerRoot(t *testing.T) {
 	}
 
 	err = provisioner.Remove(context.Background(), chamberBundle.ProvisionedBundle{
-		ContainerID: "container-1",
-		BundlePath:  filepath.Join(t.TempDir(), "container-1"),
+		BundleID:   "bundle-1",
+		BundlePath: filepath.Join(t.TempDir(), "bundle-1"),
 	})
 	if err == nil {
 		t.Fatal("Remove() error = nil, want root ownership error")

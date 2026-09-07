@@ -539,6 +539,9 @@ func applyContainerUpdate(container metadata.Container, update metadata.Containe
 	if update.BundlePath != "" {
 		container.BundlePath = update.BundlePath
 	}
+	if update.BundleID != "" {
+		container.BundleID = update.BundleID
+	}
 	if update.SupervisorPath != "" {
 		container.SupervisorPath = update.SupervisorPath
 	}

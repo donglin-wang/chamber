@@ -24,7 +24,11 @@ import (
 )
 
 const (
-	supervisorFileVersion = 1
+	supervisorFileVersionWithBundleContainerID = 1
+
+	// Version 2 separates the provisioner-owned bundle ID from the runtime-owned
+	// container ID in durable supervisor records.
+	supervisorFileVersion = 2
 
 	supervisorReconcileInterval = time.Second
 	supervisorCreatingTimeout   = 30 * time.Second
@@ -64,6 +68,19 @@ type supervisorFile struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// supervisorFileWire accepts the version 1 nested ContainerID field without
+// leaking that legacy daemon persistence concern back into pkg/bundle.
+type supervisorFileWire struct {
+	supervisorFile
+	Bundle supervisorBundleWire `json:"bundle"`
+}
+
+type supervisorBundleWire struct {
+	BundleID    string
+	ContainerID string
+	BundlePath  string
 }
 
 func runRuntimeSupervisor(ctx context.Context, args []string) error {
@@ -124,9 +141,10 @@ func runSupervisorFile(ctx context.Context, path string) error {
 	defer stderr.Close()
 
 	result, runErr := chamberRuntime.RunAndWait(context.Background(), rt, chamberRuntime.RunRequest{
-		Bundle: state.Bundle,
-		Stdout: []io.Writer{stdout},
-		Stderr: []io.Writer{stderr},
+		ContainerID: state.ContainerID,
+		BundlePath:  state.Bundle.BundlePath,
+		Stdout:      []io.Writer{stdout},
+		Stderr:      []io.Writer{stderr},
 	}, func(_ chamberRuntime.ContainerHandle) error {
 		return markSupervisorStarted(path, rt.Descriptor().Name, time.Now().UTC())
 	})
@@ -399,6 +417,7 @@ func alignSupervisorStartOperation(ctx context.Context, store metadata.Store, co
 		RuntimeRoot:         state.Runtime.RuntimeRoot,
 		StdoutPath:          state.StdoutPath,
 		StderrPath:          state.StderrPath,
+		BundleID:            state.Bundle.BundleID,
 		BundlePath:          state.Bundle.BundlePath,
 	})
 	return state, updated, err
@@ -420,6 +439,7 @@ func recoverPreparedSupervisor(
 		created, err := store.TransitionContainer(ctx, container.ID, metadata.ContainerCreating, metadata.ContainerUpdate{
 			State:          metadata.ContainerCreated,
 			At:             time.Now().UTC(),
+			BundleID:       state.Bundle.BundleID,
 			BundlePath:     state.Bundle.BundlePath,
 			SupervisorPath: container.SupervisorPath,
 			RuntimeRoot:    state.Runtime.RuntimeRoot,
@@ -851,9 +871,32 @@ func readRequiredSupervisorFile(path string) (supervisorFile, error) {
 }
 
 func readSupervisorFile(path string, operationID string, containerID string) (supervisorFile, bool, error) {
-	state, present, err := readSupervisorJSON[supervisorFile](path)
+	wire, present, err := readSupervisorJSON[supervisorFileWire](path)
 	if err != nil || !present {
 		return supervisorFile{}, present, err
+	}
+	state := wire.supervisorFile
+	switch state.Version {
+	case supervisorFileVersionWithBundleContainerID:
+		if wire.Bundle.BundleID != "" {
+			return supervisorFile{}, true, fmt.Errorf("%w: version 1 supervisor bundle contains bundle ID", chamberErrors.ErrMetadataFailed)
+		}
+		if wire.Bundle.ContainerID != state.ContainerID {
+			return supervisorFile{}, true, fmt.Errorf("%w: version 1 supervisor container id %q does not match bundle container id %q", chamberErrors.ErrMetadataFailed, state.ContainerID, wire.Bundle.ContainerID)
+		}
+		state.Version = supervisorFileVersion
+		state.Bundle = chamberBundle.ProvisionedBundle{
+			BundleID:   wire.Bundle.ContainerID,
+			BundlePath: wire.Bundle.BundlePath,
+		}
+	default:
+		if wire.Bundle.ContainerID != "" {
+			return supervisorFile{}, true, fmt.Errorf("%w: version %d supervisor bundle contains legacy container ID", chamberErrors.ErrMetadataFailed, state.Version)
+		}
+		state.Bundle = chamberBundle.ProvisionedBundle{
+			BundleID:   wire.Bundle.BundleID,
+			BundlePath: wire.Bundle.BundlePath,
+		}
 	}
 	if err := validateSupervisorFile(state, operationID, containerID); err != nil {
 		return supervisorFile{}, true, err
@@ -953,8 +996,8 @@ func validateSupervisorFile(state supervisorFile, operationID string, containerI
 	if strings.TrimSpace(state.ContainerID) == "" {
 		return fmt.Errorf("%w: supervisor container id is required", chamberErrors.ErrInvalidRequest)
 	}
-	if state.Bundle.ContainerID != state.ContainerID {
-		return fmt.Errorf("%w: supervisor container id %q does not match bundle container id %q", chamberErrors.ErrInvalidRequest, state.ContainerID, state.Bundle.ContainerID)
+	if err := chamberBundle.ValidateBundleID(state.Bundle.BundleID); err != nil {
+		return err
 	}
 	if strings.TrimSpace(state.Bundle.BundlePath) == "" {
 		return fmt.Errorf("%w: supervisor bundle path is required", chamberErrors.ErrInvalidRequest)

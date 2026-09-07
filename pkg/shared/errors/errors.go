@@ -19,6 +19,10 @@ const (
 	// Chamber's accepted ID syntax.
 	ErrInvalidContainerID Code = "invalid_container_id"
 
+	// ErrInvalidBundleID means a bundle ID is empty, unsafe, or outside
+	// Chamber's accepted ID syntax.
+	ErrInvalidBundleID Code = "invalid_bundle_id"
+
 	// ErrInvalidImageReference means an image reference cannot be parsed or
 	// canonicalized.
 	ErrInvalidImageReference Code = "invalid_image_reference"
@@ -104,6 +108,7 @@ const (
 func CodeFromError(err error, fallback Code) Code {
 	for _, code := range []Code{
 		ErrInvalidContainerID,
+		ErrInvalidBundleID,
 		ErrInvalidImageReference,
 		ErrInvalidImageLayout,
 		ErrInvalidBundleMount,

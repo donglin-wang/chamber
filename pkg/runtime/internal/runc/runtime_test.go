@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
@@ -459,13 +458,11 @@ esac
 	var streamedStdout strings.Builder
 	var streamedStderr strings.Builder
 	container, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
-		Bundle: chamberBundle.ProvisionedBundle{
-			ContainerID: "container-1",
-			BundlePath:  bundlePath,
-		},
-		Stdin:  strings.NewReader("stdin for fake runc"),
-		Stdout: []io.Writer{&streamedStdout},
-		Stderr: []io.Writer{&streamedStderr},
+		ContainerID: "container-1",
+		BundlePath:  bundlePath,
+		Stdin:       strings.NewReader("stdin for fake runc"),
+		Stdout:      []io.Writer{&streamedStdout},
+		Stderr:      []io.Writer{&streamedStderr},
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -538,10 +535,8 @@ esac
 
 	runtime := runtimeWithBinary(t, binaryPath, privateTempDir(t))
 	container, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
-		Bundle: chamberBundle.ProvisionedBundle{
-			ContainerID: "short.job",
-			BundlePath:  runtimeBundlePath(t),
-		},
+		ContainerID: "short.job",
+		BundlePath:  runtimeBundlePath(t),
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -589,10 +584,8 @@ esac
 	stateRoot := privateTempDir(t)
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
 	container, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
-		Bundle: chamberBundle.ProvisionedBundle{
-			ContainerID: "timeout",
-			BundlePath:  runtimeBundlePath(t),
-		},
+		ContainerID: "timeout",
+		BundlePath:  runtimeBundlePath(t),
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -623,10 +616,8 @@ func TestRunStartFailureHasErrorCodeAndRemovesLogs(t *testing.T) {
 	}
 
 	_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
-		Bundle: chamberBundle.ProvisionedBundle{
-			ContainerID: "start-fails",
-			BundlePath:  runtimeBundlePath(t),
-		},
+		ContainerID: "start-fails",
+		BundlePath:  runtimeBundlePath(t),
 	})
 	if err == nil {
 		t.Fatal("Run() error = nil, want start failure")
@@ -665,10 +656,8 @@ esac
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
 
 	_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
-		Bundle: chamberBundle.ProvisionedBundle{
-			ContainerID: "terminal-bundle",
-			BundlePath:  bundlePath,
-		},
+		ContainerID: "terminal-bundle",
+		BundlePath:  bundlePath,
 	})
 	if err == nil {
 		t.Fatal("Run() error = nil, want terminal rejection")
@@ -701,10 +690,8 @@ esac
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
 
 	_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
-		Bundle: chamberBundle.ProvisionedBundle{
-			ContainerID: "missing-spec",
-			BundlePath:  privateTempDir(t),
-		},
+		ContainerID: "missing-spec",
+		BundlePath:  privateTempDir(t),
 	})
 	if err == nil {
 		t.Fatal("Run() error = nil, want missing runtime spec error")
@@ -746,10 +733,8 @@ esac
 	stateRoot := privateTempDir(t)
 	runtime := runtimeWithBinary(t, binaryPath, stateRoot)
 	container, err := runtime.Run(ctx, chamberRuntime.RunRequest{
-		Bundle: chamberBundle.ProvisionedBundle{
-			ContainerID: "cancelled",
-			BundlePath:  runtimeBundlePath(t),
-		},
+		ContainerID: "cancelled",
+		BundlePath:  runtimeBundlePath(t),
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -1016,10 +1001,8 @@ func TestRunRejectsUnsafeContainerID(t *testing.T) {
 		t.Run(containerID, func(t *testing.T) {
 			runtime := runtimeWithConfigOnly(t)
 			_, err := runtime.Run(context.Background(), chamberRuntime.RunRequest{
-				Bundle: chamberBundle.ProvisionedBundle{
-					ContainerID: containerID,
-					BundlePath:  privateTempDir(t),
-				},
+				ContainerID: containerID,
+				BundlePath:  privateTempDir(t),
 			})
 			if err == nil {
 				t.Fatal("Run() error = nil, want invalid container ID error")
