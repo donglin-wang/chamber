@@ -1,3 +1,2 @@
-// Package errors defines durable Chamber error codes shared by SDK packages and
-// daemon adapters.
+// Package errors defines stable Chamber error codes shared by SDK packages.
 package errors

@@ -1,318 +1,162 @@
-# Chamber Agent Memory
+# Chamber Project Guidance
 
-## What Chamber Is
+## Direction and Ownership
 
-Chamber is becoming two closely related products built from the same Go implementation:
+Chamber is a Go SDK for simple, ergonomic OCI container execution in embedded
+applications, automation, and CI pipelines. Linux is the supported execution
+target. Rootless execution is the default and normal operation should not need
+`sudo`.
 
-1. **Embeddable SDK primitives** for point-and-shoot container work.
-   These packages should let a caller pull an OCI image into a caller-chosen root, unpack/provision a runtime bundle, ensure a runtime binary, run a bundle, and read logs or results. SDK callers own storage placement, concurrency, cleanup, cancellation policy, and recovery unless a specific package says otherwise.
+The common path is pull or build an `image.Image`, construct a runtime, call
+`Runtime.RunImage`, then wait and delete the container. Returned images carry
+the local OCI layout path, reference, digest, and platform so execution needs no
+store lookup or manual provisioner setup.
 
-2. **`chamberd`, a local execution daemon** that composes those same primitives into a reliable node-local authority.
-   The daemon owns durable operation records, leases, state transitions, concurrency control, cancellation, logs, recovery, and cleanup for one configured authority domain.
+- The image store owns its shared OCI layout and image metadata. Returned layout
+  paths are populated from the live store location, including cached pulls and
+  listing results; do not persist absolute layout paths in image metadata.
+- `RunImage` owns bundle provisioning and the provisioning workspace under the
+  runtime root. Launch failures release the provisioned bundle. The returned
+  container owns subsequent bundle cleanup through `Delete`.
+- `Run` accepts a ready OCI bundle. That bundle remains caller-owned.
+- Callers own root placement, coordination of shared roots and IDs, application
+  cancellation policy, cleanup after crashes, and image/cache retention.
+- Do not add shared-root concurrency management, operation records, leases,
+  recovery controllers, distributed scheduling, or background services to the
+  SDK. Application-level policies belong in embedding applications.
+- `cmd/github-ci` is an SDK consumer and automation example. Its webhook
+  admission limits, per-run roots, and retention are application policy.
 
-The daemon should be the first serious user of the Go SDK. If `chamberd` cannot be built naturally from the public Go packages, the SDK boundary is probably wrong.
+## Linux and Host Execution
 
-Chamber is still the node-local execution substrate, not a distributed scheduler or a general-purpose container engine. Distributed placement, cluster membership, desired-state reconciliation, secrets distribution, fleet-level policy, and global queues belong above Chamber.
+- Design and validate namespaces, process death signals, runc, RootlessKit,
+  BuildKit, sockets, ownership, and cleanup for Linux only.
+- Do not add non-Linux compatibility shims or no-op fallbacks to keep native
+  macOS green. Use explicit `unsupported_host` errors at public construction or
+  preflight boundaries where useful.
+- Native macOS may be used for editing and cross-compilation. Runtime evidence
+  must come from Linux or Lima; label compile-only validation accurately.
+- All process spawning under `pkg/` must use Chamber's shared subprocess helper
+  for Linux `Pdeathsig` protection. Flag raw `exec.Command`/`CommandContext`
+  unless there is an explicit documented reason to opt out.
+- Rootful support is a future privilege-boundary expansion, not a quiet option
+  on existing APIs. User namespaces, cgroups, networking, capabilities, and
+  seccomp are isolation settings rather than extra privilege modes.
 
-## Platform Support
+## Package Shape
 
-Chamber's supported execution target is Linux. Rootless containers, BuildKit,
-RootlessKit, runc, namespaces, process death signals, sockets, and cleanup
-semantics should be designed and validated for Linux first and only.
+Public SDK packages live under `pkg/`:
 
-- Do not add non-Linux compatibility shims, no-op fallbacks, or alternate code
-  paths merely to keep native macOS or other host builds green.
-- If code depends on Linux-only behavior, make that dependency explicit with
-  Linux-specific files, Linux validation, and clear `unsupported_host` errors at
-  public construction or preflight boundaries where useful.
-- Native macOS can be a development host, but meaningful runtime/build
-  validation belongs in Linux or Lima. A native macOS failure is not a product
-  regression unless Chamber explicitly adds macOS support later.
-- Future review agents should flag code that hides Linux-only runtime behavior
-  behind cross-platform abstractions, especially for process spawning, cleanup,
-  filesystem ownership, sockets, namespaces, cgroups, and runtime binaries.
+- Root packages such as `pkg/image`, `pkg/bundle`, and `pkg/runtime` own public
+  contracts, configs, schemas, fixed string constants, and small domain helpers.
+- Factory packages own ready-object constructors such as `NewStore`,
+  `NewProvisioner`, and `NewRuntime`. They validate shared config, check Linux
+  host requirements, create private workspaces, and select implementations.
+- Concrete implementations live under `pkg/<package>/internal/<implementation>`.
+  They use the root contracts and expose ordinary `New` constructors for their
+  factory. Keep shared construction policy in factories.
+- If multiple implementations become necessary, put their names in root
+  contracts/config and the selection list in the factory. Do not add registry,
+  `init`, side-effect-import, or plugin systems.
+- SDK configs are final configs. Callers resolve files, environment, defaults,
+  and flags before construction. Do not add SDK `Override` or `Resolve` layers.
 
-## Product Boundaries
+Current boundaries:
 
-The SDK layer is deliberately lower-level than the daemon:
+- `pkg/image`: pull/build/list/remove contracts, image references and platforms,
+  image metadata, layout validation, and BuildKit configuration. The store
+  writes shared layout content before metadata. `PullIfMissing` reuses valid
+  records; `PullAlways` refreshes content while preserving `CreatedAt`.
+- `pkg/image/internal/store`, `metadata`, `registry`, and `buildkit`: filesystem
+  store orchestration, JSON records, registry pulls via go-containerregistry,
+  and rootless Dockerfile builds via BuildKit. Tool state stays under the image
+  root or its configured temporary root.
+- `pkg/bundle`: provisioner contracts, config, `ProcessSpec`, mounts, and
+  `ProvisionedBundle`. Bundle IDs identify provisioner-owned storage, independent
+  of runtime container IDs. Retain the returned ID and path for removal.
+- `pkg/bundle/internal/directory`: directory-backed OCI provisioning using
+  umoci, rootless spec patching, staging, private spec writes, atomic placement,
+  and removal of provisioner-owned resources.
+- `pkg/runtime`: `RunImage` and ready-bundle `Run`, config, container lifecycle,
+  logs, and results. The runtime factory composes the provisioner with the
+  runtime adapter. Runtime-created bundles belong below the runtime root.
+  Launch contexts govern launch only; returned containers own lifecycle.
+  `Wait` observes completion and releases launch resources; `Delete` removes
+  runtime state and any bundle owned by `RunImage`. Logs are retained until
+  `DeleteLog`. Keep caller-provided bundles untouched.
+- `pkg/shared/errors`: stable public error codes. Choose errors at the failing
+  Chamber step instead of classifying upstream sentinels or adding wrappers
+  solely to preserve nested codes. Use precise validation codes for image
+  layouts/references, mounts, process specs, and container IDs.
+- `pkg/shared/containerid`: runtime container ID validation. Bundle IDs are
+  validated independently in `pkg/bundle`.
+- `pkg/shared/hostfs`: scoped private directories, temporary roots, private
+  files, and filesystem capability policy. Keep it out of broad utility work.
+- `pkg/shared/testutil`: shared test helpers; leave this location as-is for now.
 
-- It performs explicit operations against caller-provided locations.
-- It should be useful from Go directly and later from other languages through thin wrappers, likely around a small Go-built helper binary rather than duplicated logic.
-- It should not quietly promise daemon-grade safety. Shared roots, locking, cleanup, and crash recovery are caller responsibilities unless explicitly delegated to `chamberd`.
-- Public SDK packages live under `pkg/`, with stable user-facing types for the reusable image, bundle, runtime, and shared filesystem primitives.
-- Public SDK configs are final configs. Do not add SDK `Override` structs or
-  `Resolve` functions; callers are expected to resolve files, environment,
-  defaults, and command-line inputs before constructing SDK objects.
+Prefer proven OCI libraries and runtimes over rebuilding low-level primitives.
+Do not add containerd, distributed scheduling, rich networking, general volumes,
+or compatibility layers before core execution contracts are solid.
 
-The daemon layer adds the reliability contract:
+## Clarity, Naming, and Refactors
 
-- One daemon is the single authority over its mutable node-local state.
-- Concurrent pull, run, list, stop, decommission, delete, log, and GC requests are expected.
-- Mutating operations should have durable operation records and explicit state transitions.
-- Destructive work must be lease-aware and recoverable.
-- The CLI and other clients should talk to the daemon API; they should not read or mutate daemon storage directly.
+- Keep changes as small and explicit as the contract permits. A seasoned Go
+  reader should understand process stages, ownership, and side effects from
+  names and nearby control flow.
+- Every helper should name a domain step, isolate a hazardous invariant, hide
+  meaningful complexity, or provide a necessary test seam. Inline helpers that
+  merely forward, wrap literals, or obscure control flow.
+- Prefer behavior names such as `createRunDirectories` or
+  `requireSubordinateIDMapping` over vague `prepare`, `handle`, or `normalize`.
+- Scan files around 500 lines or longer for obvious local simplifications.
+  Avoid creating files or abstractions just to shorten long files.
+- Before moving a type, field, helper, schema, or durable file, identify its
+  owner, which package may persist/mutate it, and which callers need to know it.
+- Use one canonical type for a concept. Persistence envelopes may add package-
+  owned versioning, but do not duplicate event/request/result schemas.
+- Do not introduce single-implementation interfaces without a real boundary or
+  test seam. Prefer concrete types or a function type for one callback.
+- Do not expose both a package function and an interface method for the same
+  behavior. Names must not promise stronger guarantees than the implementation.
+- Use readable `chamber...` import aliases, such as `chamberImage`,
+  `chamberBundleFactory`, and `chamberRuntime`; avoid shortened `ch...` names.
+- Name concrete adapters for Chamber's role, with the upstream library in
+  comments. Keep adapters internal and upstream imports visually distinct;
+  e.g. `ociumoci` inside the directory provisioner.
+- Composition should use root contracts and factories, with concrete adapters
+  referenced only in factories or implementation-specific tests.
+- Name workspaces for their owner: `imageWorkspace`, `bundleWorkspace`,
+  `runtimeWorkspace`.
+- Use standard `os.Signal`/`syscall.Signal` for signals and fixed runtime string
+  types/constants for public statuses and log streams.
 
-## Privilege Model
+## Reviews and Validation
 
-Rootless remains the default and first-class mode. Normal Chamber operation should not require `sudo`.
+Lead reviews with correctness, ownership, boundary violations, and missing
+contract coverage. Flag duplicated policy, implicit global state, drifting
+configuration, misleading guarantees, storage invariant failures, unsafe
+cleanup, and error mapping. Cleanup passes preserve behavior and avoid broad
+redesigns. Do not commit unless explicitly requested.
 
-Rootful support may be added as a configurable privilege mode later, but treat it as a meaningful expansion of the trust boundary, especially for `chamberd`. A rootful daemon serving non-root clients is a local privilege boundary and needs explicit authorization, peer credential checks, allowed operations, and careful auditability.
+For public API changes, audit every affected caller in the same turn:
 
-Model privilege cleanly:
-
-- Top-level daemon/runtime privilege is probably `rootless` or `rootful`.
-- `chamberd` config should own one top-level privilege setting and project it
-  into SDK adapter configs during composition; do not let bundle and runtime
-  config drift into independently selected daemon privilege modes.
-- Details such as user namespaces, cgroups, networking, capabilities, and seccomp are isolation/runtime profile settings, not necessarily additional top-level privilege modes.
-- Rootful-with-user-namespace is real and useful, but should be represented as rootful privilege plus a user-namespace profile rather than as a vague third mode.
-
-## Core Architecture Priorities
-
-- Reuse proven OCI/container libraries and runtimes where practical instead of reimplementing low-level container primitives.
-- Keep persistent and temporary storage inside Chamber-controlled or caller-provided roots; avoid broad reliance on ambient host defaults.
-- Make path ownership explicit. Multiple OS users on the same host must not accidentally share sockets, storage, locks, runtime directories, temp directories, logs, names, network bookkeeping, or cleanup authority.
-- Process spawning under `pkg/` must use Chamber's shared subprocess helper so child processes get Linux `Pdeathsig` parent-death protection. Future review agents should flag raw `exec.Command` or `exec.CommandContext` usage in `pkg/` unless the code has an explicit, documented reason to opt out.
-- Start with narrow, testable packages and invariants before widening into compatibility APIs.
-- Keep code fixes and new implementation as minimal as possible without playing code golf. Prefer the smallest clear change that preserves the contract, tests the behavior at risk, and does not hide complexity behind clever compression.
-- Prefer explicit top-down dependency injection for filesystem, runtime, and backend choices.
-- Keep package-owned config at generic boundaries. Avoid letting global config import concrete adapters such as specific metadata or runtime implementations.
-- Keep shared helpers small and policy-shaped. `pkg/shared/hostfs` should encode scoped private-directory, temporary-root, and filesystem-capability policy, not become a broad utility grab bag.
-
-## Code Clarity And Package Boundaries
-
-Code should read like a self-evident first-principles explanation of what is
-going on. A seasoned Go developer should be able to open an arbitrary file and
-understand the process stages, ownership, and side effects from the file's
-types and function names without needing hidden context from a prior refactor.
-
-- Treat each file's function list as a contract with the reader. In the context
-  of that file, every function name should justify why the function exists.
-  If a reader would reasonably ask "why is this here?", rename it, inline it,
-  move it to the owning package, or remove it.
-- Keep helpers only when they express a real domain step, isolate a hazardous
-  invariant, hide meaningful complexity, or provide a necessary test seam.
-  Do not keep helpers that merely forward to another helper, wrap a literal, or
-  exist only to make another function appear shorter.
-- Package boundaries should reduce how much state a developer must keep in
-  their head. A package should make its ownership obvious enough to guard
-  against human error: callers should know which package owns a concept,
-  which package may persist it, and which package may mutate it.
-- Before moving a type, field, durable file, or helper across a package
-  boundary, identify the concept's owner in plain language. If ownership is
-  unclear, stop and clarify the boundary instead of adding an abstraction.
-- Do not let names imply a stronger guarantee than the code provides. A
-  function named for supervision, recovery, persistence, lease ownership, or
-  cleanup must actually own that contract end to end.
-
-## Naming And Import Conventions
-
-- If a Chamber package import needs an alias, use a readable `chamber...` alias rather than a shortened `ch...` alias.
-  Examples: `chamberErrors`, `chamberBundle`, `chamberImage`, `chamberRuntime`, `chamberDaemonConfig`.
-- When importing a Chamber package that is a concrete adapter around a third-party implementation, make the alias say it is the Chamber adapter, not the upstream project.
-  Example: use `chamberDirectoryProvisioner` for `github.com/donglin-wang/chamber/pkg/bundle/internal/directory` rather than `umoci` inside factory packages.
-- Daemon and CI composition should usually import root SDK contract packages
-  such as `chamberImage`, `chamberBundle`, and `chamberRuntime`, plus
-  `chamberImageFactory`, `chamberBundleFactory`, or `chamberRuntimeFactory`
-  when they need Chamber's built-in constructors. Concrete adapter aliases such
-  as `chamberImageStore` or `chamberDirectoryProvisioner` belong inside factory
-  packages or implementation-specific tests, not normal daemon composition.
-- `hostfs.Workspace` values should be named for their owning package, such as `imageWorkspace`, `bundleWorkspace`, `runtimeWorkspace`, or `metadataWorkspace`.
-- Concrete Chamber adapter packages should be named for the Chamber role they implement, not for the third-party library they currently use. Mention the backing library in the package comment, type comment, and implementation docs. Implementation-specific adapter packages live under `internal/`; SDK callers use factory constructors.
-- Keep upstream third-party imports visually distinct from Chamber adapter packages. For example, inside `pkg/bundle/internal/directory`, alias the upstream `github.com/opencontainers/umoci` import as `ociumoci` so readers can tell it apart from Chamber's directory-backed OCI adapter package.
-
-## Current Implementation Shape
-
-The current repo is still early and may not yet have the final public SDK layout.
-
-Canonical SDK package shape:
-
-- Root SDK packages such as `pkg/image`, `pkg/bundle`, and `pkg/runtime` own public contracts, schemas, config structs, fixed string constants, and package-level helper functions.
-- Factory packages such as `pkg/image/factory`, `pkg/bundle/factory`, and `pkg/runtime/factory` own object-specific constructors such as `NewStore`, `NewProvisioner`, and `NewRuntime`. Factory constructors perform shared validation, private-directory setup, implementation name checks when the package has multiple implementations, and dispatch to concrete implementations.
-- Concrete implementation packages live under `pkg/<package>/internal/<implementation>`, import only their package's root contract/config package, and expose an ordinary `New` constructor for the factory package to call. Concrete constructors should do implementation-specific initialization only; shared validation and directory creation belong in the factory constructor.
-- If a package grows multiple implementations, add the implementation name vocabulary to that package's root config/contracts and keep the implementation list in the factory package. Do not use registration, `init`, side-effect imports, or static-analysis enforcement unless Chamber intentionally grows a plugin model.
-
-Important current boundaries:
-
-- `pkg/image`: public image-operation contracts, pull/build/list/remove request types, image-root config, BuildKit config, image metadata records, and small layout helpers. Use `image/factory.NewStore`; `image.Store` owns one shared OCI image layout below the configured root plus store-local metadata and temporary operation directories. `PullIfMissing` reuses valid metadata/layout records, while `PullAlways` refreshes the shared-layout reference and preserves `CreatedAt`. SDK callers own root placement, process-level coordination, cleanup policy, and recovery.
-- `pkg/image/internal/store`, `pkg/image/internal/metadata`, `pkg/image/internal/registry`, and `pkg/image/internal/buildkit`: concrete image-store orchestration, JSON metadata, go-containerregistry pull mechanics, and BuildKit-backed Dockerfile build mechanics. Registry/build helpers write temporary OCI layouts; the store validates, copies reachable blobs into the shared layout, rewrites the shared index, and writes metadata last. `Store.Build` uses configured local BuildKit executables or downloads managed tools, and keeps builder state below the configured image root.
-- `pkg/bundle`: public bundle provisioning contract, bundle-root config, `ProcessSpec`, and provisioner-applied `Mounts`. Use `bundle/factory.NewProvisioner`; `pkg/bundle.Config.Name` selects the concrete provisioner implementation, and the factory constructor owns implementation name checks before dispatch. `ProvisionedBundle.BundleID` is a provisioner-owned storage identity, not a runtime container ID; callers retain it with `BundlePath` so `Remove` can recover implementation-private resources such as future mounts or snapshots. `ProcessSpec.Terminal` is a pointer so callers can distinguish "leave the image default alone" from "force true/false". Do not expose future runtime-applied rootfs mount hooks before a runtime implementation supports them.
-- `pkg/bundle/internal/directory`: concrete directory-backed OCI bundle provisioner using `umoci`. It currently supports rootless provisioning and owns unpacking, rootless OCI spec patching, private `config.json` writes, temporary staging, and atomic final bundle placement.
-- `pkg/runtime`: public runtime contract, config, schemas, and fixed string constants. Concrete implementations such as `pkg/runtime/internal/runc` import the root runtime package and expose their own ordinary `New` constructor for the factory constructor to dispatch to. `runtime/factory.NewRuntime` owns shared validation, including Linux host gating, implementation name checks, and private runtime directory creation, then dispatches directly to the concrete implementation. The `Runtime` interface includes only ordinary runtime operations such as `Descriptor`, `Run`, and reconnect/open primitives such as `Open` when needed; do not add daemon operation, lease, reconciliation, or metadata concepts to it. `Descriptor` includes runtime identity, version, and binary path. `Run` accepts a caller-owned runtime container ID and a ready OCI bundle path plus optional stdin and stdout/stderr writer slices; it does not receive the provisioner's bundle identity. It always writes default runtime logs and returns a `Container`. The `Run` context controls launch work only; after `Run` succeeds, lifecycle belongs to the returned `Container`. The `Container` owns per-container lifecycle methods: `ID`, `StdoutPath`, `StderrPath`, `Wait`, `State`, `Signal`, `Delete`, `ReadLog`, and `DeleteLog`. Use the standard library `os.Signal`/`syscall.Signal` vocabulary for runtime signals. Runtime statuses and log streams should use the fixed runtime string types and constants instead of raw unbounded strings at public boundaries.
-- Runtime-owned supervised helpers may describe runtime launch evidence, started
-  evidence, result evidence, stdio/log plumbing, and container IDs. They must
-  not contain daemon-only vocabulary such as operation IDs, daemon metadata
-  states, leases, HTTP response fields, or recovery/reconciliation policy.
-- `pkg/shared/errors`: canonical public Chamber error-code taxonomy. The daemon and SDK adapters should use these durable codes for contract errors and response mapping.
-  Prefer choosing the Chamber error from the Chamber step that failed, not by
-  translating library-specific sentinel errors into Chamber codes. For example,
-  validate an image layout before opening it; if validation fails, return
-  `ErrInvalidImageLayout`, if a later unpack step fails, return
-  `ErrBundlePrepareFailed`. Avoid `classify...` helpers and `wrap...Error`
-  helpers that exist only to preserve or reformat nested error codes. Add a
-  precise Chamber validation code when `ErrInvalidRequest` would hide a stable
-  SDK contract category such as invalid image layout, image reference, bundle
-  mount, process spec, or container ID.
-- `pkg/shared/containerid`: shared runtime container ID validation used by runtime adapters. Bundle IDs are independently validated by `pkg/bundle` because they identify provisioner-owned storage rather than runtime containers.
-- `pkg/image` owns image reference validation and canonicalization so callers can provision with the same non-canonical reference they used to pull.
-- `pkg/shared/hostfs`: explicit filesystem dependency for package-scoped durable roots, temporary roots, private files/directories, and required filesystem capability probes. It owns filesystem policy primitives, not broad utility behavior.
-- `pkg/shared/testutil`: shared tests helpers. Its location is not ideal, but keep it there for now.
-- `daemon/metadata`: daemon-owned durable vocabulary for images, containers, operations, and states. Keep daemon-only sentinel storage errors such as `ErrNotFound` and `ErrAlreadyExists` here, but use `pkg/shared/errors.Code` for durable operation/container error codes.
-- `daemon`: current daemon HTTP composition and operation orchestration.
-
-Future public Go SDK work should build on these `pkg/` contracts without moving daemon reliability concepts into the SDK. Candidate future surfaces include a convenience one-shot run package.
-
-Boundary rules for future changes:
-
-- Do not add build or push support until the pull/provision/run contracts are solid.
-- Do not move daemon reliability concepts such as durable operations, leases, recovery, cancellation policy, or garbage collection into the low-level SDK packages.
-- Do not make global daemon config import concrete adapters. Global config should depend on generic package config types; composition chooses concrete implementations.
-- Do not let the daemon guess SDK-owned paths. Persist paths returned by SDK operations, such as `ProvisionedBundle.BundlePath`, and call runtime-owned APIs such as `ReadLog`.
-- Keep rootless defaults first-class. Rootful support should be introduced as an explicit privilege-boundary expansion, not as a quiet option on existing APIs.
-
-## Review And Cleanup Passes
-
-Use review passes to make the code easier to understand without changing its contract. A review pass is not permission to redesign the system, add broad new abstractions, move files around, or widen scope.
-
-When asked for a code review, lead with correctness and boundary findings:
-
-- Code smells that can hide bugs, especially duplicated policy, unclear ownership, implicit global state, over-broad helpers, and state that can drift between packages.
-- Abstraction and package-boundary oversteps, especially daemon reliability concepts leaking into `pkg/`, concrete adapters leaking into generic config, or helper packages becoming grab bags.
-- Missing tests around contract boundaries, storage invariants, platform gates, error mapping, idempotency, and race-prone operations.
-- Long-term API shape issues such as names, fields, or interfaces that suggest a stronger guarantee than the implementation actually provides.
-
-When asked to clean up or simplify code:
-
-- Look for "helper for helper" chains: private helpers that are used once, merely forward to another helper, or make the call path harder to read without hiding real complexity. Inline them when doing so makes the owning function clearer.
-- Treat the file's function list as a readability surface. A fresh reader should be able to skim function names and understand the process stages, not feel dropped into a bag of vague utilities.
-- Keep helpers only when they name a real domain step, hide meaningful complexity, isolate a hazardous invariant, or provide a narrow test seam. Do not keep helpers that merely wrap a one-line literal, pass through to another helper, or exist only to make another helper look smaller.
-- Name helpers by behavior, output, and side effect. Prefer names such as `createRunDirectories`, `reportGitHubCommitStatus`, or `requireSubordinateIDMapping` over vague names such as `prepare`, `handle`, `patch`, `normalize`, `targets`, or `fileContainsUser`.
-- Organize high-level control flow in lifecycle order and extract only concrete process steps. If a helper's purpose and place in that lifecycle are not immediately clear from its name and nearby context, rename it, inline it, or remove it.
-- Look for structs, config types, interfaces, or fields with dual responsibilities. A field should not both select an implementation and describe implementation-private behavior; an interface should not include lifecycle/setup methods if constructors already return ready values.
-- If a file is roughly 500 lines or longer, scan it for obvious simplifications. Prefer small local simplifications inside the file. Do not create a new abstraction or a new file merely because the file is long.
-- Preserve behavior unless the user explicitly asked for a behavior change. Keep diffs small, testable, and easy to review.
-- Leave code alone when simplification is not obvious. A boring, explicit implementation is better than a clever cleanup that moves complexity somewhere else.
-- Do not commit during review or cleanup unless the user explicitly asks for a commit.
-
-## Refactor Guardrails
-
-Refactors should make ownership, control flow, and package boundaries more
-obvious. They are not permission to introduce speculative abstractions or move
-concepts into packages where they are merely convenient.
-
-Before adding or moving any type, field, function, interface, durable file, or
-schema across package boundaries, answer these questions from the code in front
-of you:
-
-- Which package owns this concept?
-- Which package is allowed to persist it?
-- Which package is allowed to mutate it?
-- Which callers should know this concept exists?
-- Does this include daemon-only vocabulary such as operation IDs, leases,
-  metadata states, reconciliation, cancellation policy, HTTP/API responses, or
-  operation records?
-
-Boundary rules for refactors:
-
-- `OperationID`, daemon metadata states, operation records, leases,
-  reconciliation, daemon recovery policy, and HTTP response concerns belong to
-  `daemon`.
-- Root SDK packages under `pkg/` may own reusable image, bundle, runtime, host
-  filesystem, subprocess, and error-code concepts. They must not know about
-  daemon operations merely because the daemon is currently their main caller.
-- If a durable file exists only to correlate daemon operations, keep it in
-  `daemon`. If a durable file is reusable runtime/image/bundle evidence
-  independent of daemon operation tracking, it may belong in the relevant
-  `pkg/` package.
-- Do not duplicate schemas with the same fields across packages. Use one owner
-  and add a narrow wrapper only when the wrapper contributes package-owned
-  metadata such as a schema version or daemon record identity.
-- Do not only check for identical field lists. Check for concept duplication:
-  if two types represent the same event, request, outcome, lifecycle stage, or
-  durable fact, there should be one canonical domain type. A persistence
-  wrapper may add versioning, but it should be private or clearly named as a
-  storage envelope owned by the package that owns that durable file format.
-- When introducing a new interface or struct, ask whether it serves a real
-  testing purpose or whether a seasoned maintainer would intuitively conceive
-  it during high-level design for this module. If not, its reason for
-  existence is shaky, and there must be an overwhelming reason to keep it.
-- Do not create both a package-level function and an interface method for the
-  same behavior. Pick the owner that makes the behavior self-evident.
-- Do not introduce an interface when there is only one implementation unless it
-  protects a real package boundary or preserves an existing test seam. Prefer a
-  function type for one callback and a concrete type for one implementation.
-- Do not add public methods to root SDK interfaces merely to make one daemon
-  workflow convenient. First ask whether the behavior is an ordinary SDK
-  primitive, a package-level helper built from existing primitives, or daemon
-  policy.
-
-Public API changes require a full caller audit in the same turn:
-
-- Search with `rg` for every changed type, field, method, constructor, and
-  deleted name.
-- Compile every affected downstream package with
+- Search with `rg` for changed and removed types, fields, methods, and names.
+- Compile affected downstream packages using
   `GOCACHE=/tmp/chamber-go-cache GOOS=linux go test -c`.
-- Include `cmd/github-ci` whenever touching `pkg/runtime`, `pkg/bundle`,
-  `pkg/image`, process environment, logs, exit/result contracts, filesystem
-  roots, or host execution behavior.
-- Include `daemon`, `daemon/metadata`, the relevant factory package, and the
-  concrete adapter package whenever changing a root SDK contract.
-- If a result field changes type or meaning, update all callers before
-  finishing; do not leave downstream packages to rediscover the API breakage.
+- Include `cmd/github-ci` for changes to runtime, bundle, image, process
+  environment, logs/results, filesystem roots, or host execution.
+- Include relevant factories and concrete adapters for root SDK changes.
+- Update every result-field caller when a field's meaning or type changes.
+- Run meaningful tests on Linux or Lima and inspect runtime artifacts when
+  validating actual execution. Distinguish source/compile checks from runtime
+  tests and deterministic lifecycle cases from concurrency stress testing.
 
-## Daemon Contract
+## Collaboration and Learning
 
-`chamberd` should make one local authority dependable. It should expose a stable local API over a user-scoped Unix socket by default, with TCP/HTTP only as an explicit demo or development option.
-
-The daemon should support:
-
-- image pull/list/remove;
-- container create/start/run/stop/decommission/delete/list;
-- logs;
-- operation status/cancel;
-- system info/events;
-- crash recovery;
-- lease-aware garbage collection.
-
-Use operation-scoped locks rather than a single global lock where possible: image reference locks, content-object locks, container locks, runtime/network allocation locks, and a global GC coordination lock only where needed.
-
-## Non-Goals For Now
-
-- Do not depend on containerd.
-- Do not build a Kubernetes replacement or distributed scheduler inside Chamber.
-- Do not target Docker, Podman, Compose, Kubernetes CRI, image build, or image push until the core contract is proven.
-- Do not add rich networking, general volumes, or plugin systems before the execution and recovery model is solid.
-- Do not treat cleanup as ad hoc deletion. Cleanup must be lease-aware in the daemon, and explicitly caller-owned in the SDK.
-
-## Learning Preferences
-
-This project is also a learning project for the repository owner. Future agents should optimize for teaching and collaboration while still being free to write as much code as the task calls for.
-
-The owner wants to gain:
-
-- Fundamentals of container runtimes, especially rootless execution, OCI images/specs/runtimes, storage, namespaces, cgroups, leases, cleanup, and recovery.
-- Muscle memory writing Go.
-- Good engineering judgment around package boundaries, naming, config layering, and filesystem ownership.
-
-Default collaboration style:
-
-- Prefer explaining the design pressure, tradeoffs, and next small implementation step.
-- When implementation is needed, write the code required to complete the task; there is no standing limit on how much code an agent may write.
-- Keep changes focused and reviewable when practical, but do not withhold a full implementation merely to preserve a teaching exercise.
-- Invite the owner to make core design and coding decisions themselves.
-- Provide Go sketches, interfaces, tests, pseudocode, or full implementations depending on what best serves the request.
-- Use questions that force useful thinking, but do not block on questions when a conservative local assumption is obvious.
-
-Good agent behavior for this repo:
-
-- Start with research spikes, invariants, small Go packages, and tests.
-- Explain container-runtime concepts in the context of the code being written.
-- Review owner-written code carefully for correctness, race conditions, error handling, permissions, and recovery behavior.
-- Keep docs aligned with code when moving package boundaries.
-
-Avoid by default:
-
-- Hiding important Go or container-runtime details behind too much abstraction.
-- Exposing unstable internal packages as public SDK just because they are convenient today.
-- Letting the SDK and daemon contracts blur together.
-- Adding broad container-engine features before the core SDK primitives and daemon reliability contract are proven.
+The owner wants container-runtime fundamentals, Go muscle memory, and sound
+judgment around config, names, package boundaries, filesystem ownership, and
+cleanup. Explain design pressure and tradeoffs where useful, and write the full
+implementation needed to complete the requested work. Keep MVP code focused and
+understandable with names and boundaries that can grow. Invite core decisions
+without blocking obvious conservative local choices. Avoid hiding important
+Go or container details behind unnecessary abstractions.

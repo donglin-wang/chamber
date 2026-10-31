@@ -27,10 +27,10 @@ func TestRunProofLogPathRejectsEscapesAndNonTextEvidence(t *testing.T) {
 		runID string
 		path  string
 	}{
-		{runID: "..", path: "daemon-supervised/stdout.log"},
+		{runID: "..", path: "direct-sdk/stdout.log"},
 		{runID: "00000000-0000-0000-0000-000000000000", path: "../stdout.log"},
-		{runID: "00000000-0000-0000-0000-000000000000", path: "daemon-lifecycle/../../stdout.log"},
-		{runID: "00000000-0000-0000-0000-000000000000", path: "daemon-lifecycle/chamberd"},
+		{runID: "00000000-0000-0000-0000-000000000000", path: "direct-sdk/../../stdout.log"},
+		{runID: "00000000-0000-0000-0000-000000000000", path: "direct-sdk/test-binary"},
 	} {
 		if _, err := runProofLogPath(root, test.runID, test.path); err == nil {
 			t.Fatalf("runProofLogPath(%q, %q) error = nil, want rejection", test.runID, test.path)

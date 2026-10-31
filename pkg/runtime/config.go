@@ -13,7 +13,7 @@ const RuntimeNameRunc = "runc"
 // Config is the final caller-provided configuration for runtime execution.
 type Config struct {
 	// RuntimeRoot is the private directory where runtime state and default logs
-	// are stored.
+	// and RunImage bundles are stored.
 	RuntimeRoot string
 
 	// RuntimeTmpRoot is the private directory where runtime state construction

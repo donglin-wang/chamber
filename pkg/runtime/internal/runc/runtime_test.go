@@ -42,7 +42,7 @@ func TestNewRequiresWorkspace(t *testing.T) {
 		RuntimeRoot:   privateTempDir(t),
 		RuntimeBinDir: privateTempDir(t),
 		Name:          "runc",
-	}, nil, nil)
+	}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("New() error = nil, want workspace error")
 	}

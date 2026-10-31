@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	"github.com/donglin-wang/chamber/pkg/shared/containerid"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
@@ -43,6 +44,7 @@ var _ chamberRuntime.ContainerHandle = (*runcContainer)(nil)
 var _ chamberRuntime.Container = (*runcContainer)(nil)
 
 type Runtime struct {
+	provisioner     chamberBundle.Provisioner
 	config          chamberRuntime.Config
 	binaryPath      string
 	binary          runtimeBinary
@@ -60,8 +62,10 @@ type runtimeBinary struct {
 	sha256  string
 }
 
-func New(ctx context.Context, config chamberRuntime.Config, workspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace) (*Runtime, error) {
-	return newWithOptions(ctx, config, workspace, binaryWorkspace)
+func New(ctx context.Context, config chamberRuntime.Config, workspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace, provisioner chamberBundle.Provisioner) (*Runtime, error) {
+	return newWithOptions(ctx, config, workspace, binaryWorkspace, func(r *Runtime) {
+		r.provisioner = provisioner
+	})
 }
 
 func newWithOptions(ctx context.Context, config chamberRuntime.Config, workspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace, options ...option) (*Runtime, error) {
@@ -523,6 +527,8 @@ type containerConfig struct {
 }
 
 type runcContainer struct {
+	provisioner chamberBundle.Provisioner
+	bundle      chamberBundle.ProvisionedBundle
 	containerConfig
 	done   chan struct{}
 	result waitResult
@@ -720,7 +726,13 @@ func (c *runcContainer) Delete(ctx context.Context, force bool) error {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("%w: runtime delete canceled while running control command: %w", chamberErrors.ErrCanceled, ctxErr)
 		}
-		return fmt.Errorf("%w: delete runc container %q: %w: %s", chamberErrors.ErrRuntimeControlFailed, c.id, err, strings.TrimSpace(string(output)))
+		deleteErr := fmt.Errorf("%w: delete runc container %q: %w: %s", chamberErrors.ErrRuntimeControlFailed, c.id, err, strings.TrimSpace(string(output)))
+		if c.provisioner == nil || !looksAlreadyDeleted(deleteErr) {
+			return deleteErr
+		}
+	}
+	if c.provisioner != nil {
+		return c.provisioner.Remove(ctx, c.bundle)
 	}
 	return nil
 }

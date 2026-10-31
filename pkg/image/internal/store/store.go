@@ -265,7 +265,14 @@ func (s *Store) List(ctx context.Context, request chamberImage.ListRequest) ([]c
 	if err := s.requireReady(); err != nil {
 		return nil, err
 	}
-	return s.metadata.List(ctx, request)
+	images, err := s.metadata.List(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for i := range images {
+		images[i].LayoutPath = s.layoutRoot
+	}
+	return images, nil
 }
 
 func (s *Store) Remove(ctx context.Context, request chamberImage.RemoveRequest) error {
@@ -348,6 +355,7 @@ func (s *Store) existingValidImage(ctx context.Context, reference string, platfo
 	if err := validateStoredImage(ctx, s.layoutRoot, existing, s.workspace); err != nil {
 		return chamberImage.Image{}, err
 	}
+	existing.LayoutPath = s.layoutRoot
 	return existing, nil
 }
 
@@ -392,13 +400,14 @@ func (s *Store) commitLayout(ctx context.Context, request commitRequest) (chambe
 		}
 	}
 	img := chamberImage.Image{
-		Reference: request.canonicalReference,
-		Digest:    selected.Digest.String(),
-		Platform:  request.platform,
-		Source:    request.source,
-		SizeBytes: sizeBytes,
-		CreatedAt: createdAt,
-		UpdatedAt: committedAt,
+		LayoutPath: s.layoutRoot,
+		Reference:  request.canonicalReference,
+		Digest:     selected.Digest.String(),
+		Platform:   request.platform,
+		Source:     request.source,
+		SizeBytes:  sizeBytes,
+		CreatedAt:  createdAt,
+		UpdatedAt:  committedAt,
 	}
 	if err := s.metadata.Put(ctx, img); err != nil {
 		return chamberImage.Image{}, err

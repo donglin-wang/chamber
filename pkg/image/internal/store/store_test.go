@@ -49,13 +49,47 @@ func TestStorePullCommitsToSharedLayoutAndReusesMetadata(t *testing.T) {
 		t.Fatalf("Layout() = %q, want shared layout under root", layoutPath)
 	}
 	assertSharedLayoutHasDescriptor(t, layoutPath, reference, img.Digest)
+	if img.LayoutPath != layoutPath || !filepath.IsAbs(img.LayoutPath) {
+		t.Fatalf("Image.LayoutPath = %q, want absolute store layout %q", img.LayoutPath, layoutPath)
+	}
 
 	cached, err := store.Pull(context.Background(), chamberImage.PullRequest{Reference: reference})
 	if err != nil {
 		t.Fatalf("Pull(cached) error = %v", err)
 	}
+	if cached.LayoutPath != img.LayoutPath {
+		t.Fatalf("cached LayoutPath = %q, want %q", cached.LayoutPath, img.LayoutPath)
+	}
 	if !cached.CreatedAt.Equal(img.CreatedAt) || !cached.UpdatedAt.Equal(img.UpdatedAt) {
 		t.Fatalf("cached timestamps changed: got %v/%v want %v/%v", cached.CreatedAt, cached.UpdatedAt, img.CreatedAt, img.UpdatedAt)
+	}
+}
+
+func TestStoreImagesUseCurrentLayoutAfterRelocation(t *testing.T) {
+	store, root := newTestStore(t, chamberImage.Config{})
+	registry := testutil.NewFakeRegistry(t)
+	reference, _ := registry.PushRandomImage(t, "library/relocated", "latest")
+	original, err := store.Pull(context.Background(), chamberImage.PullRequest{Reference: reference})
+	if err != nil {
+		t.Fatal(err)
+	}
+	movedRoot := filepath.Join(filepath.Dir(root), "relocated")
+	if err := os.Rename(root, movedRoot); err != nil {
+		t.Fatal(err)
+	}
+	store, _ = newTestStoreAtRoot(t, chamberImage.Config{}, movedRoot)
+	images, err := store.List(context.Background(), chamberImage.ListRequest{})
+	if err != nil || len(images) != 1 {
+		t.Fatalf("List = %#v, %v", images, err)
+	}
+	cached, err := store.Pull(context.Background(), chamberImage.PullRequest{Reference: reference})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, img := range []chamberImage.Image{images[0], cached} {
+		if img.LayoutPath != filepath.Join(movedRoot, "layout") || img.Digest != original.Digest {
+			t.Fatalf("relocated image lost layout or identity: %#v", img)
+		}
 	}
 }
 
@@ -236,8 +270,8 @@ func TestStoreRealBuildKitDockerfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Layout() error = %v", err)
 	}
-	if layoutPath != filepath.Join(root, "layout") {
-		t.Fatalf("Layout() = %q, want shared layout below root", layoutPath)
+	if layoutPath != filepath.Join(root, "layout") || img.LayoutPath != layoutPath {
+		t.Fatalf("Layout() = %q, Image.LayoutPath = %q, want shared layout below root", layoutPath, img.LayoutPath)
 	}
 	assertSharedLayoutHasDescriptor(t, layoutPath, img.Reference, img.Digest)
 }

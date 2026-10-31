@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 )
 
@@ -72,6 +74,25 @@ type RunRequest struct {
 	Stderr []io.Writer
 }
 
+// RunImageRequest configures execution of an image without manual provisioning.
+type RunImageRequest struct {
+	// ContainerID optionally selects the runtime identity. Empty generates a
+	// unique ID, available through Container.ID.
+	ContainerID string
+
+	// Process overrides the image's process defaults. Terminal defaults to false
+	// because the runtime supports non-interactive execution only.
+	Process chamberBundle.ProcessSpec
+
+	// Mounts adds filesystem mounts to the provisioned bundle.
+	Mounts []chamberBundle.Mount
+
+	// Stdin, Stdout, and Stderr have the same meaning as in RunRequest.
+	Stdin  io.Reader
+	Stdout []io.Writer
+	Stderr []io.Writer
+}
+
 // ContainerResult is the result returned after Chamber waits for a container
 // process or maps a launch failure.
 type ContainerResult struct {
@@ -106,7 +127,7 @@ const (
 
 // ContainerHandle controls and reads logs for one existing runtime container.
 type ContainerHandle interface {
-	// ID returns the container ID supplied when the bundle was provisioned.
+	// ID returns the runtime container identity.
 	ID() string
 
 	// StdoutPath returns the default stdout log path.
@@ -123,6 +144,8 @@ type ContainerHandle interface {
 
 	// Delete removes runtime state for the container. If force is true, the
 	// runtime may terminate a still-running container as part of deletion.
+	// For a Container returned by RunImage, successful deletion also removes
+	// its runtime-owned bundle. Logs remain available until DeleteLog is called.
 	Delete(ctx context.Context, force bool) error
 
 	// ReadLog reads one default runtime log stream.
@@ -142,10 +165,17 @@ type Container interface {
 	Wait(ctx context.Context) (ContainerResult, error)
 }
 
-// Runtime starts provisioned bundles.
+// Runtime runs local images and ready OCI bundles.
 type Runtime interface {
 	// Descriptor returns implementation identity and artifact paths.
 	Descriptor() Descriptor
+
+	// RunImage provisions the local image and starts a container. The runtime
+	// owns the provisioner and bundle workspace. Call Wait to observe completion
+	// and Delete to release runtime state and the bundle, including after a
+	// canceled Wait. Launch failures release the bundle before returning.
+	// The context controls provisioning and launch work only.
+	RunImage(ctx context.Context, image chamberImage.Image, request RunImageRequest) (Container, error)
 
 	// Run starts the container and returns a Container that owns subsequent
 	// lifecycle operations. The context controls launch work only; after Run
@@ -153,7 +183,8 @@ type Runtime interface {
 	Run(ctx context.Context, request RunRequest) (Container, error)
 
 	// Open returns a handle for an existing container owned by this runtime
-	// root. Reopened handles support control and logs, but not Wait.
+	// root. Reopened handles support control and logs, but not Wait or cleanup
+	// of bundles owned by the original RunImage Container.
 	Open(ctx context.Context, containerID string) (ContainerHandle, error)
 }
 

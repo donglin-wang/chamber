@@ -176,27 +176,27 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 		for _, writer := range cfg.Stderr {
 			_, _ = writer.Write([]byte("go test stderr\n"))
 		}
-		if err := os.MkdirAll(filepath.Join(cfg.EvidenceDir, "daemon-supervised"), 0700); err != nil {
-			t.Errorf("create daemon-supervised proof dir: %v", err)
+		if err := os.MkdirAll(filepath.Join(cfg.EvidenceDir, "direct-sdk"), 0700); err != nil {
+			t.Errorf("create direct-sdk proof dir: %v", err)
 			return 1, err
 		}
-		if err := os.MkdirAll(filepath.Join(cfg.EvidenceDir, "daemon-lifecycle", "short-success"), 0700); err != nil {
-			t.Errorf("create daemon-lifecycle proof dir: %v", err)
+		if err := os.MkdirAll(filepath.Join(cfg.EvidenceDir, "direct-sdk", "short-success"), 0700); err != nil {
+			t.Errorf("create direct-sdk proof dir: %v", err)
 			return 1, err
 		}
-		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "daemon-supervised", "stdout.log"), []byte("daemon supervised stdout\n"), 0600); err != nil {
-			t.Errorf("write daemon-supervised stdout proof: %v", err)
+		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "direct-sdk", "stdout.log"), []byte("SDK stdout\n"), 0600); err != nil {
+			t.Errorf("write direct-sdk stdout proof: %v", err)
 			return 1, err
 		}
-		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "daemon-lifecycle", "short-success", "stdout.log"), []byte("lifecycle stdout\n"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "direct-sdk", "short-success", "stdout.log"), []byte("lifecycle stdout\n"), 0600); err != nil {
 			t.Errorf("write lifecycle stdout proof: %v", err)
 			return 1, err
 		}
-		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "daemon-lifecycle", "proof.json"), []byte(`{"passed":true}`+"\n"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "direct-sdk", "proof.json"), []byte(`{"passed":true}`+"\n"), 0600); err != nil {
 			t.Errorf("write lifecycle proof JSON: %v", err)
 			return 1, err
 		}
-		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "daemon-lifecycle", "chamberd"), []byte("binary should be hidden\n"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(cfg.EvidenceDir, "direct-sdk", "test-binary"), []byte("binary should be hidden\n"), 0600); err != nil {
 			t.Errorf("write hidden proof file: %v", err)
 			return 1, err
 		}
@@ -242,12 +242,12 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 		"go test stdout",
 		"===== ci stderr =====",
 		"go test stderr",
-		"===== proof/daemon-lifecycle/proof.json =====",
+		"===== proof/direct-sdk/proof.json =====",
 		`{"passed":true}`,
-		"===== proof/daemon-lifecycle/short-success/stdout.log =====",
+		"===== proof/direct-sdk/short-success/stdout.log =====",
 		"lifecycle stdout",
-		"===== proof/daemon-supervised/stdout.log =====",
-		"daemon supervised stdout",
+		"===== proof/direct-sdk/stdout.log =====",
+		"SDK stdout",
 	} {
 		if !strings.Contains(wholeLog, want) {
 			t.Fatalf("whole log missing %q:\n%s", want, wholeLog)
@@ -264,11 +264,11 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 		t.Fatalf("stdout log status/body = %d/%q, want 200/go test stdout", stdoutRecorder.Code, stdoutRecorder.Body.String())
 	}
 
-	proofRequest := httptest.NewRequest(http.MethodGet, "/runs/"+admitted.RunID+"/logs/proof/daemon-supervised/stdout.log", nil)
+	proofRequest := httptest.NewRequest(http.MethodGet, "/runs/"+admitted.RunID+"/logs/proof/direct-sdk/stdout.log", nil)
 	proofRecorder := httptest.NewRecorder()
 	server.routes().ServeHTTP(proofRecorder, proofRequest)
-	if proofRecorder.Code != http.StatusOK || proofRecorder.Body.String() != "daemon supervised stdout\n" {
-		t.Fatalf("proof log status/body = %d/%q, want daemon supervised stdout", proofRecorder.Code, proofRecorder.Body.String())
+	if proofRecorder.Code != http.StatusOK || proofRecorder.Body.String() != "SDK stdout\n" {
+		t.Fatalf("proof log status/body = %d/%q, want SDK stdout", proofRecorder.Code, proofRecorder.Body.String())
 	}
 
 	runRequest := httptest.NewRequest(http.MethodGet, "/runs/"+admitted.RunID, nil)
@@ -281,10 +281,10 @@ func TestWebhookRunsCheckoutAndCIAndServesLogs(t *testing.T) {
 	if err := json.Unmarshal(runRecorder.Body.Bytes(), &record); err != nil {
 		t.Fatalf("decode run record: %v", err)
 	}
-	if record.Logs["proof.daemon-supervised/stdout.log"] != "/runs/"+admitted.RunID+"/logs/proof/daemon-supervised/stdout.log" {
-		t.Fatalf("daemon-supervised proof link = %q, want proof log route", record.Logs["proof.daemon-supervised/stdout.log"])
+	if record.Logs["proof.direct-sdk/stdout.log"] != "/runs/"+admitted.RunID+"/logs/proof/direct-sdk/stdout.log" {
+		t.Fatalf("direct-sdk proof link = %q, want proof log route", record.Logs["proof.direct-sdk/stdout.log"])
 	}
-	if _, ok := record.Logs["proof.daemon-lifecycle/chamberd"]; ok {
+	if _, ok := record.Logs["proof.direct-sdk/test-binary"]; ok {
 		t.Fatalf("run record exposes non-text proof file: %#v", record.Logs)
 	}
 }

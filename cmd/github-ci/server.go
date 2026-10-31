@@ -258,7 +258,6 @@ func (s *server) runCIForPush(parent context.Context, record runRecord, dirs run
 		Root:        filepath.Join(s.cfg.Root, "ci"),
 		Workdir:     dirs.checkout,
 		Image:       ciPipeline.DefaultImage,
-		DaemonURL:   s.cfg.DaemonURL,
 		EvidenceDir: filepath.Join(dirs.logs, "proof"),
 		Timeout:     s.cfg.RunTimeout,
 		Keep:        false,

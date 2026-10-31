@@ -3,24 +3,24 @@
 Chamber is a Go SDK for point-and-shoot OCI container execution. The
 SDK under `pkg/` can pull an image into a caller-owned root, provision an OCI
 runtime bundle, run that bundle with `runc`, and read runtime logs.
-These primitives are intended to be a foundation for derived products such as a
-container daemon, workflow orchestration, and container orchestration layers.
+Use it to embed container execution in Go applications, automation, and CI
+pipelines. Pull or build an image, pass it to `Runtime.RunImage`, and wait for
+the result. The runtime manages bundle provisioning and its workspace.
 
 **The current repo is experimental and interfaces are volatile.**
-
-The daemon code in this repository is still experimental and is not part of the
-SDK contract.
 
 ## SDK Scope
 
 - `pkg/image`: public image contracts and config; `pkg/image/factory` creates
-  image pullers that store OCI image layouts under a caller-provided root.
+  image stores for pulling and building images under a caller-provided root.
+  Returned images carry their local layout path, digest, and platform.
 - `pkg/bundle`: public bundle contracts and config; `pkg/bundle/factory`
   creates bundle provisioners. The current internal implementation, `directory`,
   unpacks an OCI layout into a rootless OCI runtime bundle.
 - `pkg/runtime`: public runtime contracts and config; `pkg/runtime/factory`
   creates runtimes. The current internal implementation, `runc`, downloads or
-  reuses a pinned `runc` binary and runs provisioned bundles.
+  reuses a pinned `runc` binary. `RunImage` provisions and runs a local image;
+  `Run` accepts a ready bundle for callers that need manual provisioning.
 - `pkg/shared`: common error codes, filesystem policy, logging, image reference
   validation, container ID validation, and capability vocabulary.
 
@@ -39,57 +39,32 @@ their own concurrency management. In practice, that means serializing or locking
 access to shared image roots, bundle roots, runtime roots, container IDs, log
 paths, cleanup, and cancellation decisions.
 
-## Experimental Daemon
-
-The `daemon/` package contains the current daemon prototype. It is the first
-in-repo composition layer built from the public SDK packages rather than a
-separate container engine.
-
-Today the daemon:
-
-- loads daemon config from defaults, a JSON config file, and command-line
-  overrides;
-- composes the image puller, bundle provisioner, runtime, and metadata store;
-- exposes an HTTP API for health checks, OpenAPI docs, image pull, container
-  run, container list, and stored container logs;
-- records image, operation, and container metadata under daemon-owned storage;
-- runs with `go run ./daemon -http-addr 127.0.0.1:8080`;
-- provides `go run ./daemon storage remove --yes` for deleting the derived
-  Chamber storage root.
-
-The daemon is still a prototype. It shows how a local authority can own
-metadata, operation state, runtime composition, and API responses, but it should
-not yet be treated as a stable production daemon with complete recovery,
-lease-aware garbage collection, cancellation, or multi-client coordination.
-
 ## Cleanup Contract
 
-The SDK does not provide all-in-one container cleanup. Callers are responsible
-for cleaning up the storage they asked each package to create.
+For each successful `RunImage` call:
 
-For one container run, callers should:
+1. Call `Container.Wait` to observe completion. This waits for the `runc run`
+   process and closes Chamber-owned stdout/stderr log file handles.
+2. Call `Container.Delete(ctx, true)` to terminate any remaining container,
+   remove runtime state, and remove its provisioned bundle. This is also safe
+   after `Wait` cancels or `runc` has already removed its state.
+3. Call `Container.DeleteLog` for each stream when logs are no longer needed.
 
-1. Call `Container.Wait` for every successful `Runtime.Run` call. This reaps the
-   `runc run` process and closes Chamber-owned stdout/stderr log file handles.
-2. Call `Container.Delete` with `force` set to `true` when runtime state may still exist
-   or the container may still be running. This delegates to `runc delete
-   --force`.
-3. Call `Provisioner.Remove` with the returned `ProvisionedBundle` when the
-   runnable bundle and any provisioner-owned mounts, snapshots, or layers are
-   no longer needed.
-4. Call `Container.DeleteLog` for default stdout/stderr logs when they are no
-   longer needed, or remove `<RuntimeRoot>/logs/<containerID>` directly.
-5. Decide separately when to remove shared image layouts and the cached runtime
-   binary.
+`RunImage` creates private bundles under `<RuntimeRoot>/bundles`, with staging
+under `<RuntimeRoot>/tmp/bundles`. Launch failures remove the provisioned bundle
+before returning an error. Cleanup failures are returned so callers can handle
+them. Keep the image's layout available until provisioning finishes.
 
-If a process crashes or a caller skips these steps, per-container runtime state,
-bundle directories, logs, or temporary files may remain in the caller-provided
-roots.
+`Runtime.Run` remains available for ready OCI bundles. Those bundles remain
+caller-owned: use `Provisioner.Remove` after the container is deleted.
 
-The context passed to `Runtime.Run` controls launch work only. After `Run`
-returns a `Container`, that container owns lifecycle operations; use
-`Container.Signal`, `Container.Delete`, and `Container.Wait` to stop, remove, and
-observe it.
+Shared images and cached binaries remain until the caller removes them. Callers
+also own cleanup after a process crash; there is no automatic crash recovery.
+
+The contexts passed to `RunImage` and `Run` control provisioning/launch work
+only. After either returns a `Container`, use its lifecycle methods to control
+execution. `Wait` with a canceled context attempts to force-delete the container;
+call `Delete` afterward to complete cleanup and handle any errors.
 
 ## Requirements
 
@@ -99,26 +74,34 @@ observe it.
   `runc` runtime.
 - Non-interactive processes. The current `runc` runtime does not allocate PTYs,
   so bundles with `process.terminal=true` are rejected. Set
-  `ProcessSpec.Terminal` to `false` when running images that default to a
-  terminal process.
+  `ProcessSpec.Terminal` to `false` when provisioning images for `Run`.
+  `RunImage` defaults to a non-terminal process.
 - The current rootless bundle provisioner maps only container UID/GID `0` to the
   current host user and group. Images or `ProcessUser` overrides that require
   unmapped UIDs or GIDs are rejected during bundle provisioning.
 - Network access when pulling images or when the pinned `runc` binary is not
   already present in the configured runtime binary directory.
 
-## Minimal SDK Flow
+## Quick Start: Pull and Run
+
+On a rootless-capable Linux host, save this as `main.go` in a Go module that
+depends on Chamber and run `go run .`. It pulls Alpine and runs `/bin/echo`
+inside the container, printing `hello from chamber` and `exit=0`.
+
+The example uses a private temporary root and removes its image, bundle, runtime
+binary, and logs when it finishes. Cleanup errors are ignored here for brevity;
+applications should handle them according to their cleanup policy.
 
 ```go
 package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
@@ -127,8 +110,13 @@ import (
 
 func main() {
 	ctx := context.Background()
-	root := "/tmp/chamber-sdk-demo"
+	root, err := os.MkdirTemp("", "chamber-sdk-demo-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(root)
 
+	// 1. Pull an image into the image store.
 	imageStore, err := chamberImageFactory.NewStore(chamberImage.DefaultConfig(root))
 	if err != nil {
 		panic(err)
@@ -139,42 +127,19 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	imageLayout, err := imageStore.Layout(ctx)
-	if err != nil {
-		panic(err)
-	}
 
-	provisioner, err := chamberBundleFactory.NewProvisioner(chamberBundle.DefaultConfig(root))
-	if err != nil {
-		panic(err)
-	}
-	terminal := false
-	bundleID := "demo-bundle"
-	containerID := "demo-container"
-	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
-		BundleID:      bundleID,
-		ImageLayout:   imageLayout,
-		ImageRef:      image.Reference,
-		ImageDigest:   image.Digest,
-		ImagePlatform: image.Platform,
-		Process: chamberBundle.ProcessSpec{
-			Args:     []string{"/bin/sh", "-c", "echo hello from chamber"},
-			Terminal: &terminal,
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-
+	// 2. Create a runtime; it owns the provisioner and bundle workspace.
 	runc, err := chamberRuntimeFactory.NewRuntime(ctx, chamberRuntime.DefaultConfig(root))
 	if err != nil {
 		panic(err)
 	}
-	container, err := runc.Run(ctx, chamberRuntime.RunRequest{
-		ContainerID: containerID,
-		BundlePath:  provisioned.BundlePath,
-		Stdout:      []io.Writer{os.Stdout},
-		Stderr:      []io.Writer{os.Stderr},
+	// 3. Run the image, stream output, and wait for it to exit.
+	container, err := runc.RunImage(ctx, image, chamberRuntime.RunImageRequest{
+		Process: chamberBundle.ProcessSpec{
+			Args: []string{"/bin/echo", "hello from chamber"},
+		},
+		Stdout: []io.Writer{os.Stdout},
+		Stderr: []io.Writer{os.Stderr},
 	})
 	if err != nil {
 		panic(err)
@@ -183,46 +148,33 @@ func main() {
 		_ = container.Delete(context.Background(), true)
 		_ = container.DeleteLog(chamberRuntime.StdoutLogStream)
 		_ = container.DeleteLog(chamberRuntime.StderrLogStream)
-		_ = provisioner.Remove(context.Background(), provisioned)
 	}()
 	result, err := container.Wait(ctx)
 	if err != nil {
 		panic(err)
 	}
-	stdout, err := container.ReadLog(chamberRuntime.StdoutLogStream)
-	if err != nil {
-		panic(err)
+	if result.ExitCode != nil {
+		fmt.Printf("exit=%d\n", *result.ExitCode)
 	}
-	fmt.Printf("exit=%d stdout=%s", result.ExitCode, stdout)
 }
 ```
 
-`image.Store.Build` uses an ephemeral rootless BuildKit daemon for Dockerfile
+`image.Store.Build` uses an ephemeral rootless BuildKit server for Dockerfile
 builds. Set `image.BuildKit.BuildctlPath`, `BuildkitdPath`,
 `RootlessKitPath`, and `RuncPath` to use local tool binaries. When paths are
 empty, Chamber downloads and caches managed BuildKit, RootlessKit, and runc
-binaries below `<image-root>/bin`. Per-build daemon state, runtime directories,
+binaries below `<image-root>/bin`. Per-build server state, runtime directories,
 home/config directories, temporary files, and the OCI output archive stay below
-`<image-root>/tmp` and are removed after the build.
-
-See [host-assumption-validator-plan.md](host-assumption-validator-plan.md) for
-the Linux/rootless host assumptions Chamber should validate before build,
-provision, and run workflows.
+the configured image `TmpRoot` and are removed after the build.
 
 ## Validation
 
-Use an explicit Go cache in restricted macOS environments:
-
-```sh
-GOCACHE=/tmp/chamber-go-cache go test ./pkg/... ./daemon/...
-GOCACHE=/tmp/chamber-go-cache go vet ./pkg/... ./daemon/...
-```
-
-BuildKit builds require Linux rootless host support. Validate the normal package
-surface with:
+Run tests and vet on a rootless-capable Linux host or inside a Linux VM such as
+Lima. Native macOS is a development host, not a supported execution target.
 
 ```sh
 GOCACHE=/tmp/chamber-go-cache go test ./...
+GOCACHE=/tmp/chamber-go-cache go vet ./...
 ```
 
 The default test suite avoids real registry pulls and real Dockerfile builds. To
@@ -230,6 +182,18 @@ include integration coverage, opt in explicitly on a rootless-capable Linux
 host:
 
 ```sh
+CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/runtime/factory -run TestRunImageIntegration
 CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/image/internal/store -run TestStoreRealWorldBusybox
 CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/image/internal/store -run TestStoreRealBuildKit
 ```
+
+The optional dogfood test runs this repository's tests inside a container using
+`RunImage` with the checkout mounted at `/workspace`:
+
+```sh
+CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./cmd/github-ci/pipeline -run TestRunDogfoodIntegration
+```
+
+`cmd/github-ci` provides a GitHub webhook CI example built on the same SDK.
+It creates a separate root per admitted run; admission limits and retention
+belong to this application. The SDK does not manage shared-root concurrency.

@@ -37,7 +37,7 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
-func TestNewRuntimeCreatesConfiguredWorkspace(t *testing.T) {
+func TestNewRuntimeComposesBundleProvisioner(t *testing.T) {
 	root := t.TempDir()
 	runtimePath := filepath.Join(root, "runc")
 	if err := os.WriteFile(runtimePath, []byte("#!/bin/sh\n"), 0700); err != nil {
@@ -50,11 +50,25 @@ func TestNewRuntimeCreatesConfiguredWorkspace(t *testing.T) {
 	}
 
 	runtime, err := NewRuntime(context.Background(), config)
+	// Runtime host checks are stubbed above, but the composed provisioner
+	// still enforces its own rootless contract, including inside CI containers.
+	if os.Geteuid() == 0 {
+		if !errors.Is(err, chamberErrors.ErrUnsupportedHost) {
+			t.Fatalf("NewRuntime() as root error = %v, want unsupported host", err)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatalf("NewRuntime() error = %v", err)
 	}
 	if runtime == nil {
 		t.Fatal("NewRuntime() runtime = nil, want runtime")
+	}
+	for _, relative := range []string{"bundles", "tmp/bundles"} {
+		info, err := os.Stat(filepath.Join(config.RuntimeRoot, relative))
+		if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
+			t.Fatalf("private provisioning directory %s: info=%v, err=%v", relative, info, err)
+		}
 	}
 }
 

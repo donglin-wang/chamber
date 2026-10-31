@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRunc "github.com/donglin-wang/chamber/pkg/runtime/internal/runc"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
@@ -34,11 +36,10 @@ var runtimeWorkspaceRequirements = hostfs.FeatureSet{
 	AtomicFileRename: true,
 }
 
-// NewRuntime validates config, checks host and implementation name, creates
-// private runtime directories and package workspaces, installs or reuses
-// runtime artifacts as needed, and returns a ready runtime. The supplied context
-// controls construction work only; container lifecycle is owned by Container
-// values returned from Run.
+// NewRuntime validates config and the host, creates private runtime and bundle
+// workspaces, composes bundle provisioning, and installs or reuses the runtime
+// binary. The context controls construction only; containers returned from Run
+// and RunImage own their subsequent lifecycle.
 func NewRuntime(ctx context.Context, config chamberRuntime.Config) (chamberRuntime.Runtime, error) {
 	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
 		Root:         config.RuntimeRoot,
@@ -63,11 +64,10 @@ func NewRuntime(ctx context.Context, config chamberRuntime.Config) (chamberRunti
 	return NewRuntimeWithWorkspace(ctx, config, runtimeWorkspace, binaryWorkspace)
 }
 
-// NewRuntimeWithWorkspace validates config and the supplied package
-// workspaces, checks host and implementation name, creates private runtime
-// directories, installs or reuses runtime artifacts as needed, and returns a
-// ready runtime. The supplied context controls construction work only;
-// container lifecycle is owned by Container values returned from Run.
+// NewRuntimeWithWorkspace constructs a runtime using the supplied runtime and
+// binary workspaces. It also creates a private bundle workspace below RuntimeRoot
+// and composes provisioning for RunImage. The context controls construction only;
+// returned containers own their subsequent lifecycle.
 func NewRuntimeWithWorkspace(ctx context.Context, config chamberRuntime.Config, runtimeWorkspace *hostfs.Workspace, binaryWorkspace *hostfs.Workspace) (chamberRuntime.Runtime, error) {
 	return newRuntime(ctx, config, runtimeWorkspace, binaryWorkspace)
 }
@@ -135,7 +135,14 @@ func newRuntime(ctx context.Context, config chamberRuntime.Config, runtimeWorksp
 
 	switch config.Name {
 	case chamberRuntime.RuntimeNameRunc:
-		return chamberRunc.New(ctx, config, runtimeWorkspace, binaryWorkspace)
+		bundleConfig := chamberBundle.DefaultConfig(config.RuntimeRoot)
+		bundleConfig.TmpRoot = filepath.Join(config.RuntimeRoot, "tmp", "bundles")
+		bundleConfig.Logging = config.Logging
+		provisioner, err := chamberBundleFactory.NewProvisioner(bundleConfig)
+		if err != nil {
+			return nil, err
+		}
+		return chamberRunc.New(ctx, config, runtimeWorkspace, binaryWorkspace, provisioner)
 	default:
 		return nil, fmt.Errorf("%w: unsupported runtime name %q (supported: %s)", chamberErrors.ErrInvalidRequest, config.Name, strings.Join(SupportedNames(), ", "))
 	}

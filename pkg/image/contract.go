@@ -142,8 +142,13 @@ const (
 	SourceBuilt Source = "built"
 )
 
-// Image is a committed image record in a Store.
+// Image identifies a committed image and its local OCI layout. The layout
+// must remain available while provisioning containers from this image.
 type Image struct {
+	// LayoutPath is the absolute path to the store's shared OCI image layout.
+	// It is populated by Pull, Build, and List, including cached results.
+	LayoutPath string
+
 	// Reference is the canonical image reference.
 	Reference string
 

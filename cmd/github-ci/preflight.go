@@ -3,20 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
-	"time"
 
 	ciPipeline "github.com/donglin-wang/chamber/cmd/github-ci/pipeline"
-	"github.com/google/uuid"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
@@ -61,28 +57,6 @@ func runPreflight(ctx context.Context, cfg config) error {
 	if err := runTinyContainerPreflight(ctx, cfg); err != nil {
 		return fmt.Errorf("run tiny Chamber container preflight: %w", err)
 	}
-	if err := requireDaemonHealth(ctx, cfg.DaemonURL); err != nil {
-		return err
-	}
-	return nil
-}
-
-func requireDaemonHealth(ctx context.Context, daemonURL string) error {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(daemonURL, "/")+"/healthz", nil)
-	if err != nil {
-		return fmt.Errorf("create daemon health request: %w", err)
-	}
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return fmt.Errorf("check chamberd health: %w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("check chamberd health: HTTP %d", response.StatusCode)
-	}
 	return nil
 }
 
@@ -104,123 +78,40 @@ func runTinyContainerPreflight(ctx context.Context, cfg config) error {
 	preflightRoot := filepath.Join(cfg.Root, "chamber-root")
 	imageConfig := chamberImage.DefaultConfig(preflightRoot)
 	imageConfig.TmpRoot = filepath.Join(preflightRoot, "tmp", "images")
-	bundleConfig := chamberBundle.DefaultConfig(preflightRoot)
-	bundleConfig.TmpRoot = filepath.Join(preflightRoot, "tmp", "bundles")
 	runtimeConfig := chamberRuntime.DefaultConfig(preflightRoot)
 	runtimeConfig.RuntimeTmpRoot = filepath.Join(preflightRoot, "tmp", "runtime")
 	runtimeConfig.RuntimeBinTmpRoot = filepath.Join(preflightRoot, "tmp", "runtime-bin")
 
-	imageWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    imageConfig.Root,
-		TmpRoot: imageConfig.TmpRoot,
-		Requirements: hostfs.FeatureSet{
-			PrivateDirs:           true,
-			FileFsync:             true,
-			AtomicFileRename:      true,
-			AtomicDirectoryRename: true,
-		},
-	})
+	imageStore, err := chamberImageFactory.NewStore(imageConfig)
 	if err != nil {
 		return err
 	}
-	bundleWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    bundleConfig.Root,
-		TmpRoot: bundleConfig.TmpRoot,
-		Requirements: hostfs.FeatureSet{
-			PrivateDirs:           true,
-			AtomicDirectoryRename: true,
-		},
-	})
+	image, err := imageStore.Pull(ctx, chamberImage.PullRequest{Reference: preflightImage})
 	if err != nil {
 		return err
 	}
-	runtimeWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    runtimeConfig.RuntimeRoot,
-		TmpRoot: runtimeConfig.RuntimeTmpRoot,
-		Requirements: hostfs.FeatureSet{
-			PrivateDirs:      true,
-			FileFsync:        true,
-			AtomicFileRename: true,
-		},
-	})
+	runtime, err := chamberRuntimeFactory.NewRuntime(ctx, runtimeConfig)
 	if err != nil {
 		return err
 	}
-	binaryWorkspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    runtimeConfig.RuntimeBinDir,
-		TmpRoot: runtimeConfig.RuntimeBinTmpRoot,
-		Requirements: hostfs.FeatureSet{
-			PrivateDirs:      true,
-			FileFsync:        true,
-			AtomicFileRename: true,
-		},
-	})
-	if err != nil {
-		return err
-	}
-	imageStore, err := chamberImageFactory.NewStoreWithWorkspace(imageConfig, imageWorkspace)
-	if err != nil {
-		return err
-	}
-	image, err := imageStore.Pull(ctx, chamberImage.PullRequest{
-		Reference: preflightImage,
-		Platform:  chamberImage.Platform{OS: "linux"},
-	})
-	if err != nil {
-		return err
-	}
-	imageLayout, err := imageStore.Layout(ctx)
-	if err != nil {
-		return err
-	}
-	provisioner, err := chamberBundleFactory.NewProvisionerWithWorkspace(bundleConfig, bundleWorkspace)
-	if err != nil {
-		return err
-	}
-	runtime, err := chamberRuntimeFactory.NewRuntimeWithWorkspace(ctx, runtimeConfig, runtimeWorkspace, binaryWorkspace)
-	if err != nil {
-		return err
-	}
-	terminal := false
-	containerID := "chamber-ci-preflight-" + uuid.NewString()
-	bundleID := "chamber-ci-preflight-bundle-" + uuid.NewString()
-	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
-		BundleID:      bundleID,
-		ImageLayout:   imageLayout,
-		ImageRef:      image.Reference,
-		ImageDigest:   image.Digest,
-		ImagePlatform: image.Platform,
-		Process: chamberBundle.ProcessSpec{
-			Args:     []string{"true"},
-			Terminal: &terminal,
-		},
+	container, err := runtime.RunImage(ctx, image, chamberRuntime.RunImageRequest{
+		Process: chamberBundle.ProcessSpec{Args: []string{"true"}},
 	})
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if err := provisioner.Remove(context.Background(), provisioned); err != nil {
-			logging.Error(ctx, "remove preflight bundle failed", "bundle", provisioned.BundlePath, "error", err)
+		if err := container.Delete(context.Background(), true); err != nil {
+			logging.Error(ctx, "remove preflight container failed", "container_id", container.ID(), "error", err)
 		}
+		_ = container.DeleteLog(chamberRuntime.StdoutLogStream)
+		_ = container.DeleteLog(chamberRuntime.StderrLogStream)
 	}()
-	container, err := runtime.Run(ctx, chamberRuntime.RunRequest{
-		ContainerID: containerID,
-		BundlePath:  provisioned.BundlePath,
-	})
+	result, err := container.Wait(ctx)
 	if err != nil {
 		return err
 	}
-	result, waitErr := container.Wait(ctx)
-	if deleteErr := container.Delete(context.Background(), true); deleteErr != nil && waitErr == nil {
-		waitErr = deleteErr
-	}
-	_ = container.DeleteLog(chamberRuntime.StdoutLogStream)
-	_ = container.DeleteLog(chamberRuntime.StderrLogStream)
-	if waitErr != nil {
-		return waitErr
-	}
-	exitCode := ciPipeline.ContainerExitCode(result)
-	if exitCode != 0 {
+	if exitCode := ciPipeline.ContainerExitCode(result); exitCode != 0 {
 		return fmt.Errorf("preflight container exited with code %d", exitCode)
 	}
 	return nil

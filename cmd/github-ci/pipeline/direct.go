@@ -11,14 +11,12 @@ import (
 	"time"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
-	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberRuntimeFactory "github.com/donglin-wang/chamber/pkg/runtime/factory"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
 	"github.com/donglin-wang/chamber/pkg/shared/logging"
-	"github.com/google/uuid"
 )
 
 const DefaultImage = "docker.io/library/golang:1.26.4-bookworm"
@@ -37,16 +35,13 @@ func GoTestCommand() []string {
 type Name string
 
 const (
-	DirectSDK        Name = "direct-sdk"
-	DaemonSupervised Name = "daemon-supervised"
-	DaemonLifecycle  Name = "daemon-lifecycle"
+	DirectSDK Name = "direct-sdk"
 )
 
 type Config struct {
 	Root        string
 	Workdir     string
 	Image       string
-	DaemonURL   string
 	EvidenceDir string
 	Timeout     time.Duration
 	Keep        bool
@@ -55,40 +50,14 @@ type Config struct {
 }
 
 func Names() []Name {
-	return []Name{DirectSDK, DaemonSupervised, DaemonLifecycle}
+	return []Name{DirectSDK}
 }
 
 func Run(ctx context.Context, cfg Config) (int, error) {
-	exitCode := 0
-	var runErr error
-	for _, name := range Names() {
-		code, err := runOne(ctx, cfg, name)
-		if code != 0 && exitCode == 0 {
-			exitCode = code
-		}
-		if err != nil {
-			runErr = errors.Join(runErr, fmt.Errorf("%s pipeline: %w", name, err))
-		}
-		if ctx != nil && ctx.Err() != nil {
-			break
-		}
-	}
-	return exitCode, runErr
-}
-
-func runOne(ctx context.Context, cfg Config, name Name) (int, error) {
 	if strings.TrimSpace(cfg.EvidenceDir) != "" {
-		cfg.EvidenceDir = filepath.Join(cfg.EvidenceDir, string(name))
+		cfg.EvidenceDir = filepath.Join(cfg.EvidenceDir, string(DirectSDK))
 	}
-	switch name {
-	case DirectSDK:
-		return RunDirectSDK(ctx, cfg)
-	case DaemonSupervised:
-		return RunDaemonSupervised(ctx, cfg)
-	case DaemonLifecycle:
-		return RunDaemonLifecycle(ctx, cfg)
-	}
-	return 1, fmt.Errorf("unsupported CI pipeline %q", name)
+	return RunDirectSDK(ctx, cfg)
 }
 
 func RunDirectSDK(ctx context.Context, cfg Config) (int, error) {
@@ -127,20 +96,6 @@ func RunDirectSDK(ctx context.Context, cfg Config) (int, error) {
 		return 1, fmt.Errorf("pull image %q: %w", cfg.Image, err)
 	}
 	logging.Info(ctx, "CI image pulled", "image_ref", image.Reference, "digest", image.Digest, "bytes", image.SizeBytes)
-	imageLayout, err := imageStore.Layout(ctx)
-	if err != nil {
-		return 1, fmt.Errorf("read image layout: %w", err)
-	}
-
-	bundleConfig, bundleWorkspace, err := bundleProvisionerConfig(root)
-	if err != nil {
-		return 1, err
-	}
-	provisioner, err := chamberBundleFactory.NewProvisionerWithWorkspace(bundleConfig, bundleWorkspace)
-	if err != nil {
-		return 1, fmt.Errorf("create bundle provisioner: %w", err)
-	}
-
 	runtimeConfig, runtimeWorkspace, runtimeBinaryWorkspace, err := runtimeConfig(root)
 	if err != nil {
 		return 1, err
@@ -152,40 +107,16 @@ func RunDirectSDK(ctx context.Context, cfg Config) (int, error) {
 	descriptor := runtime.Descriptor()
 	logging.Info(ctx, "CI runtime ready", "runtime", descriptor.Name, "version", descriptor.Version, "path", descriptor.BinaryPath)
 
-	terminal := false
-	containerID := "chamber-ci-" + uuid.NewString()
-	bundleID := "chamber-ci-bundle-" + uuid.NewString()
-	provisioned, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
-		BundleID:      bundleID,
-		ImageLayout:   imageLayout,
-		ImageRef:      image.Reference,
-		ImageDigest:   image.Digest,
-		ImagePlatform: image.Platform,
+	container, err := runtime.RunImage(ctx, image, chamberRuntime.RunImageRequest{
 		Process: chamberBundle.ProcessSpec{
-			Args:     GoTestCommand(),
-			Cwd:      "/workspace",
-			Terminal: &terminal,
+			Args: GoTestCommand(),
+			Cwd:  "/workspace",
 		},
 		Mounts: []chamberBundle.Mount{
 			{Source: workspace, Target: "/workspace"},
 		},
-	})
-	if err != nil {
-		return 1, fmt.Errorf("provision CI bundle: %w", err)
-	}
-	if !cfg.Keep {
-		defer func() {
-			if err := provisioner.Remove(context.Background(), provisioned); err != nil {
-				logging.Error(ctx, "remove CI bundle failed", "bundle", provisioned.BundlePath, "error", err)
-			}
-		}()
-	}
-
-	container, err := runtime.Run(ctx, chamberRuntime.RunRequest{
-		ContainerID: containerID,
-		BundlePath:  provisioned.BundlePath,
-		Stdout:      cfg.Stdout,
-		Stderr:      cfg.Stderr,
+		Stdout: cfg.Stdout,
+		Stderr: cfg.Stderr,
 	})
 	if err != nil {
 		return 1, fmt.Errorf("run CI container: %w", err)
@@ -312,23 +243,6 @@ func imageStoreConfig(root string) (chamberImage.Config, *hostfs.Workspace, erro
 	})
 	if err != nil {
 		return chamberImage.Config{}, nil, fmt.Errorf("create image workspace: %w", err)
-	}
-	return config, workspace, nil
-}
-
-func bundleProvisionerConfig(root string) (chamberBundle.Config, *hostfs.Workspace, error) {
-	config := chamberBundle.DefaultConfig(root)
-	config.TmpRoot = filepath.Join(root, "tmp", "bundles")
-	workspace, err := hostfs.NewWorkspace(hostfs.Config{
-		Root:    config.Root,
-		TmpRoot: config.TmpRoot,
-		Requirements: hostfs.FeatureSet{
-			PrivateDirs:           true,
-			AtomicDirectoryRename: true,
-		},
-	})
-	if err != nil {
-		return chamberBundle.Config{}, nil, fmt.Errorf("create bundle workspace: %w", err)
 	}
 	return config, workspace, nil
 }
