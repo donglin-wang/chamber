@@ -74,6 +74,55 @@ func TestNewWorkspaceRejectsUnsafeExistingRoot(t *testing.T) {
 	}
 }
 
+func TestCheckPrivateDirectoryDoesNotCreateOrChangePaths(t *testing.T) {
+	root := t.TempDir()
+	missing := filepath.Join(root, "missing")
+	if err := CheckPrivateDirectory(missing); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing directory: %v", err)
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Fatalf("check created a directory: %v", err)
+	}
+	private := filepath.Join(root, "private")
+	if err := os.Mkdir(private, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckPrivateDirectory(private); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(private)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("check wrote filesystem probes: %v %v", entries, err)
+	}
+	if err := os.Chmod(private, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckPrivateDirectory(private); !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+		t.Fatalf("public directory accepted: %v", err)
+	}
+	info, err := os.Stat(private)
+	if err != nil || info.Mode().Perm() != 0755 {
+		t.Fatalf("check changed directory permissions: %v %v", info, err)
+	}
+}
+
+func TestCheckPrivateDirectoryRejectsSymlinkPaths(t *testing.T) {
+	root := t.TempDir()
+	private := filepath.Join(root, "private")
+	if err := os.Mkdir(private, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(private, link); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{link, filepath.Join(link, "missing")} {
+		if err := CheckPrivateDirectory(path); !errors.Is(err, chamberErrors.ErrInvalidRequest) {
+			t.Fatalf("symlink path %q accepted: %v", path, err)
+		}
+	}
+}
+
 func TestNewWorkspaceRecordsUnsafeExistingRootWhenPrivateDirsUnrequested(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "unsafe")
 	if err := os.Mkdir(root, 0755); err != nil {
@@ -339,4 +388,37 @@ func assertPrivateDir(t *testing.T, path string) {
 func isDirectoryProbe(src string, dst string) bool {
 	return strings.Contains(filepath.Base(src), ".hostfs-dir-src-") ||
 		strings.Contains(filepath.Base(dst), ".hostfs-dir-dst-")
+}
+
+func TestCreatePrivateDirectoryRejectsUnsafePaths(t *testing.T) {
+	root := t.TempDir()
+	private := filepath.Join(root, "private", "child")
+	if err := CreatePrivateDirectory(private); err != nil {
+		t.Fatal(err)
+	}
+	assertPrivateDir(t, filepath.Dir(private))
+	assertPrivateDir(t, private)
+	if err := CreatePrivateDirectory(private); err != nil {
+		t.Fatalf("existing private directory: %v", err)
+	}
+	if err := os.Chmod(private, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := CreatePrivateDirectory(private); err == nil {
+		t.Fatal("accepted public directory")
+	}
+	info, _ := os.Stat(private)
+	if info.Mode().Perm() != 0755 {
+		t.Fatal("silently changed directory permissions")
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(private, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := CreatePrivateDirectory(filepath.Join(link, "child")); err == nil {
+		t.Fatal("created through a symlink")
+	}
+	if _, err := os.Stat(filepath.Join(private, "child")); !os.IsNotExist(err) {
+		t.Fatal("created child through unsafe path")
+	}
 }

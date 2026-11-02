@@ -93,11 +93,11 @@ func newWorkspace(config Config, ops filesystemOps) (*Workspace, error) {
 		tmpRoot: tmpRoot,
 		ops:     ops,
 	}
-	rootPrivate, err := workspace.checkWorkspaceDir(root, "workspace root", config.Requirements.PrivateDirs)
+	rootPrivate, err := createDirectory(root, "workspace root", config.Requirements.PrivateDirs, ops)
 	if err != nil {
 		return nil, err
 	}
-	tmpPrivate, err := workspace.checkWorkspaceDir(tmpRoot, "workspace temporary root", config.Requirements.PrivateDirs)
+	tmpPrivate, err := createDirectory(tmpRoot, "workspace temporary root", config.Requirements.PrivateDirs, ops)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func (w *Workspace) MkdirPrivate(relDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := w.mkdirPrivateAbs(path, "private directory"); err != nil {
+	if _, err := createDirectory(path, "private directory", true, w.ops); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -183,7 +183,7 @@ func (w *Workspace) MkdirTemp(relDir string, pattern string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := w.mkdirPrivateAbs(parent, "temporary directory parent"); err != nil {
+	if _, err := createDirectory(parent, "temporary directory parent", true, w.ops); err != nil {
 		return "", err
 	}
 	path, err := os.MkdirTemp(parent, pattern)
@@ -201,7 +201,7 @@ func (w *Workspace) CreateTemp(relDir string, pattern string) (*os.File, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := w.mkdirPrivateAbs(parent, "temporary file parent"); err != nil {
+	if _, err := createDirectory(parent, "temporary file parent", true, w.ops); err != nil {
 		return nil, err
 	}
 	file, err := os.CreateTemp(parent, pattern)
@@ -227,16 +227,10 @@ func (w *Workspace) tmpPath(rel string) (string, error) {
 }
 
 func scopedPath(root string, rel string) (string, error) {
-	if strings.TrimSpace(rel) == "" {
-		return "", fmt.Errorf("%w: workspace-relative path is required", chamberErrors.ErrInvalidRequest)
-	}
-	clean := filepath.Clean(rel)
-	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("%w: workspace-relative path %q escapes workspace", chamberErrors.ErrInvalidRequest, rel)
-	}
-	if err := rejectSymlinkComponents(root, clean); err != nil {
+	if err := RejectSymlinkComponents(root, rel); err != nil {
 		return "", err
 	}
+	clean := filepath.Clean(rel)
 	path, err := securejoin.SecureJoin(root, clean)
 	if err != nil {
 		return "", fmt.Errorf("%w: resolve workspace-relative path %q below %q: %w", chamberErrors.ErrInvalidRequest, rel, root, err)
@@ -244,7 +238,16 @@ func scopedPath(root string, rel string) (string, error) {
 	return path, nil
 }
 
-func rejectSymlinkComponents(root string, cleanRel string) error {
+// RejectSymlinkComponents rejects symlinks in a relative path below root.
+// The root itself is caller-owned and is not inspected by this check.
+func RejectSymlinkComponents(root string, rel string) error {
+	if strings.TrimSpace(rel) == "" {
+		return fmt.Errorf("%w: workspace-relative path is required", chamberErrors.ErrInvalidRequest)
+	}
+	cleanRel := filepath.Clean(rel)
+	if filepath.IsAbs(cleanRel) || cleanRel == ".." || strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("%w: workspace-relative path %q escapes workspace", chamberErrors.ErrInvalidRequest, rel)
+	}
 	if cleanRel == "." {
 		return nil
 	}
@@ -278,47 +281,36 @@ func absolutePath(label string, path string) (string, error) {
 	return filepath.Clean(abs), nil
 }
 
-func (w *Workspace) mkdirPrivateAbs(path string, label string) error {
-	info, err := w.ops.stat(path)
-	if err == nil {
-		return privateDirMetadata(path, info)
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("%w: read %s metadata %q: %w", chamberErrors.ErrFilesystemFailed, label, path, err)
-	}
-	if err := w.ops.mkdirAll(path, 0700); err != nil {
-		return fmt.Errorf("%w: create %s %q: %w", chamberErrors.ErrFilesystemFailed, label, path, err)
-	}
-	info, err = w.ops.stat(path)
+// CreatePrivateDirectory creates missing directories with mode 0700. Existing
+// directories must be private and owned by this user; symlink paths are rejected.
+func CreatePrivateDirectory(path string) error {
+	path, err := absolutePath("private directory", path)
 	if err != nil {
-		return fmt.Errorf("%w: read %s metadata %q: %w", chamberErrors.ErrFilesystemFailed, label, path, err)
+		return err
 	}
-	return privateDirMetadata(path, info)
+	if err := CheckPrivateDirectory(path); !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	_, err = createDirectory(path, "private directory", true, defaultFilesystemOps())
+	return err
 }
 
-func (w *Workspace) checkWorkspaceDir(path string, label string, requirePrivate bool) (bool, error) {
-	info, err := w.ops.stat(path)
-	if err == nil {
-		if !info.IsDir() {
-			return false, fmt.Errorf("%w: %q is not a directory", chamberErrors.ErrInvalidRequest, path)
+// All directory creation shares the same metadata and permission checks.
+// Workspace feature detection also needs to report whether privacy is available
+// when the caller has not required it.
+func createDirectory(path, label string, requirePrivate bool, ops filesystemOps) (bool, error) {
+	info, err := ops.stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := ops.mkdirAll(path, 0700); err != nil {
+			return false, fmt.Errorf("%w: create %s %q: %w", chamberErrors.ErrFilesystemFailed, label, path, err)
 		}
-		if err := privateDirMetadata(path, info); err != nil {
-			if requirePrivate {
-				return false, err
-			}
-			return false, nil
-		}
-		return true, nil
+		info, err = ops.stat(path)
 	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("%w: read %s metadata %q: %w", chamberErrors.ErrFilesystemFailed, label, path, err)
-	}
-	if err := w.ops.mkdirAll(path, 0700); err != nil {
-		return false, fmt.Errorf("%w: create %s %q: %w", chamberErrors.ErrFilesystemFailed, label, path, err)
-	}
-	info, err = w.ops.stat(path)
 	if err != nil {
 		return false, fmt.Errorf("%w: read %s metadata %q: %w", chamberErrors.ErrFilesystemFailed, label, path, err)
+	}
+	if !info.IsDir() {
+		return false, fmt.Errorf("%w: %q is not a directory", chamberErrors.ErrInvalidRequest, path)
 	}
 	if err := privateDirMetadata(path, info); err != nil {
 		if requirePrivate {
@@ -327,6 +319,27 @@ func (w *Workspace) checkWorkspaceDir(path string, label string, requirePrivate 
 		return false, nil
 	}
 	return true, nil
+}
+
+// CheckPrivateDirectory verifies an existing directory's owner and permissions,
+// rejecting symlinks anywhere in its path. It never creates or changes files.
+func CheckPrivateDirectory(path string) error {
+	path, err := absolutePath("private directory", path)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel("/", path)
+	if err != nil {
+		return err
+	}
+	if err := RejectSymlinkComponents("/", rel); err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	return privateDirMetadata(path, info)
 }
 
 func privateDirMetadata(path string, info os.FileInfo) error {
