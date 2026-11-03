@@ -1,9 +1,14 @@
-FROM golang:1.26.4-bookworm
+FROM golang:1.27.3-trixie
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates uidmap util-linux \
+    && apt-get install -y --no-install-recommends ca-certificates libcap2-bin uidmap util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1000 chamber \
+    && printf 'chamber:2000:65534\n' > /etc/subuid \
+    && printf 'chamber:2000:65534\n' > /etc/subgid \
+    && chmod 0755 /usr/bin/newuidmap /usr/bin/newgidmap \
+    && setcap cap_setuid=ep /usr/bin/newuidmap \
+    && setcap cap_setgid=ep /usr/bin/newgidmap \
     && install -d -o chamber -g chamber /run/buildkit
 
 ENV HOME=/home/chamber \

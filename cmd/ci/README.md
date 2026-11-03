@@ -9,7 +9,7 @@ produce an error status.
 For example, a Go repository can provide this root `Dockerfile.chamber`:
 
 ```dockerfile
-FROM golang:1.26.4
+FROM golang:1.27.3-trixie
 WORKDIR /workspace
 COPY . .
 CMD ["go", "test", "-count=1", "./..."]
