@@ -63,9 +63,10 @@ func TestRunImageIntegration(t *testing.T) {
 		})
 		result, err := container.Wait(ctx)
 		if err != nil || result.ExitCode == nil || *result.ExitCode != 7 {
-			t.Fatalf("Wait = %#v, %v; want exit 7", result, err)
+			stderr, _ := container.ReadLog(chamberRuntime.StderrLogStream)
+			t.Fatalf("Wait = %#v, %v; want exit 7; stderr=%s", result, err, stderr)
 		}
-		bundles, err := os.ReadDir(filepath.Join(config.RuntimeRoot, "bundles"))
+		bundles, err := filepath.Glob(filepath.Join(config.RuntimeRoot, "bundles", "image-*"))
 		if err != nil || len(bundles) != 1 {
 			t.Fatalf("bundle ownership before Delete: entries=%v, err=%v", bundles, err)
 		}
@@ -99,12 +100,13 @@ func TestRunImageIntegration(t *testing.T) {
 		defer stop()
 		_, err = container.Wait(waitCtx)
 		if !errors.Is(err, chamberErrors.ErrCanceled) {
-			t.Fatalf("Wait = %v, want canceled", err)
+			stderr, _ := container.ReadLog(chamberRuntime.StderrLogStream)
+			t.Fatalf("Wait = %v, want canceled; stderr=%s", err, stderr)
 		}
 	})
 
 	for _, relative := range []string{"bundles", "tmp/bundles"} {
-		entries, err := os.ReadDir(filepath.Join(config.RuntimeRoot, relative))
+		entries, err := filepath.Glob(filepath.Join(config.RuntimeRoot, relative, "*image-*"))
 		if err != nil || len(entries) != 0 {
 			t.Fatalf("leftover resources in %s: entries=%v, err=%v", relative, entries, err)
 		}

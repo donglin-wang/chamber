@@ -24,7 +24,7 @@ store lookup or manual provisioner setup.
 - Do not add shared-root concurrency management, operation records, leases,
   recovery controllers, distributed scheduling, or background services to the
   SDK. Application-level policies belong in embedding applications.
-- `cmd/github-ci` is an SDK consumer and automation example. Its webhook
+- `cmd/ci` is an SDK consumer and automation example. Its webhook
   admission limits, per-run roots, and retention are application policy.
 
 ## Linux and Host Execution
@@ -39,6 +39,11 @@ store lookup or manual provisioner setup.
 - All process spawning under `pkg/` must use Chamber's shared subprocess helper
   for Linux `Pdeathsig` protection. Flag raw `exec.Command`/`CommandContext`
   unless there is an explicit documented reason to opt out.
+- Use `hostfs.Workspace` for managed binary directories and download staging,
+  following the BuildKit and runtime installers. Keep pinned checksums, cached
+  binary verification, and atomic installation. The directory provisioner's umoci
+  helper lives in its workspace's `.bin` directory, which cannot collide with a
+  valid bundle ID. Keep its executable version aligned with the umoci Go library.
 - Rootful support is a future privilege-boundary expansion, not a quiet option
   on existing APIs. User namespaces, cgroups, networking, capabilities, and
   seccomp are isolation settings rather than extra privilege modes.
@@ -143,7 +148,7 @@ For public API changes, audit every affected caller in the same turn:
 - Search with `rg` for changed and removed types, fields, methods, and names.
 - Compile affected downstream packages using
   `GOCACHE=/tmp/chamber-go-cache GOOS=linux go test -c`.
-- Include `cmd/github-ci` for changes to runtime, bundle, image, process
+- Include `cmd/ci` for changes to runtime, bundle, image, process
   environment, logs/results, filesystem roots, or host execution.
 - Include relevant factories and concrete adapters for root SDK changes.
 - Update every result-field caller when a field's meaning or type changes.

@@ -34,8 +34,8 @@ func TestNewUsesCurrentUserIDMap(t *testing.T) {
 
 	wantUID := uint32(os.Geteuid())
 	wantGID := uint32(os.Getegid())
-	if provisioner.uid != wantUID || provisioner.gid != wantGID {
-		t.Fatalf("uid/gid = %d/%d, want %d/%d", provisioner.uid, provisioner.gid, wantUID, wantGID)
+	if provisioner.namespace.uid[0].HostID != wantUID || provisioner.namespace.gid[0].HostID != wantGID {
+		t.Fatalf("uid/gid = %d/%d, want %d/%d", provisioner.namespace.uid[0].HostID, provisioner.namespace.gid[0].HostID, wantUID, wantGID)
 	}
 }
 
@@ -128,6 +128,11 @@ func TestProvisionCanonicalizesImageRefBeforeUnpack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+
+	// Keep this reference-resolution unit test independent of host subordinate IDs
+	// and helper downloads. Mapped unpacking has separate integration coverage.
+	provisioner.namespace.uid = provisioner.namespace.uid[:1]
+	provisioner.namespace.gid = provisioner.namespace.gid[:1]
 
 	provisioned, err := provisioner.Provision(context.Background(), chamberBundle.ProvisionRequest{
 		BundleID:    "bundle-1",

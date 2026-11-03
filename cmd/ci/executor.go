@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
@@ -154,8 +156,8 @@ func executeJob(ctx context.Context, c config, j job, output io.Writer) (state s
 	return "success", nil
 }
 
-// Reopened handles cannot remove RunImage bundles. First delete the runc state,
-// then remove this application's entire private per-job workspace.
+// Reopened handles cannot remove RunImage bundles. After stopping the container,
+// use the provisioner to remove files owned by mapped users before deleting work.
 func cleanupJob(ctx context.Context, c config, j job) error {
 	work := jobWorkspace(c, j.ID)
 	statePath := filepath.Join(work, "run", "runtime", j.ID)
@@ -173,6 +175,40 @@ func cleanupJob(ctx context.Context, c config, j job) error {
 		}
 	} else if !os.IsNotExist(err) {
 		return err
+	}
+	bundleConfig := chamberBundle.DefaultConfig(filepath.Join(work, "run", "runtime"))
+	bundleConfig.TmpRoot = filepath.Join(work, "run", "runtime", "tmp", "bundles")
+	var provisioner chamberBundle.Provisioner
+	for _, directory := range []string{bundleConfig.Root, bundleConfig.TmpRoot} {
+		entries, err := os.ReadDir(directory)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			id := entry.Name()
+			if directory == bundleConfig.TmpRoot {
+				var staging bool
+				id, _, staging = strings.Cut(strings.TrimPrefix(id, "."), ".tmp-")
+				if !staging {
+					continue
+				}
+			}
+			if provisioner == nil {
+				provisioner, err = chamberBundleFactory.NewProvisioner(bundleConfig)
+				if err != nil {
+					return err
+				}
+			}
+			if err := provisioner.Remove(ctx, chamberBundle.ProvisionedBundle{BundleID: id}); err != nil {
+				return err
+			}
+		}
 	}
 	return os.RemoveAll(work)
 }

@@ -76,11 +76,16 @@ call `Delete` afterward to complete cleanup and handle any errors.
   so bundles with `process.terminal=true` are rejected. Set
   `ProcessSpec.Terminal` to `false` when provisioning images for `Run`.
   `RunImage` defaults to a non-terminal process.
-- The current rootless bundle provisioner maps only container UID/GID `0` to the
-  current host user and group. Images or `ProcessUser` overrides that require
-  unmapped UIDs or GIDs are rejected during bundle provisioning.
-- Network access when pulling images or when the pinned `runc` binary is not
-  already present in the configured runtime binary directory.
+- Non-root image users require subordinate UID/GID ranges for the current host
+  user in `/etc/subuid` and `/etc/subgid`, plus `unshare`, `newuidmap`, and
+  `newgidmap`. Chamber uses the first configured range automatically: container
+  ID 0 maps to the caller, and IDs starting at 1 map to the subordinate range.
+  Named image users, numeric users, primary groups, and `ProcessUser` UID/GID
+  overrides use these mappings. Without subordinate ranges, only container
+  UID/GID 0 is supported. Supplementary groups remain restricted by rootless runc.
+- Network access when pulling images or downloading managed tools. Mapped
+  bundle unpacking automatically installs a checksum-verified umoci helper
+  alongside the provisioner's bundles; container deletion retains this cache.
 
 ## Quick Start: Pull and Run
 
@@ -187,13 +192,8 @@ CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/image
 CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./pkg/image/internal/store -run TestStoreRealBuildKit
 ```
 
-The optional dogfood test runs this repository's tests inside a container using
-`RunImage` with the checkout mounted at `/workspace`:
-
-```sh
-CHAMBER_INTEGRATION=1 GOCACHE=/tmp/chamber-go-cache go test -count=1 ./cmd/github-ci/pipeline -run TestRunDogfoodIntegration
-```
-
-`cmd/github-ci` provides a GitHub webhook CI example built on the same SDK.
-It creates a separate root per admitted run; admission limits and retention
-belong to this application. The SDK does not manage shared-root concurrency.
+[`cmd/ci`](cmd/ci/README.md) is a standalone GitHub webhook receiver. It checks
+out the event's exact commit, builds the root `Dockerfile.chamber`, runs its
+default command, and links the GitHub commit status to live logs. It owns its
+SQLite-backed job queue and execution limits, per-job roots, interrupted-job
+recovery, and authenticated self-update. These policies remain outside the SDK.

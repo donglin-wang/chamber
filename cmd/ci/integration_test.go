@@ -430,7 +430,7 @@ func TestDroppedContainerCleanupIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	container, err := rt.RunImage(ctx, image, chamberRuntime.RunImageRequest{ContainerID: j.ID, Process: chamberBundle.ProcessSpec{Args: []string{"/bin/sh", "-c", "echo dropped-job; sleep 60"}}})
+	container, err := rt.RunImage(ctx, image, chamberRuntime.RunImageRequest{ContainerID: j.ID, Process: chamberBundle.ProcessSpec{Args: []string{"/bin/sh", "-c", "echo dropped-job; mkdir /locked; echo private > /locked/value; chmod 000 /locked; sleep 60"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

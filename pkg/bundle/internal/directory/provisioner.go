@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -37,10 +38,10 @@ var _ chamberBundle.Provisioner = (*Provisioner)(nil)
 
 type Provisioner struct {
 	config    chamberBundle.Config
-	uid       uint32
-	gid       uint32
+	namespace userNamespace
 	workspace *hostfs.Workspace
 	logger    *chamberLogging.SlogLogger
+	client    *http.Client
 }
 
 func New(config chamberBundle.Config, workspace *hostfs.Workspace) (*Provisioner, error) {
@@ -51,12 +52,16 @@ func New(config chamberBundle.Config, workspace *hostfs.Workspace) (*Provisioner
 		return nil, err
 	}
 
+	namespace, err := currentUserNamespace()
+	if err != nil {
+		return nil, err
+	}
 	provisioner := &Provisioner{
 		config:    config,
-		uid:       uint32(os.Geteuid()),
-		gid:       uint32(os.Getegid()),
+		namespace: namespace,
 		workspace: workspace,
 		logger:    logger,
+		client:    http.DefaultClient,
 	}
 	return provisioner, nil
 }
@@ -70,7 +75,7 @@ func (p *Provisioner) Descriptor() chamberBundle.Descriptor {
 func (p *Provisioner) Provision(
 	ctx context.Context,
 	request chamberBundle.ProvisionRequest,
-) (chamberBundle.ProvisionedBundle, error) {
+) (provisioned chamberBundle.ProvisionedBundle, err error) {
 	if ctx == nil {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -112,7 +117,9 @@ func (p *Provisioner) Provision(
 	committed := false
 	defer func() {
 		if !committed {
-			_ = os.RemoveAll(tmpBundle)
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			err = errors.Join(err, removeBundleDirectory(cleanupCtx, tmpBundle))
 		}
 	}()
 
@@ -130,17 +137,16 @@ func (p *Provisioner) Provision(
 		return chamberBundle.ProvisionedBundle{}, err
 	}
 
-	uidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.uid, Size: 1}}
-	gidMappings := []specs.LinuxIDMapping{{ContainerID: 0, HostID: p.gid, Size: 1}}
-	mapOptions := layer.MapOptions{
-		UIDMappings: uidMappings,
-		GIDMappings: gidMappings,
-		Rootless:    true,
-	}
-	if err := layer.UnpackManifest(ctx, engine, tmpBundle, manifest, &layer.UnpackOptions{
-		OnDiskFormat: layer.DirRootfs{MapOptions: mapOptions},
-	}); err != nil {
-		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: unpack OCI image into runtime bundle: %w", chamberErrors.ErrBundlePrepareFailed, err)
+	uidMappings, gidMappings := p.namespace.uid, p.namespace.gid
+	if p.namespace.multipleIDs() {
+		if err := p.unpackMapped(ctx, request.ImageLayout, tmpBundle, manifest); err != nil {
+			return chamberBundle.ProvisionedBundle{}, err
+		}
+	} else {
+		mapOptions := layer.MapOptions{UIDMappings: uidMappings, GIDMappings: gidMappings, Rootless: true}
+		if err := layer.UnpackManifest(ctx, engine, tmpBundle, manifest, &layer.UnpackOptions{OnDiskFormat: layer.DirRootfs{MapOptions: mapOptions}}); err != nil {
+			return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: unpack OCI image into runtime bundle: %w", chamberErrors.ErrBundlePrepareFailed, err)
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return chamberBundle.ProvisionedBundle{}, fmt.Errorf("%w: bundle provisioning canceled after unpack: %w", chamberErrors.ErrCanceled, err)
@@ -150,9 +156,13 @@ func (p *Provisioner) Provision(
 	if err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
-	if err := createBindMountTargetPaths(filepath.Join(tmpBundle, "rootfs"), mounts); err != nil {
-		return chamberBundle.ProvisionedBundle{}, err
+	if !p.namespace.multipleIDs() {
+		if err := createBindMountTargetPaths(filepath.Join(tmpBundle, "rootfs"), mounts); err != nil {
+			return chamberBundle.ProvisionedBundle{}, err
+		}
 	}
+	// For mapped bundles, runc creates targets inside the namespace, where image
+	// directories owned privately by non-root users are accessible during setup.
 	if err := writeRootlessRuntimeSpec(tmpBundle, uidMappings, gidMappings, request.Process, mounts); err != nil {
 		return chamberBundle.ProvisionedBundle{}, err
 	}
@@ -162,7 +172,7 @@ func (p *Provisioner) Provision(
 	}
 	committed = true
 
-	provisioned := chamberBundle.ProvisionedBundle{
+	provisioned = chamberBundle.ProvisionedBundle{
 		BundleID:   request.BundleID,
 		BundlePath: finalBundle,
 	}
@@ -211,7 +221,7 @@ func (p *Provisioner) Remove(ctx context.Context, bundle chamberBundle.Provision
 	if err := removeTemporaryBundles(ctx, p.workspace.TmpRoot(), bundle.BundleID); err != nil {
 		return err
 	}
-	if err := removeRuntimeMutatedBundle(ctx, bundlePath); err != nil {
+	if err := removeBundleDirectory(ctx, bundlePath); err != nil {
 		return err
 	}
 	chamberLogging.InfoWith(p.logger, ctx, "removed bundle",
@@ -234,7 +244,7 @@ func removeTemporaryBundles(ctx context.Context, tmpRoot string, containerID str
 		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) {
 			continue
 		}
-		if err := removeRuntimeMutatedBundle(ctx, filepath.Join(tmpRoot, entry.Name())); err != nil {
+		if err := removeBundleDirectory(ctx, filepath.Join(tmpRoot, entry.Name())); err != nil {
 			return err
 		}
 	}

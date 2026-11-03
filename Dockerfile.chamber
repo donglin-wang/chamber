@@ -1,0 +1,20 @@
+FROM golang:1.26.4-bookworm
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates uidmap util-linux \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 1000 chamber \
+    && install -d -o chamber -g chamber /run/buildkit
+
+ENV HOME=/home/chamber \
+    GOPATH=/home/chamber/go \
+    GOCACHE=/home/chamber/.cache/go-build \
+    CHAMBER_INTEGRATION=1
+
+USER chamber
+WORKDIR /home/chamber/workspace
+COPY --chown=chamber:chamber go.mod go.sum ./
+RUN go mod download
+COPY --chown=chamber:chamber pkg ./pkg
+
+CMD ["go", "test", "-count=1", "-v", "-timeout=20m", "./pkg/..."]
