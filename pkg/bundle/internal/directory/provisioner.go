@@ -524,6 +524,25 @@ func setupRootlessRuntimeSpec(
 		spec.Linux = &specs.Linux{}
 	}
 
+	// Mapping helpers may gain their file capabilities within the outer user
+	// namespace. Effective and ambient capabilities stay unchanged.
+	spec.Process.NoNewPrivileges = false
+	if spec.Process.Capabilities == nil {
+		spec.Process.Capabilities = &specs.LinuxCapabilities{}
+	}
+	for _, capability := range []string{"CAP_SETUID", "CAP_SETGID"} {
+		if !slices.Contains(spec.Process.Capabilities.Bounding, capability) {
+			spec.Process.Capabilities.Bounding = append(spec.Process.Capabilities.Bounding, capability)
+		}
+	}
+	// Locked proc submounts prevent nested runtimes from mounting proc for their
+	// own PID namespaces. Keep every other path restriction.
+	isProcPath := func(path string) bool {
+		return path == "/proc" || strings.HasPrefix(path, "/proc/")
+	}
+	spec.Linux.MaskedPaths = slices.DeleteFunc(spec.Linux.MaskedPaths, isProcPath)
+	spec.Linux.ReadonlyPaths = slices.DeleteFunc(spec.Linux.ReadonlyPaths, isProcPath)
+
 	spec.Linux.UIDMappings = uidMappings
 	spec.Linux.GIDMappings = gidMappings
 	spec.Linux.Namespaces = pruneNamespaces(spec.Linux.Namespaces)

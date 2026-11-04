@@ -131,7 +131,11 @@ func executeJob(ctx context.Context, c config, j job, output io.Writer) (state s
 		return "error", err
 	}
 	fmt.Fprintln(output, "Running image")
-	container, err := rt.RunImage(ctx, image, chamberRuntime.RunImageRequest{ContainerID: j.ID, Stdout: []io.Writer{output}, Stderr: []io.Writer{output}})
+	container, err := rt.RunImage(ctx, image, chamberRuntime.RunImageRequest{
+		ContainerID: j.ID,
+		Stdout:      []io.Writer{output},
+		Stderr:      []io.Writer{output},
+	})
 	if err != nil {
 		return "error", err
 	}
@@ -198,6 +202,11 @@ func cleanupJob(ctx context.Context, c config, j job) error {
 				if !staging {
 					continue
 				}
+			}
+			// Provisioner workspaces also contain private helper storage such as
+			// .bin, which is deliberately outside the bundle-ID namespace.
+			if chamberBundle.ValidateBundleID(id) != nil {
+				continue
 			}
 			if provisioner == nil {
 				provisioner, err = chamberBundleFactory.NewProvisioner(bundleConfig)

@@ -128,6 +128,7 @@ type Provisioner interface {
 	// Provision creates a runnable OCI bundle view. It owns image unpacking,
 	// spec generation or patching, temporary staging, and any storage resources
 	// needed to make BundlePath ready for a runtime.
+	// Chamber provisioning permits nested rootless containers by default.
 	Provision(ctx context.Context, request ProvisionRequest) (ProvisionedBundle, error)
 
 	// Remove releases all provisioner-owned resources for a bundle, including

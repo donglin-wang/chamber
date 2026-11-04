@@ -10,6 +10,7 @@ import (
 	"time"
 
 	chamberBundle "github.com/donglin-wang/chamber/pkg/bundle"
+	chamberBundleFactory "github.com/donglin-wang/chamber/pkg/bundle/factory"
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberImageFactory "github.com/donglin-wang/chamber/pkg/image/factory"
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
@@ -102,6 +103,56 @@ func TestRunImageIntegration(t *testing.T) {
 		if !errors.Is(err, chamberErrors.ErrCanceled) {
 			stderr, _ := container.ReadLog(chamberRuntime.StderrLogStream)
 			t.Fatalf("Wait = %v, want canceled; stderr=%s", err, stderr)
+		}
+	})
+
+	t.Run("ready bundle remains caller-owned", func(t *testing.T) {
+		provisioner, err := chamberBundleFactory.NewProvisioner(chamberBundle.DefaultConfig(filepath.Join(root, "caller")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		terminal := false
+		ready, err := provisioner.Provision(ctx, chamberBundle.ProvisionRequest{
+			BundleID: "ready", ImageLayout: image.LayoutPath, ImageRef: image.Reference,
+			ImageDigest: image.Digest, ImagePlatform: image.Platform,
+			Process: chamberBundle.ProcessSpec{Terminal: &terminal, Args: []string{"/bin/sh", "-ec", "cat /input; echo ready-bundle-ok"}},
+			Mounts:  []chamberBundle.Mount{{Source: mounted, Target: "/input"}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var container chamberRuntime.Container
+		t.Cleanup(func() {
+			if container != nil {
+				if err := container.Delete(context.Background(), true); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+			if err := provisioner.Remove(context.Background(), ready); err != nil {
+				t.Error(err)
+			}
+		})
+		original, err := os.ReadFile(filepath.Join(ready.BundlePath, "config.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		container, err = rt.Run(ctx, chamberRuntime.RunRequest{ContainerID: "ready-bundle", BundlePath: ready.BundlePath})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := container.Wait(ctx)
+		stdout, _ := container.ReadLog(chamberRuntime.StdoutLogStream)
+		stderr, _ := container.ReadLog(chamberRuntime.StderrLogStream)
+		if err != nil || result.ExitCode == nil || *result.ExitCode != 0 || !strings.Contains(string(stdout), "mounted inputready-bundle-ok") {
+			t.Fatalf("result=%+v error=%v stdout=%s stderr=%s", result, err, stdout, stderr)
+		}
+		if err := container.Delete(ctx, true); err != nil {
+			t.Fatal(err)
+		}
+		after, err := os.ReadFile(filepath.Join(ready.BundlePath, "config.json"))
+		if err != nil || string(after) != string(original) {
+			t.Fatalf("caller spec changed or was removed: %v", err)
 		}
 	})
 

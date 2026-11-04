@@ -52,3 +52,24 @@ func TestCheckoutRequiresExactCommitAndRootDockerfile(t *testing.T) {
 		})
 	}
 }
+
+func TestCleanupJobSkipsProvisionerHelperDirectories(t *testing.T) {
+	s := testServer(t)
+	j := job{ID: "helper-cleanup"}
+	work := jobWorkspace(s.config, j.ID)
+	for _, relative := range []string{"bundles/.bin", "tmp/bundles/.bin"} {
+		helper := filepath.Join(work, "run", "runtime", relative, "umoci")
+		if err := os.MkdirAll(filepath.Dir(helper), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(helper, []byte("managed helper"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := cleanupJob(context.Background(), s.config, j); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(work); !os.IsNotExist(err) {
+		t.Fatalf("workspace remains: %v", err)
+	}
+}

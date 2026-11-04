@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -62,6 +63,55 @@ func TestResolveRequestDefaultsDockerfileAndNormalizesPlatform(t *testing.T) {
 	}
 	if !reflect.DeepEqual(resolved.buildArgs, map[string]string{"ALPHA": "1", "BETA": "2"}) {
 		t.Fatalf("buildArgs = %#v, want request build args", resolved.buildArgs)
+	}
+}
+
+func TestRemoveBuildDirectoryRecoversPrivateSnapshots(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("requires an unprivileged user to exercise permission failures")
+	}
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			root := privateTempDir(t)
+			path := filepath.Join(root, "snapshot")
+			locked := filepath.Join(path, "private")
+			if err := os.MkdirAll(locked, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(locked, "owned"), []byte("snapshot"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(locked, 0000); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(locked, 0700) })
+			marker := filepath.Join(root, "mapping-helper-called")
+			// This fake checks the mapping-helper invocation and then runs its
+			// cleanup command. Real mapped ownership is covered by CI integration.
+			script := "#!/bin/sh\nset -eu\ntest \"$1\" = --net=host\nshift\ntouch \"$0.called\"\n"
+			if fail {
+				script += "exit 42\n"
+			} else {
+				script += "exec \"$@\"\n"
+			}
+			if err := os.WriteFile(marker, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			b := Builder{paths: toolPaths{rootlesskit: marker}}
+			err := b.removeBuildDirectory(path)
+			if fail {
+				if !errors.Is(err, chamberErrors.ErrFilesystemFailed) {
+					t.Fatalf("cleanup error = %v, want filesystem failure", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			} else if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatalf("snapshot remains: %v", err)
+			}
+			if _, err := os.Stat(marker + ".called"); err != nil {
+				t.Fatalf("mapping helper was not invoked: %v", err)
+			}
+		})
 	}
 }
 

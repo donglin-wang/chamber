@@ -66,7 +66,7 @@ func New(ctx context.Context, config chamberImage.BuildKitConfig, workspace *hos
 	return builder, nil
 }
 
-func (b Builder) Build(ctx context.Context, request chamberImage.BuildRequest, outputLayout string) error {
+func (b Builder) Build(ctx context.Context, request chamberImage.BuildRequest, outputLayout string) (err error) {
 	if err := validateBuildContext(ctx); err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func (b Builder) Build(ctx context.Context, request chamberImage.BuildRequest, o
 	if err != nil {
 		return err
 	}
-	defer cleanup()
+	defer func() { err = errors.Join(err, cleanup()) }()
 
 	daemon, err := b.startBuildkitd(ctx, dirs)
 	if err != nil {
@@ -158,7 +158,7 @@ type buildDirectories struct {
 	outputArchive string
 }
 
-func (b Builder) createBuildDirectories(outputLayout string) (buildDirectories, func(), error) {
+func (b Builder) createBuildDirectories(outputLayout string) (buildDirectories, func() error, error) {
 	tmpRoot := filepath.Dir(outputLayout)
 	tmpRel, err := filepath.Rel(b.workspace.TmpRoot(), tmpRoot)
 	if err != nil || tmpRel == ".." || strings.HasPrefix(tmpRel, ".."+string(filepath.Separator)) {
@@ -211,13 +211,37 @@ func (b Builder) createBuildDirectories(outputLayout string) (buildDirectories, 
 		}
 		return buildDirectories{}, nil, fmt.Errorf("%w: close temporary OCI archive: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
-	cleanup := func() {
-		_ = os.Remove(dirs.outputArchive)
-		for _, path := range created {
-			_ = os.RemoveAll(path)
+	cleanup := func() error {
+		var cleanupErr error
+		if err := os.Remove(dirs.outputArchive); err != nil && !os.IsNotExist(err) {
+			cleanupErr = err
 		}
+		for _, path := range created {
+			cleanupErr = errors.Join(cleanupErr, b.removeBuildDirectory(path))
+		}
+		return cleanupErr
 	}
 	return dirs, cleanup, nil
+}
+
+// BuildKit snapshots may contain private directories owned by subordinate IDs.
+// Remove them inside the same mapping after the daemon stops, rather than
+// leaving inaccessible cache files for an embedding application's cleanup.
+func (b Builder) removeBuildDirectory(path string) error {
+	if err := os.RemoveAll(path); err == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	command := subprocess.CommandContext(ctx, b.paths.rootlesskit, "--net=host", "sh", "-ec", `chmod -R u+rwX -- "$1"
+exec rm -rf --one-file-system -- "$1"`, "chamber-buildkit-cleanup", path)
+	subprocess.SetProcessGroup(command)
+	command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
+	command.WaitDelay = 5 * time.Second
+	if output, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("%w: remove BuildKit directory %q: %w: %s", chamberErrors.ErrFilesystemFailed, path, err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func validateBuildKitSocketRoot(tmpRoot string) error {

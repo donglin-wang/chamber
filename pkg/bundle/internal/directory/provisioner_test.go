@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	goruntime "runtime"
 	"slices"
 	"strings"
@@ -229,6 +230,70 @@ func TestRemoveRejectsBundleOutsideProvisionerRoot(t *testing.T) {
 	}
 	if !errors.Is(err, chamberErrors.ErrInvalidRequest) {
 		t.Fatalf("Remove() error = %v, want invalid request code", err)
+	}
+}
+
+func TestRootlessProvisioningAllowsNestingAndPreservesUnrelatedSettings(t *testing.T) {
+	spec := specs.Spec{
+		Process: &specs.Process{
+			Args:            []string{"go", "test", "./pkg/..."},
+			User:            specs.User{UID: 1000, GID: 1000},
+			NoNewPrivileges: true,
+			Capabilities: &specs.LinuxCapabilities{
+				Bounding:    []string{"CAP_KILL"},
+				Effective:   []string{"CAP_KILL"},
+				Permitted:   []string{"CAP_KILL"},
+				Inheritable: []string{"CAP_KILL"},
+				Ambient:     []string{"CAP_KILL"},
+			},
+		},
+		Linux: &specs.Linux{
+			MaskedPaths:   []string{"/proc/kcore", "/sys/firmware", "/process"},
+			ReadonlyPaths: []string{"/proc", "/proc/sys", "/sys/other"},
+			Namespaces:    []specs.LinuxNamespace{{Type: specs.UserNamespace}, {Type: specs.MountNamespace}},
+			UIDMappings:   []specs.LinuxIDMapping{{ContainerID: 0, HostID: 501, Size: 1}, {ContainerID: 1, HostID: 100000, Size: 65536}},
+			GIDMappings:   []specs.LinuxIDMapping{{ContainerID: 0, HostID: 1000, Size: 1}, {ContainerID: 1, HostID: 100000, Size: 65536}},
+		},
+		Root: &specs.Root{Path: "rootfs"},
+	}
+	// Copy the spec through JSON so slice backing arrays are independent.
+	data, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var configured specs.Spec
+	if err := json.Unmarshal(data, &configured); err != nil {
+		t.Fatal(err)
+	}
+	// Reapplying provisioning defaults must not accumulate capability entries.
+	for range 2 {
+		if err := setupRootlessRuntimeSpec(&configured, spec.Linux.UIDMappings, spec.Linux.GIDMappings, chamberBundle.ProcessSpec{}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if configured.Process.NoNewPrivileges {
+		t.Fatal("mapping helpers cannot gain their file capabilities")
+	}
+	for _, capability := range []string{"CAP_KILL", "CAP_SETUID", "CAP_SETGID"} {
+		if !slices.Contains(configured.Process.Capabilities.Bounding, capability) {
+			t.Errorf("capability bound lacks %s", capability)
+		}
+	}
+	if len(configured.Process.Capabilities.Bounding) != 3 {
+		t.Fatalf("unexpected capability bounds: %v", configured.Process.Capabilities.Bounding)
+	}
+	if !reflect.DeepEqual(configured.Linux.MaskedPaths, []string{"/sys/firmware", "/process"}) ||
+		!reflect.DeepEqual(configured.Linux.ReadonlyPaths, []string{"/sys/other"}) {
+		t.Fatalf("unexpected nested proc policy: %+v", configured.Linux)
+	}
+	// All other process permissions, namespace mappings, and rootfs settings
+	// remain exactly as provisioned.
+	configured.Process.NoNewPrivileges = spec.Process.NoNewPrivileges
+	configured.Process.Capabilities.Bounding = spec.Process.Capabilities.Bounding
+	configured.Linux.MaskedPaths = spec.Linux.MaskedPaths
+	configured.Linux.ReadonlyPaths = spec.Linux.ReadonlyPaths
+	if !reflect.DeepEqual(configured, spec) {
+		t.Fatalf("provisioning changed unrelated container settings: %+v", configured)
 	}
 }
 

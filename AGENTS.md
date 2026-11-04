@@ -105,6 +105,19 @@ or compatibility layers before core execution contracts are solid.
 
 ## Clarity, Naming, and Refactors
 
+Proactively simplify changes around resource ownership and existing code. Put
+standard defaults in the package that creates the resource: bundle provisioning
+owns generated OCI spec defaults, while `Runtime.Run` executes caller-provided
+bundles unchanged and callers own externally prepared specs. Keep standard
+behavior automatic without per-caller switches. Remove adaptation layers made
+unnecessary by that placement, including spec copies, path rewriting, temporary
+artifacts, cleanup branches, and obsolete helpers or tests. Put SDK integration
+coverage in the owning SDK package; consumer tests should cover application
+behavior. Extend existing test files for related behavior, creating a separate
+file only when it provides a meaningful organizational boundary. Make these
+simplifications without waiting for a prompt, preserve useful coverage and
+ownership contracts, and aim for a clear net reduction in code and moving parts.
+
 - Keep changes as small and explicit as the contract permits. A seasoned Go
   reader should understand process stages, ownership, and side effects from
   names and nearby control flow.

@@ -520,6 +520,42 @@ esac
 	}
 }
 
+func TestRunPreservesCallerBundleSpec(t *testing.T) {
+	binaryPath := writeFakeRunc(t, privateTempDir(t), `
+case "$cmd" in
+run) cat config.json ;;
+delete) ;;
+*) exit 64 ;;
+esac
+`)
+	bundlePath := runtimeBundlePath(t)
+	original := `{"process":{"terminal":false,"noNewPrivileges":true,"capabilities":{"bounding":["CAP_KILL"]}},"linux":{"maskedPaths":["/proc/kcore"],"readonlyPaths":["/proc/sys"]},"root":{"path":"rootfs"},"mounts":[{"type":"bind","source":"input","destination":"/input"}],"callerExtension":true}`
+	if err := os.WriteFile(filepath.Join(bundlePath, "config.json"), []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rt := runtimeWithBinary(t, binaryPath, privateTempDir(t))
+	container, err := rt.Run(context.Background(), chamberRuntime.RunRequest{ContainerID: "caller", BundlePath: bundlePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := container.Delete(context.Background(), true); err != nil {
+			t.Error(err)
+		}
+	})
+	if result, err := container.Wait(context.Background()); err != nil || result.ExitCode == nil || *result.ExitCode != 0 {
+		t.Fatalf("Wait = %+v, %v", result, err)
+	}
+	data, err := container.ReadLog(chamberRuntime.StdoutLogStream)
+	if err != nil || string(data) != original {
+		t.Fatalf("runtime received changed spec: %s, %v", data, err)
+	}
+	if err := container.Delete(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	assertFileContent(t, filepath.Join(bundlePath, "config.json"), original)
+}
+
 func TestRunReturnsContainerForFastExit(t *testing.T) {
 	logDir := privateTempDir(t)
 	binaryPath := writeFakeRunc(t, logDir, `

@@ -95,6 +95,18 @@ host credentials mounted into it. Configure the image itself to provide anything
 the command needs. Managed tools are also per-job; explicit local tool paths can
 avoid repeated downloads.
 
+Chamber provisioning permits nested rootless containers by default, including
+jobs from `cmd/ci` and `cmd/local-test`. It clears no-new-privileges, adds
+`CAP_SETUID`/`CAP_SETGID` to the capability bounding set, and removes `/proc`
+masks and read-only path restrictions. Effective and ambient capabilities stay
+unchanged. Images that run nested rootless runtimes must install mapping helpers
+and delegate an inner subordinate UID/GID range that fits the outer container's
+mapping. Chamber's own
+`Dockerfile.chamber` uses IDs 2,000–67,533, so the CI host's allocation must
+expose at least those container IDs. Provisioning neither allocates host IDs nor
+enables host-root execution. Bundles remain runtime-owned and are removed by
+container deletion.
+
 GitHub receives commit statuses under context `chamber`, with a `target_url` of
 `/runs/<id>`. That page polls `/runs/<id>/log` every two seconds. Clone/build
 diagnostics and container stdout/stderr share a bounded text log (default 16 MiB;
@@ -199,6 +211,9 @@ queue/execution limits, retry failed terminal writes, reject stale status
 acknowledgements, and reopen the database to verify durability. Opt-in tests
 exercise actual process replacement, candidate rejection, listener continuity,
 and rootless Dockerfile execution.
+The runtime integration suite covers subordinate UID/GID mapping helpers,
+a nested PID namespace's `/proc` mount, and cleanup of private mapped files
+through both SDK launch paths (`pkg/runtime/factory`).
 See test output for which opt-in cases were run.
 
 GitHub's contracts: [webhook payloads](https://docs.github.com/en/webhooks/webhook-events-and-payloads),

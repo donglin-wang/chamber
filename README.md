@@ -57,6 +57,9 @@ them. Keep the image's layout available until provisioning finishes.
 
 `Runtime.Run` remains available for ready OCI bundles. Those bundles remain
 caller-owned: use `Provisioner.Remove` after the container is deleted.
+Chamber provisioning permits nested rootless containers by default. `RunImage`
+uses those defaults automatically. `Run` executes its supplied spec unchanged;
+callers using externally prepared bundles own their nesting configuration.
 
 Shared images and cached binaries remain until the caller removes them. Callers
 also own cleanup after a process crash; there is no automatic crash recovery.
@@ -198,15 +201,18 @@ To run the package suite inside a container on that Linux host:
 GOCACHE=/tmp/chamber-go-cache go run cmd/local-test/main.go
 ```
 
-The local runner builds `Dockerfile.chamber`, provisions a caller-owned bundle,
-and permits UID/GID mapping helpers with specific file capabilities within the
-outer container's user namespace. It also removes the outer bundle's `/proc`
-masks and read-only submounts so nested containers can mount their own `/proc`.
+The local runner builds `Dockerfile.chamber` and calls `RunImage`. Chamber
+provisioning permits UID/GID mapping helpers with specific file capabilities
+within the outer container's user namespace. It clears
+no-new-privileges, adds `CAP_SETUID`/`CAP_SETGID` to the capability bounding set,
+and removes `/proc` masks and read-only path restrictions so nested containers
+can mount their own `/proc`. Effective and ambient capabilities stay unchanged.
+`cmd/ci` uses the same provisioning defaults through `RunImage`.
 The image delegates 65,534 IDs starting at 2,000 to its `chamber` user, covering
 the BusyBox test image's UID/GID 65,534. The host allocation must expose IDs
 2,000–67,533 through the outer container mapping. Images or processes requiring
-higher inner IDs need a larger allocation. The runner deletes the container
-before removing its bundle and temporary root.
+higher inner IDs need a larger allocation. `RunImage` owns the bundle; deleting
+the container removes it before the runner removes its temporary root.
 
 [`cmd/ci`](cmd/ci/README.md) is a standalone GitHub webhook receiver. It checks
 out the event's exact commit, builds the root `Dockerfile.chamber`, runs its

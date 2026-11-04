@@ -175,11 +175,14 @@ type Runtime interface {
 	// and Delete to release runtime state and the bundle, including after a
 	// canceled Wait. Launch failures release the bundle before returning.
 	// The context controls provisioning and launch work only.
+	// Chamber provisioning permits nested rootless containers by default.
 	RunImage(ctx context.Context, image chamberImage.Image, request RunImageRequest) (Container, error)
 
 	// Run starts the container and returns a Container that owns subsequent
 	// lifecycle operations. The context controls launch work only; after Run
 	// succeeds, callers stop or clean up the container through Container methods.
+	// The bundle is executed as supplied and remains caller-owned. Callers using
+	// externally prepared bundles own their nested-container configuration.
 	Run(ctx context.Context, request RunRequest) (Container, error)
 
 	// Open returns a handle for an existing container owned by this runtime
