@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ ${1:-} == --help ]]; then
     echo "Usage: $0"
-    echo "Run as the CI user after sudo scripts/setup-host.sh USER."
+    echo "Run as the CI user after sudo scripts/setup-host.sh."
     echo "Uses Go from PATH to build this checkout and create config and a user service."
     exit 0
 fi
@@ -18,8 +18,11 @@ for tool in git unshare newuidmap newgidmap systemctl; do
     command -v "$tool" >/dev/null || { echo "Missing $tool; run setup-host.sh first." >&2; exit 1; }
 done
 unshare -Ur true
+# sudo -iu does not create a login session; lingering starts this user's manager.
+export XDG_RUNTIME_DIR=/run/user/$UID
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 systemctl --user show-environment >/dev/null || {
-    echo "User systemd is unavailable; reconnect over SSH after host setup." >&2; exit 1;
+    echo "User systemd is unavailable; run setup-host.sh for this CI account first." >&2; exit 1;
 }
 if systemctl --user is-active --quiet chamber-ci.service; then
     echo "CI is running. Use its self-update endpoint, or stop it before reinstalling." >&2
@@ -60,8 +63,8 @@ Installed. Existing config and secrets were preserved.
 Edit $config_dir/config.json (public_url, repositories, trusted update source).
 Edit $config_dir/secrets.env (GitHub token with commit-status write permission).
 Then run:
-  systemctl --user enable --now chamber-ci
+  XDG_RUNTIME_DIR=/run/user/$UID systemctl --user enable --now chamber-ci
   curl --fail http://127.0.0.1:8080/health
-  journalctl --user -u chamber-ci -f
+  XDG_RUNTIME_DIR=/run/user/$UID journalctl --user -u chamber-ci -f
 Expose the loopback listener through HTTPS; see cmd/ci/README.md for webhooks.
 EOF

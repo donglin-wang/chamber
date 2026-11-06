@@ -1,37 +1,44 @@
 # CI installation
 
-Debian is implemented. Run these from a checkout as the existing non-root SSH
-user that will own CI. Install Go 1.26.4 or newer yourself and put `go` on PATH
-before running the user installer (Git is needed to obtain the checkout):
+Debian is implemented. From your checkout in the normal SSH account, provision
+the host and switch to the dedicated CI account:
 
 ```sh
-sudo ./scripts/setup-host.sh "$(id -un)"
-./scripts/install-ci.sh
+sudo ./scripts/setup-host.sh
+sudo -iu chamber-ci
 ```
 
-If the user systemd session is unavailable after installing its packages,
-disconnect and reconnect over SSH, then rerun the second command.
-
-Host setup installs Debian packages, enables unprivileged user namespaces,
-sets the user namespace limit to 28,633, and enables user lingering for boot
-and logout survival. It replaces a small first subordinate UID/GID allocation
-with one million IDs, preserving a first range that already has that size.
-Use this for initial host provisioning, before that user has rootless workloads
-or mapped files depending on the old ranges. Existing allocations belonging to
-other users and real host accounts are checked for overlap before any range is
-changed. To select a different free block:
+Host setup installs Debian packages and creates `chamber-ci` using `useradd`,
+which automatically allocates unused ranges of one million subordinate UIDs
+and GIDs. It enables user namespaces and user lingering for boot and logout
+survival. Existing accounts and allocations are preserved. Reruns reuse the
+CI account if its first UID and GID allocations are already large enough.
+An optional username selects a different dedicated account:
 
 ```sh
-sudo ./scripts/setup-host.sh "$(id -un)" 10000000
+sudo ./scripts/setup-host.sh my-ci
+```
+
+In the CI account, obtain a checkout owned by that account. Install Go 1.26.4
+or newer yourself and make it available on this account's PATH. For a Go
+installation under `/usr/local/go`, the commands are:
+
+```sh
+export PATH="/usr/local/go/bin:$PATH"
+git clone https://github.com/donglin-wang/chamber.git ~/chamber
+cd ~/chamber
+./scripts/install-ci.sh
 ```
 
 User installation uses the existing Go on PATH to build this checkout and
 installs the canonical `cmd/ci/ci.service`. A PATH drop-in includes that Go
 executable's directory for self-updates. The build disables automatic Go
 toolchain downloads; an incompatible installed version fails the build.
-Existing config and secrets are
-preserved. It refuses to replace a running CI binary; use CI self-update for
-normal updates. It does not change the login shell PATH.
+Existing config and secrets are preserved. It refuses to replace a running CI
+binary; use CI self-update for normal updates. It does not change the login
+shell PATH.
+The installer connects to the CI user's systemd manager without requiring
+an SSH login as that user.
 
 Edit `~/.config/chamber-ci/config.json`: set `public_url`, repository names, and
 the trusted update source. Paths are absolute; the generated `work_root` is
@@ -42,9 +49,9 @@ write permission. A random webhook secret is generated on first installation.
 Private repository checkout separately needs noninteractive Git credentials.
 
 ```sh
-systemctl --user enable --now chamber-ci
+XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user enable --now chamber-ci
 curl --fail http://127.0.0.1:8080/health
-journalctl --user -u chamber-ci -f
+XDG_RUNTIME_DIR=/run/user/$(id -u) journalctl --user -u chamber-ci -f
 ```
 
 Put HTTPS in front of the loopback listener and allow public inbound traffic

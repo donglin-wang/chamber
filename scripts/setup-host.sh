@@ -3,19 +3,13 @@
 set -euo pipefail
 
 if [[ ${1:-} == --help ]]; then
-    echo "Usage: sudo $0 USER [SUBID_START]"
-    echo "Allocates 1,000,000 subordinate UIDs/GIDs (default start: 1000000)."
+    echo "Usage: sudo $0 [CI_USER]"
+    echo "Creates a dedicated CI user (default: chamber-ci) with large subordinate ID ranges."
     exit 0
 fi
-[[ $# -ge 1 && $# -le 2 ]] || { echo "Usage: sudo $0 USER [SUBID_START]" >&2; exit 2; }
+[[ $# -le 1 ]] || { echo "Usage: sudo $0 [CI_USER]" >&2; exit 2; }
 [[ $(uname -s) == Linux && $EUID == 0 ]] || { echo "Run on Linux through sudo." >&2; exit 1; }
-account=$1
-account_uid=$(id -u "$account")
-[[ $account_uid != 0 ]] || { echo "CI must belong to a non-root user." >&2; exit 1; }
-subid_start=${2:-1000000}
-[[ $subid_start =~ ^[1-9][0-9]{0,9}$ ]] || { echo "Invalid subordinate ID start." >&2; exit 1; }
-subid_end=$((subid_start + 999999))
-(( subid_end < 4294967295 )) || { echo "Subordinate ID range exceeds Linux limits." >&2; exit 1; }
+account=${1:-chamber-ci}
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . /etc/os-release
@@ -27,47 +21,29 @@ case $ID in
     *) echo "Unsupported distribution: $ID" >&2; exit 1 ;;
 esac
 
-# Plan both mappings before changing either. Keep a sufficient first range.
-mapping_options=()
-for kind in uid gid; do
-    file=/etc/sub${kind}
-    [[ -e $file ]] || install -m 0644 /dev/null "$file"
-    first_count=$(awk -F: -v name="$account" -v uid="$account_uid" '
-        $1 == name || $1 == uid { print $3; exit }
-    ' "$file")
-    if [[ $first_count =~ ^[0-9]+$ ]] && (( first_count >= 1000000 )); then
-        continue
-    fi
-    if ! awk -F: -v name="$account" -v uid="$account_uid" -v start="$subid_start" -v end="$subid_end" '
-        $1 != name && $1 != uid && $2 <= end && $2 + $3 > start { exit 1 }
-    ' "$file"; then
-        echo "Requested range overlaps another allocation in $file; choose another SUBID_START." >&2
-        exit 1
-    fi
-    database=passwd
-    [[ $kind == uid ]] || database=group
-    if ! getent "$database" | awk -F: -v start="$subid_start" -v end="$subid_end" '
-        $3 >= start && $3 <= end { exit 1 }
-    '; then
-        echo "Requested range overlaps a host $kind; choose another SUBID_START." >&2
-        exit 1
-    fi
-    while IFS=: read -r owner start count; do
-        if [[ $owner == "$account" || $owner == "$account_uid" ]]; then
-            mapping_options+=("--del-sub${kind}s" "$start-$((start + count - 1))")
-        fi
-    done < "$file"
-    mapping_options+=("--add-sub${kind}s" "$subid_start-$subid_end")
-done
-
 install_host_packages
-if ((${#mapping_options[@]})); then
-    usermod "${mapping_options[@]}" "$account"
+
+# useradd allocates ranges only when these files exist.
+for file in /etc/subuid /etc/subgid; do
+    [[ -e $file ]] || install -m 0644 /dev/null "$file"
+done
+if ! id "$account" >/dev/null 2>&1; then
+    useradd --create-home --user-group --shell /bin/bash \
+        -K SUB_UID_COUNT=1000000 -K SUB_GID_COUNT=1000000 "$account"
 fi
+[[ $(id -u "$account") != 0 ]] || { echo "CI must belong to a non-root user." >&2; exit 1; }
+# Reruns may reuse the account, but never rewrite existing allocations.
+for kind in user group; do
+    flags=()
+    [[ $kind == user ]] || flags=(-g)
+    getsubids "${flags[@]}" "$account" | awk 'NR == 1 && $4 >= 1000000 { valid = 1 } END { exit !valid }' || {
+        echo "$account needs a large subordinate $kind range; choose a new CI username." >&2; exit 1;
+    }
+done
 cat > /etc/sysctl.d/99-chamber.conf <<'EOF'
 -kernel.unprivileged_userns_clone = 1
 user.max_user_namespaces = 28633
 EOF
 sysctl -p /etc/sysctl.d/99-chamber.conf
 loginctl enable-linger "$account"
-echo "Host ready for $account. Run scripts/install-ci.sh as that user in an SSH login."
+echo "Host ready. Switch to the CI account with: sudo -iu $account"
