@@ -17,6 +17,10 @@ CMD ["go", "test", "-count=1", "./..."]
 
 ## Install once
 
+For Debian host provisioning and the user service, use the
+[installation scripts](../../scripts/README.md). Install Go yourself first.
+The manual steps below assume the host is already prepared.
+
 Use a Linux user with working rootless user namespaces and subordinate UID/GID
 mappings, as required by the SDK. Install Git and Go 1.26.4 or newer; Go is needed
 for self-update. Chamber manages its BuildKit, RootlessKit, and runc binaries.
