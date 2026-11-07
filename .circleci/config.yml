@@ -21,7 +21,7 @@ jobs:
           name: Run local-test on the Ubuntu VM
           no_output_timeout: 25m
           command: |
-            sudo -iu chamber-test bash -s <<'TEST'
+            sudo -iu chamber-test bash -s \<<'TEST'
             set -euo pipefail
             export PATH=/opt/chamber-go/bin:/usr/local/bin:/usr/bin:/bin
             export XDG_RUNTIME_DIR=/run/user/$(id -u)
