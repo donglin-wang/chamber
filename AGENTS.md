@@ -11,7 +11,7 @@ The common path is pull or build an `image.Image`, construct a runtime, call `Ru
 - `Run` accepts a ready OCI bundle. That bundle remains caller-owned.
 - Callers own root placement, coordination of shared roots and IDs, application cancellation policy, cleanup after crashes, and image/cache retention.
 - Do not add shared-root concurrency management, operation records, leases, recovery controllers, distributed scheduling, or background services to the SDK. Application-level policies belong in embedding applications.
-- `cmd/ci` is an SDK consumer and automation example. Its webhook admission limits, per-run roots, and retention are application policy.
+- `.circleci/config.yml` builds and runs `Dockerfile.chamber` to validate the SDK. Keep CI orchestration in CircleCI rather than adding an application to the SDK.
 
 ## Linux and Host Execution
 
@@ -55,7 +55,7 @@ Proactively simplify changes around resource ownership and existing code. Put st
 - Prefer behavior names such as `createRunDirectories` or `requireSubordinateIDMapping` over vague `prepare`, `handle`, or `normalize`.
 - Scan files around 500 lines or longer for obvious local simplifications. Avoid creating files or abstractions just to shorten long files.
 - Before moving a type, field, helper, schema, or durable file, identify its owner, which package may persist/mutate it, and which callers need to know it.
-- Use one canonical type for a concept. Persistence envelopes may add package-owned versioning, but do not duplicate event/request/result schemas.
+- Use one canonical type for a concept. Persistence envelopes may add package- owned versioning, but do not duplicate event/request/result schemas.
 - Do not introduce single-implementation interfaces without a real boundary or test seam. Prefer concrete types or a function type for one callback.
 - Do not expose both a package function and an interface method for the same behavior. Names must not promise stronger guarantees than the implementation.
 - Use readable `chamber...` import aliases, such as `chamberImage`, `chamberBundleFactory`, and `chamberRuntime`; avoid shortened `ch...` names.
@@ -72,7 +72,7 @@ For public API changes, audit every affected caller in the same turn:
 
 - Search with `rg` for changed and removed types, fields, methods, and names.
 - Compile affected downstream packages using `GOCACHE=/tmp/chamber-go-cache GOOS=linux go test -c`.
-- Include `cmd/ci` for changes to runtime, bundle, image, process environment, logs/results, filesystem roots, or host execution.
+- Include `cmd/local-test` for changes to runtime, bundle, image, process environment, logs/results, filesystem roots, or host execution.
 - Include relevant factories and concrete adapters for root SDK changes.
 - Update every result-field caller when a field's meaning or type changes.
 - Run meaningful tests on Linux or Lima and inspect runtime artifacts when validating actual execution. Distinguish source/compile checks from runtime tests and deterministic lifecycle cases from concurrency stress testing.
