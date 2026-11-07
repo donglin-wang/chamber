@@ -46,6 +46,52 @@ func TestRunImageIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	t.Run("initialization failures roll back bundles", func(t *testing.T) {
+		for _, process := range []chamberBundle.ProcessSpec{
+			{Args: []string{"/does-not-exist"}},
+			{Args: []string{"chamber-missing-executable"}},
+		} {
+			container, err := rt.RunImage(ctx, image, chamberRuntime.RunImageRequest{Process: process})
+			if container != nil || !errors.Is(err, chamberErrors.ErrRuntimeStartFailed) {
+				if container != nil {
+					_ = container.Delete(ctx, true)
+				}
+				t.Fatalf("RunImage = %v, %v; want launch failure", container, err)
+			}
+			bundles, err := filepath.Glob(filepath.Join(config.RuntimeRoot, "bundles", "image-*"))
+			if err != nil || len(bundles) != 0 {
+				t.Fatalf("failed launch retained bundles=%v, error=%v", bundles, err)
+			}
+		}
+	})
+
+	t.Run("late exec failure retains diagnostics", func(t *testing.T) {
+		broken := filepath.Join(root, "broken-executable")
+		if err := os.WriteFile(broken, []byte("#!/missing/interpreter\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		container, err := rt.RunImage(ctx, image, chamberRuntime.RunImageRequest{
+			Process: chamberBundle.ProcessSpec{Args: []string{"/broken"}},
+			Mounts:  []chamberBundle.Mount{{Source: broken, Target: "/broken"}},
+		})
+		if err != nil {
+			if !errors.Is(err, chamberErrors.ErrRuntimeStartFailed) {
+				t.Fatal(err)
+			}
+			return
+		}
+		defer func() {
+			if err := container.Delete(ctx, true); err != nil {
+				t.Error(err)
+			}
+		}()
+		result, err := container.Wait(ctx)
+		stderr, readErr := container.ReadLog(chamberRuntime.StderrLogStream)
+		if err != nil || result.ExitCode == nil || *result.ExitCode == 0 || readErr != nil || len(stderr) == 0 {
+			t.Fatalf("late exec outcome=%+v, error=%v, stderr=%q, read=%v", result, err, stderr, readErr)
+		}
+	})
+
 	t.Run("process mounts logs and cleanup", func(t *testing.T) {
 		container, err := rt.RunImage(ctx, image, chamberRuntime.RunImageRequest{
 			ContainerID: "integration-image",

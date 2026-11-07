@@ -215,7 +215,7 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (chamberRuntime.Container, error) {
+func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (container chamberRuntime.Container, err error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: context is required", chamberErrors.ErrInvalidRequest)
 	}
@@ -240,6 +240,11 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 	if err != nil {
 		return nil, err
 	}
+	if _, err := os.Stat(filepath.Join(stateRoot, containerID)); err == nil {
+		return nil, fmt.Errorf("%w: runtime container %q already exists", chamberErrors.ErrRuntimeStartFailed, containerID)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("%w: inspect runtime container ID: %w", chamberErrors.ErrFilesystemFailed, err)
+	}
 	chamberLogging.InfoWith(r.logger, ctx, "starting runtime container",
 		"container_id", containerID,
 		"bundle_path", request.BundlePath,
@@ -262,7 +267,25 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 		return nil, err
 	}
 
-	cmd := subprocess.Command(binaryPath, "--root", stateRoot, "run", containerID)
+	launchDir, err := r.workspace.MkdirTemp("launch", "run-")
+	if err != nil {
+		_ = stdout.Close()
+		_ = stderr.Close()
+		return nil, err
+	}
+	defer func() {
+		if cleanupErr := os.RemoveAll(launchDir); cleanupErr != nil {
+			if container != nil {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), forcedDeleteWait)
+				cleanupErr = errors.Join(cleanupErr, container.Delete(cleanupCtx, true))
+				cancel()
+				container = nil
+			}
+			err = errors.Join(err, fmt.Errorf("%w: remove launch directory: %w", chamberErrors.ErrFilesystemFailed, cleanupErr))
+		}
+	}()
+	pidPath := filepath.Join(launchDir, "init.pid")
+	cmd := subprocess.Command(binaryPath, "--root", stateRoot, "run", "--pid-file", pidPath, containerID)
 	cmd.Dir = request.BundlePath
 	cmd.Stdin = request.Stdin
 	cmd.Stdout = outputWriter(stdout, request.Stdout)
@@ -276,18 +299,26 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 		return nil, fmt.Errorf("%w: start runc container %q: %w", chamberErrors.ErrRuntimeStartFailed, containerID, err)
 	}
 
+	c := newRuncContainer(containerConfig{
+		id: containerID, binaryPath: binaryPath, stateRoot: stateRoot,
+		stdoutPath: stdoutPath, stderrPath: stderrPath, logger: r.logger,
+	}, cmd, stdout, stderr)
+	if err := c.awaitLaunch(ctx, pidPath); err != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), forcedDeleteWait)
+		defer cancel()
+		deleteErr := c.Delete(cleanupCtx, true)
+		if looksAlreadyDeleted(deleteErr) {
+			deleteErr = nil
+		}
+		// Stop the CLI as well if launch was canceled while it was still initializing.
+		_ = cmd.Process.Kill()
+		return nil, errors.Join(err, deleteErr)
+	}
 	chamberLogging.InfoWith(r.logger, ctx, "started runtime container",
 		"container_id", containerID,
 		"pid", cmd.Process.Pid,
 	)
-	return newRuncContainer(containerConfig{
-		id:         containerID,
-		binaryPath: binaryPath,
-		stateRoot:  stateRoot,
-		stdoutPath: stdoutPath,
-		stderrPath: stderrPath,
-		logger:     r.logger,
-	}, cmd, stdout, stderr), nil
+	return c, nil
 }
 
 // Open returns a handle for an existing runc container owned by this runtime
@@ -524,6 +555,7 @@ type containerConfig struct {
 	stdoutPath string
 	stderrPath string
 	logger     *chamberLogging.SlogLogger
+	startedAt  *time.Time
 }
 
 type runcContainer struct {
@@ -535,7 +567,7 @@ type runcContainer struct {
 }
 
 type waitResult struct {
-	exitCode int
+	exitCode *int
 	exitedAt time.Time
 	err      error
 }
@@ -591,9 +623,11 @@ func (c *runcContainer) Wait(ctx context.Context) (chamberRuntime.ContainerResul
 		return c.containerResult()
 	case <-ctx.Done():
 		timeoutErr := fmt.Errorf("%w: runtime wait canceled: %w", chamberErrors.ErrCanceled, ctx.Err())
-		if deleteErr := c.Delete(context.Background(), true); deleteErr != nil && !looksAlreadyDeleted(deleteErr) {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), forcedDeleteWait)
+		defer cancel()
+		if deleteErr := c.Delete(cleanupCtx, true); deleteErr != nil && !looksAlreadyDeleted(deleteErr) {
 			err := errors.Join(timeoutErr, fmt.Errorf("force-delete runtime container: %w", deleteErr))
-			return c.errorResult(chamberRuntime.ContainerResultStatusCanceled, 1, err), err
+			return c.errorResult(chamberRuntime.ContainerResultStatusCanceled, err), err
 		}
 		select {
 		case <-c.done:
@@ -603,20 +637,27 @@ func (c *runcContainer) Wait(ctx context.Context) (chamberRuntime.ContainerResul
 			result.ErrorCode = chamberErrors.CodeFromError(err, chamberErrors.ErrCanceled)
 			result.Error = err.Error()
 			return result, err
-		case <-time.After(forcedDeleteWait):
+		case <-cleanupCtx.Done():
 			err := fmt.Errorf("%w: timed out waiting for forced-delete runtime container to exit", timeoutErr)
-			return c.errorResult(chamberRuntime.ContainerResultStatusCanceled, 1, err), err
+			return c.errorResult(chamberRuntime.ContainerResultStatusCanceled, err), err
 		}
 	}
 }
 
 func (c *runcContainer) containerResult() (chamberRuntime.ContainerResult, error) {
-	exitCode := c.result.exitCode
+	exitedAt := c.result.exitedAt
 	result := chamberRuntime.ContainerResult{
 		ContainerID: c.id,
 		Status:      chamberRuntime.ContainerResultStatusExited,
-		ExitCode:    &exitCode,
-		ExitedAt:    c.result.exitedAt,
+		ExitedAt:    &exitedAt,
+	}
+	if c.result.exitCode != nil {
+		exitCode := *c.result.exitCode
+		result.ExitCode = &exitCode
+	}
+	if c.startedAt != nil {
+		startedAt := *c.startedAt
+		result.StartedAt = &startedAt
 	}
 	if c.result.err != nil {
 		result.Status = chamberRuntime.ContainerResultStatusUnknown
@@ -626,15 +667,25 @@ func (c *runcContainer) containerResult() (chamberRuntime.ContainerResult, error
 	return result, c.result.err
 }
 
-func (c *runcContainer) errorResult(status chamberRuntime.ContainerResultStatus, exitCode int, err error) chamberRuntime.ContainerResult {
-	return chamberRuntime.ContainerResult{
+func (c *runcContainer) errorResult(status chamberRuntime.ContainerResultStatus, err error) chamberRuntime.ContainerResult {
+	result := chamberRuntime.ContainerResult{
 		ContainerID: c.id,
 		Status:      status,
-		ExitCode:    &exitCode,
 		ErrorCode:   chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeWaitFailed),
 		Error:       err.Error(),
-		ExitedAt:    time.Now().UTC(),
 	}
+	if c.startedAt != nil {
+		startedAt := *c.startedAt
+		result.StartedAt = &startedAt
+	}
+	select {
+	case <-c.done:
+		observed, _ := c.containerResult()
+		result.ExitCode = observed.ExitCode
+		result.ExitedAt = observed.ExitedAt
+	default:
+	}
+	return result
 }
 
 func (c *runcContainer) State(ctx context.Context) (chamberRuntime.ContainerState, error) {
@@ -722,6 +773,8 @@ func (c *runcContainer) Delete(ctx context.Context, force bool) error {
 		"force", force,
 	)
 	cmd := subprocess.CommandContext(ctx, c.binaryPath, args...)
+	// Bound pipe draining too if a control-command descendant inherits stdio.
+	cmd.WaitDelay = time.Second
 	if output, err := cmd.CombinedOutput(); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("%w: runtime delete canceled while running control command: %w", chamberErrors.ErrCanceled, ctxErr)
@@ -792,18 +845,18 @@ func (c *runcContainer) logPath(stream chamberRuntime.LogStream) (string, error)
 
 func convertWaitResult(err error) waitResult {
 	if err == nil {
-		return waitResult{exitCode: 0}
+		code := 0
+		return waitResult{exitCode: &code}
 	}
 
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		exitCode := exitErr.ExitCode()
 		if exitCode >= 0 {
-			return waitResult{exitCode: exitCode}
+			return waitResult{exitCode: &exitCode}
 		}
 		return waitResult{
-			exitCode: exitCode,
-			err:      fmt.Errorf("%w: runtime process exited without an exit code: %w", chamberErrors.ErrRuntimeWaitFailed, err),
+			err: fmt.Errorf("%w: runtime process exited without an exit code: %w", chamberErrors.ErrRuntimeWaitFailed, err),
 		}
 	}
 

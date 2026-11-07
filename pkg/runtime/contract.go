@@ -93,8 +93,10 @@ type RunImageRequest struct {
 	Stderr []io.Writer
 }
 
-// ContainerResult is the result returned after Chamber waits for a container
-// process or maps a launch failure.
+// ContainerResult records observed runtime outcomes. ExitCode and ExitedAt are
+// nil until completion is observed. StartedAt is the runtime initialization
+// acknowledgment time, not an application readiness timestamp; ExitedAt is when
+// Chamber observes runtime completion, not the exact kernel process exit time.
 type ContainerResult struct {
 	ContainerID string                `json:"container_id"`
 	Status      ContainerResultStatus `json:"status"`
@@ -102,7 +104,7 @@ type ContainerResult struct {
 	ErrorCode   chamberErrors.Code    `json:"error_code,omitempty"`
 	Error       string                `json:"error,omitempty"`
 	StartedAt   *time.Time            `json:"started_at,omitempty"`
-	ExitedAt    time.Time             `json:"exited_at"`
+	ExitedAt    *time.Time            `json:"exited_at,omitempty"`
 }
 
 // ContainerResultStatus is the coarse outcome of a container run.
@@ -201,7 +203,6 @@ func RunAndWait(ctx context.Context, rt Runtime, request RunRequest, started fun
 			Status:      ContainerResultStatusStartFailed,
 			ErrorCode:   chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeStartFailed),
 			Error:       err.Error(),
-			ExitedAt:    time.Now().UTC(),
 		}, err
 	}
 
@@ -212,28 +213,25 @@ func RunAndWait(ctx context.Context, rt Runtime, request RunRequest, started fun
 			Status:      ContainerResultStatusStartFailed,
 			ErrorCode:   chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeStartFailed),
 			Error:       err.Error(),
-			ExitedAt:    time.Now().UTC(),
 		}, err
 	}
 
-	startedAt := time.Now().UTC()
 	if started != nil {
 		if err := started(container); err != nil {
-			_ = container.Delete(context.Background(), true)
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			err = errors.Join(err, container.Delete(cleanupCtx, true))
+			cancel()
 			return ContainerResult{
 				ContainerID: container.ID(),
 				Status:      ContainerResultStatusUnknown,
 				ErrorCode:   chamberErrors.CodeFromError(err, chamberErrors.ErrRuntimeWaitFailed),
 				Error:       err.Error(),
-				StartedAt:   &startedAt,
-				ExitedAt:    time.Now().UTC(),
 			}, err
 		}
 	}
 
 	result, waitErr := container.Wait(ctx)
 	result.ContainerID = container.ID()
-	result.StartedAt = &startedAt
 	if waitErr == nil {
 		return result, nil
 	}

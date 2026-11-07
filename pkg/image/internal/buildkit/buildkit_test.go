@@ -381,6 +381,7 @@ func TestBuildCommandsUseChamberOwnedStateAndEnvironment(t *testing.T) {
 		"/bin/rootlesskit",
 		"--state-dir", dirs.runDir,
 		"--net=host",
+		"--pidns",
 		"/bin/buildkitd",
 		"--addr", "unix://" + filepath.Join(dirs.runDir, "buildkitd.sock"),
 		"--root", dirs.stateDir,

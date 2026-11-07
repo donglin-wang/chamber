@@ -1,0 +1,300 @@
+Nov 07 22:36:22 lima-chamber-debian-13 systemd-networkd[414]: lo: Gained carrier
+Nov 07 22:36:22 lima-chamber-debian-13 systemd[1]: Started systemd-networkd.service - Network Configuration.
+Nov 07 22:36:22 lima-chamber-debian-13 systemd[1]: Reached target network.target - Network.
+Nov 07 22:36:22 lima-chamber-debian-13 systemd[1]: Starting systemd-networkd-persistent-storage.service - Enable Persistent Storage in systemd-networkd...
+Nov 07 22:36:22 lima-chamber-debian-13 systemd-networkd[414]: eth0: Configuring with /run/systemd/network/10-netplan-eth0.network.
+Nov 07 22:36:22 lima-chamber-debian-13 systemd[1]: Starting systemd-networkd-wait-online.service - Wait for Network to be Configured...
+Nov 07 22:36:22 lima-chamber-debian-13 systemd-networkd[414]: eth0: Link UP
+Nov 07 22:36:22 lima-chamber-debian-13 systemd-networkd[414]: eth0: Gained carrier
+Nov 07 22:36:22 lima-chamber-debian-13 systemd-networkd[414]: eth0: DHCPv4 address 192.168.5.15/24, gateway 192.168.5.2 acquired from 192.168.5.2
+Nov 07 22:36:22 lima-chamber-debian-13 systemd-timesyncd[319]: Network configuration changed, trying to establish connection.
+Nov 07 22:36:22 lima-chamber-debian-13 systemd[1]: Finished systemd-networkd-persistent-storage.service - Enable Persistent Storage in systemd-networkd.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Mounting boot-efi.mount - /boot/efi...
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Mounted boot-efi.mount - /boot/efi.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Reached target local-fs.target - Local File Systems.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Listening on systemd-sysext.socket - System Extension Image Management.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Starting apparmor.service - Load AppArmor profiles...
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Starting systemd-binfmt.service - Set Up Additional Binary Formats...
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Starting systemd-tmpfiles-setup.service - Create System Files and Directories...
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: proc-sys-fs-binfmt_misc.automount: Got automount request for /proc/sys/fs/binfmt_misc, triggered by 428 (systemd-binfmt)
+Nov 07 22:36:23 lima-chamber-debian-13 systemd-tmpfiles[429]: /usr/lib/tmpfiles.d/legacy.conf:14: Duplicate line for path "/run/lock", ignoring.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Mounting proc-sys-fs-binfmt_misc.mount - Arbitrary Executable File Formats File System...
+Nov 07 22:36:23 lima-chamber-debian-13 apparmor.systemd[427]: Restarting AppArmor
+Nov 07 22:36:23 lima-chamber-debian-13 apparmor.systemd[427]: Reloading AppArmor profiles
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Finished systemd-tmpfiles-setup.service - Create System Files and Directories.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: ldconfig.service - Rebuild Dynamic Linker Cache skipped, no trigger condition checks were met.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: systemd-firstboot.service - First Boot Wizard skipped, unmet condition check ConditionFirstBoot=yes
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: first-boot-complete.target - First Boot Complete skipped, unmet condition check ConditionFirstBoot=yes
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: systemd-journal-catalog-update.service - Rebuild Journal Catalog skipped, unmet condition check ConditionNeedsUpdate=/var
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: systemd-machine-id-commit.service - Save Transient machine-id to Disk skipped, unmet condition check ConditionPathIsMountPoint=/etc/machine-id
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: systemd-update-done.service - Update is Completed skipped, no trigger condition checks were met.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Mounted proc-sys-fs-binfmt_misc.mount - Arbitrary Executable File Formats File System.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Finished systemd-binfmt.service - Set Up Additional Binary Formats.
+Nov 07 22:36:23 lima-chamber-debian-13 kernel: audit: type=1400 audit(1794090983.132:2): apparmor="STATUS" operation="profile_load" profile="unconfined" name="1password" pid=440 comm="apparmor_parser"
+Nov 07 22:36:23 lima-chamber-debian-13 kernel: audit: type=1400 audit(1794090983.132:3): apparmor="STATUS" operation="profile_load" profile="unconfined" name="Discord" pid=441 comm="apparmor_parser"
+Nov 07 22:36:23 lima-chamber-debian-13 kernel: audit: type=1400 audit(1794090983.132:4): apparmor="STATUS" operation="profile_load" profile="unconfined" name="QtWebEngineProcess" pid=444 comm="apparmor_parser"
+Nov 07 22:36:23 lima-chamber-debian-13 kernel: audit: type=1400 audit(1794090983.132:5): apparmor="STATUS" operation="profile_load" profile="unconfined" name=4D6F6E676F444220436F6D70617373 pid=443 comm="apparmor_parser"
+Nov 07 22:36:23 lima-chamber-debian-13 kernel: audit: type=1400 audit(1794090983.132:6): apparmor="STATUS" operation="profile_load" profile="unconfined" name="balena-etcher" pid=446 comm="apparmor_parser"
+Nov 07 22:36:23 lima-chamber-debian-13 kernel: audit: type=1400 audit(1794090983.132:7): apparmor="STATUS" operation="profile_load" profile="unconfined" name="brave" pid=447 comm="apparmor_parser"
+Nov 07 22:36:23 lima-chamber-debian-13 kernel: audit: type=1400 audit(1794090983.136:8): apparmor="STATUS" operation="profile_load" profile="unconfined" name="buildah" pid=448 comm="apparmor_parser"
+Nov 07 22:36:23 lima-chamber-debian-13 kernel: audit: type=1400 audit(1794090983.136:9): apparmor="STATUS" operation="profile_load" profile="unconfined" name="busybox" pid=449 comm="apparmor_parser"
+Nov 07 22:36:23 lima-chamber-debian-13 kernel: audit: type=1400 audit(1794090983.136:10): apparmor="STATUS" operation="profile_load" profile="unconfined" name="cam" pid=450 comm="apparmor_parser"
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Finished apparmor.service - Load AppArmor profiles.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd-networkd[414]: eth0: Gained IPv6LL
+Nov 07 22:36:23 lima-chamber-debian-13 systemd-timesyncd[319]: Network configuration changed, trying to establish connection.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Finished systemd-networkd-wait-online.service - Wait for Network to be Configured.
+Nov 07 22:36:23 lima-chamber-debian-13 systemd[1]: Starting cloud-init-network.service - Cloud-init: Network Stage...
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: Cloud-init v. 25.1.4 running 'init' at Sat, 07 Nov 2026 22:36:23 +0000. Up 2.41 seconds.
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: +++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: +--------+------+------------------------------+---------------+--------+-------------------+
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: | Device |  Up  |           Address            |      Mask     | Scope  |     Hw-Address    |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: +--------+------+------------------------------+---------------+--------+-------------------+
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: |  eth0  | True |         192.168.5.15         | 255.255.255.0 | global | 52:55:55:4d:a6:45 |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: |  eth0  | True | fe80::5055:55ff:fe4d:a645/64 |       .       |  link  | 52:55:55:4d:a6:45 |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: |   lo   | True |          127.0.0.1           |   255.0.0.0   |  host  |         .         |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: |   lo   | True |           ::1/128            |       .       |  host  |         .         |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: +--------+------+------------------------------+---------------+--------+-------------------+
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: ++++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: +-------+-------------+-------------+-----------------+-----------+-------+
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: | Route | Destination |   Gateway   |     Genmask     | Interface | Flags |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: +-------+-------------+-------------+-----------------+-----------+-------+
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: |   0   |   0.0.0.0   | 192.168.5.2 |     0.0.0.0     |    eth0   |   UG  |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: |   1   | 192.168.5.0 |   0.0.0.0   |  255.255.255.0  |    eth0   |   U   |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: |   2   | 192.168.5.2 |   0.0.0.0   | 255.255.255.255 |    eth0   |   UH  |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: +-------+-------------+-------------+-----------------+-----------+-------+
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: +-------+-------------+---------+-----------+-------+
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: | Route | Destination | Gateway | Interface | Flags |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: +-------+-------------+---------+-----------+-------+
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: |   0   |  fe80::/64  |    ::   |    eth0   |   U   |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: |   2   |    local    |    ::   |    eth0   |   U   |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: |   3   |  multicast  |    ::   |    eth0   |   U   |
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: ci-info: +-------+-------------+---------+-----------+-------+
+Nov 07 22:36:23 lima-chamber-debian-13 cloud-init[400]: 2026-11-07 22:36:23,802 - loggers.py[DEPRECATED]: Deprecated cloud-config provided: users.0.ssh-authorized-keys:  Deprecated in version 18.3. Use **ssh_authorized_keys** instead., users.0.uid:  Changed in version 22.3. The use of ``string`` type is deprecated. Use an ``integer`` instead.
+Nov 07 22:36:23 lima-chamber-debian-13 passwd[579]: password for 'donglinwang' changed by 'root'
+Nov 07 22:36:24 lima-chamber-debian-13 sh[547]: Completed socket interaction for boot stage network
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Finished cloud-init-network.service - Cloud-init: Network Stage.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Reached target cloud-config.target - Cloud-config availability.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Reached target network-online.target - Network is Online.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Reached target sysinit.target - System Initialization.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started apt-daily.timer - Daily apt download activities.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started apt-daily-upgrade.timer - Daily apt upgrade and clean activities.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started apt-listchanges.timer - Try hourly to initialize apt-listchanges database for APT.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started dpkg-db-backup.timer - Daily dpkg database backup timer.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started e2scrub_all.timer - Periodic ext4 Online Metadata Check for All Filesystems.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started fstrim.timer - Discard unused filesystem blocks once a week.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started man-db.timer - Daily man-db regeneration.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started systemd-tmpfiles-clean.timer - Daily Cleanup of Temporary Directories.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Reached target timers.target - Timer Units.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Listening on cloud-init-hotplugd.socket - cloud-init hotplug hook socket.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Listening on dbus.socket - D-Bus System Message Bus Socket.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Listening on sshd-unix-local.socket - OpenSSH Server Socket (systemd-ssh-generator, AF_UNIX Local).
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Listening on sshd-vsock.socket - OpenSSH Server Socket (systemd-ssh-generator, AF_VSOCK).
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Reached target ssh-access.target - SSH Access Available.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Listening on systemd-hostnamed.socket - Hostname Service Socket.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Listening on uuidd.socket - UUID daemon activation socket.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Reached target sockets.target - Socket Units.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: systemd-pcrphase-sysinit.service - TPM PCR Barrier (Initialization) skipped, unmet condition check ConditionSecurity=measured-uki
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Reached target basic.target - Basic System.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: System is tainted: unmerged-bin
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Starting cloud-config.service - Cloud-init: Config Stage...
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Starting dbus.service - D-Bus System Message Bus...
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Starting e2scrub_reap.service - Remove Stale Online ext4 Metadata Check Snapshots...
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: getty-static.service - getty on tty2-tty6 if dbus and logind are not available skipped, unmet condition check ConditionPathExists=!/usr/bin/dbus-daemon
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Starting grub-common.service - Record successful boot for GRUB...
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: sshd-keygen.service - Generate sshd host keys on first boot skipped, unmet condition check ConditionFirstBoot=yes
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Starting ssh.service - OpenBSD Secure Shell server...
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Starting systemd-logind.service - User Login Management...
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: systemd-pcrphase.service - TPM PCR Barrier (User) skipped, unmet condition check ConditionSecurity=measured-uki
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Starting systemd-user-sessions.service - Permit User Sessions...
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started dbus.service - D-Bus System Message Bus.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Finished systemd-user-sessions.service - Permit User Sessions.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started getty@tty1.service - Getty on tty1.
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Cloud-init v. 25.1.4 running 'modules:config' at Sat, 07 Nov 2026 22:36:24 +0000. Up 2.67 seconds.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started serial-getty@hvc0.service - Serial Getty on hvc0.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Reached target getty.target - Login Prompts.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: e2scrub_reap.service: Deactivated successfully.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Finished e2scrub_reap.service - Remove Stale Online ext4 Metadata Check Snapshots.
+Nov 07 22:36:24 lima-chamber-debian-13 sshd[612]: Server listening on 0.0.0.0 port 22.
+Nov 07 22:36:24 lima-chamber-debian-13 sshd[612]: Server listening on :: port 22.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: grub-common.service: Deactivated successfully.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Finished grub-common.service - Record successful boot for GRUB.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd-logind[597]: Watching system buttons on /dev/input/event0 (Power Button)
+Nov 07 22:36:24 lima-chamber-debian-13 systemd-logind[597]: New seat seat0.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Created slice user-1000.slice - User Slice of UID 1000.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started systemd-logind.service - User Login Management.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started unattended-upgrades.service - Unattended Upgrades Shutdown.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Reached target multi-user.target - Multi-User System.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Reached target graphical.target - Graphical Interface.
+Nov 07 22:36:24 lima-chamber-debian-13 sh[594]: Completed socket interaction for boot stage config
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Starting user-runtime-dir@1000.service - User Runtime Directory /run/user/1000...
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Finished cloud-config.service - Cloud-init: Config Stage.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Starting cloud-final.service - Cloud-init: Final Stage...
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Finished user-runtime-dir@1000.service - User Runtime Directory /run/user/1000.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Starting user@1000.service - User Manager for UID 1000...
+Nov 07 22:36:24 lima-chamber-debian-13 (systemd)[650]: pam_unix(systemd-user:session): session opened for user chamber-test(uid=1000) by chamber-test(uid=0)
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Cloud-init v. 25.1.4 running 'modules:final' at Sat, 07 Nov 2026 22:36:24 +0000. Up 2.77 seconds.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd-logind[597]: New session 1 of user chamber-test.
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: + LIMA_CIDATA_MNT=/mnt/lima-cidata
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: + uname -s
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: + UNAME=Linux
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: + [ Linux = Darwin ]
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: + [ Linux = FreeBSD ]
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: + [ Linux = Linux ]
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: + LIMA_CIDATA_DEV=/dev/disk/by-label/cidata
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: + mkdir -p -m 700 /mnt/lima-cidata
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: + mount -o ro,mode=0700,dmode=0700,overriderockperm,exec,uid=0 /dev/disk/by-label/cidata /mnt/lima-cidata
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: + export LIMA_CIDATA_MNT
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: + exec /mnt/lima-cidata/boot.sh
+Nov 07 22:36:24 lima-chamber-debian-13 kernel: ISO 9660 Extensions: IEEE_P1282
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: LIMA 2026-11-07T22:36:24+00:00| Plain mode. Skipping to run non-essential boot scripts. Provisioning scripts will be still executed. Guest agent will not be running.
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: LIMA 2026-11-07T22:36:24+00:00| Exiting with code 0
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[672]: #############################################################
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[673]: -----BEGIN SSH HOST KEY FINGERPRINTS-----
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[675]: 256 SHA256:Ly/4xw/ubKsJ1VyHU3x23LWuDlugckUkuDwEzTe/W94 root@lima-chamber-debian-13 (ECDSA)
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[677]: 256 SHA256:C2h1VJLVJpjzSOquEtvhqHDQ4itbF1RCeiKYkun0/N4 root@lima-chamber-debian-13 (ED25519)
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[679]: 3072 SHA256:JEGTSeMjFOjy0zWWa+pB4SNO7Q4NKQ5WmghDd2NK/24 root@lima-chamber-debian-13 (RSA)
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[680]: -----END SSH HOST KEY FINGERPRINTS-----
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[681]: #############################################################
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Queued start job for default target default.target.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd-journald[273]: File /var/log/journal/b8168c7ca127462583c414ba8b7b5642/user-1000.journal corrupted or uncleanly shut down, renaming and replacing.
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Cloud-init v. 25.1.4 finished at Sat, 07 Nov 2026 22:36:24 +0000. Datasource DataSourceNoCloud [seed=/dev/vdb].  Up 2.81 seconds
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Generating public/private rsa key pair.
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Your identification has been saved in /etc/ssh/ssh_host_rsa_key
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Your public key has been saved in /etc/ssh/ssh_host_rsa_key.pub
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: The key fingerprint is:
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: SHA256:JEGTSeMjFOjy0zWWa+pB4SNO7Q4NKQ5WmghDd2NK/24 root@lima-chamber-debian-13
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: The key's randomart image is:
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: +---[RSA 3072]----+
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: | . +oB*o         |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |. +.=.++         |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |o. oo.+..        |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |+.=+ o*+         |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |+*=.=o +S        |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |++o*..+          |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: | .o.+o E         |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |   o...          |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |   .o            |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: +----[SHA256]-----+
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Generating public/private ecdsa key pair.
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Your identification has been saved in /etc/ssh/ssh_host_ecdsa_key
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Your public key has been saved in /etc/ssh/ssh_host_ecdsa_key.pub
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: The key fingerprint is:
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: SHA256:Ly/4xw/ubKsJ1VyHU3x23LWuDlugckUkuDwEzTe/W94 root@lima-chamber-debian-13
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: The key's randomart image is:
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: +---[ECDSA 256]---+
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |     .+ .. . ...+|
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |       = oo  o. B|
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |      o o o.+ .+.|
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |       + o.o o.  |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |        S oo.  . |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |       . .o....  |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |      .o.+o.+o.  |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |      ..+*+o=. E |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |       .+**+..   |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: +----[SHA256]-----+
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Generating public/private ed25519 key pair.
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Your identification has been saved in /etc/ssh/ssh_host_ed25519_key
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: Your public key has been saved in /etc/ssh/ssh_host_ed25519_key.pub
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: The key fingerprint is:
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: SHA256:C2h1VJLVJpjzSOquEtvhqHDQ4itbF1RCeiKYkun0/N4 root@lima-chamber-debian-13
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: The key's randomart image is:
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: +--[ED25519 256]--+
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |   .o . o*o.     |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |.+ . o .*.. o    |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |B.o o .o.+ o     |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |+oo+ o... .      |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |o..o+.. S        |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |.o..o... .       |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |..o*.+  .        |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |oo=.+ o          |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: |++ ..o E         |
+Nov 07 22:36:24 lima-chamber-debian-13 cloud-init[400]: +----[SHA256]-----+
+Nov 07 22:36:24 lima-chamber-debian-13 sh[648]: Completed socket interaction for boot stage final
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Finished cloud-final.service - Cloud-init: Final Stage.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Reached target cloud-init.target - Cloud-init target.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Created slice app.slice - User Application Slice.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Reached target paths.target - Paths.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Reached target timers.target - Timers.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Starting dbus.socket - D-Bus User Message Bus Socket...
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Starting ssh-agent.socket - OpenSSH Agent socket...
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Listening on dbus.socket - D-Bus User Message Bus Socket.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Listening on ssh-agent.socket - OpenSSH Agent socket.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Reached target sockets.target - Sockets.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Reached target basic.target - Basic System.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started user@1000.service - User Manager for UID 1000.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Startup finished in 416ms (kernel) + 2.422s (userspace) = 2.838s.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Reached target default.target - Main User Target.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[650]: Startup finished in 56ms.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: cloud-init-main.service: Deactivated successfully.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: cloud-init-main.service: Unit process 399 (sh) remains running after unit stopped.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: cloud-init-main.service: Unit process 400 (tee) remains running after unit stopped.
+Nov 07 22:36:24 lima-chamber-debian-13 sshd-session[690]: Connection closed by 192.168.5.2 port 62399
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Created slice system-sshd.slice - Slice /system/sshd.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: sshd-keygen.service - Generate sshd host keys on first boot skipped, unmet condition check ConditionFirstBoot=yes
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started sshd@0-3:22-2:2758276175.service - OpenBSD Secure Shell server per-connection daemon (vsock:2:2758276175).
+Nov 07 22:36:24 lima-chamber-debian-13 sshd-session[693]: banner exchange: Connection from UNKNOWN port 65535: Broken pipe
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: sshd@0-3:22-2:2758276175.service: Deactivated successfully.
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: sshd-keygen.service - Generate sshd host keys on first boot skipped, unmet condition check ConditionFirstBoot=yes
+Nov 07 22:36:24 lima-chamber-debian-13 systemd[1]: Started sshd@1-3:22-2:1173901937.service - OpenBSD Secure Shell server per-connection daemon (vsock:2:1173901937).
+Nov 07 22:36:25 lima-chamber-debian-13 sshd-session[698]: Accepted publickey for donglinwang from UNKNOWN port 65535 ssh2: ED25519 SHA256:v7gBkrv/eXr0ihLgNpHl1um7t5A+YSlfjv7urEwF80g
+Nov 07 22:36:25 lima-chamber-debian-13 sshd-session[698]: pam_unix(sshd:session): session opened for user donglinwang(uid=501) by donglinwang(uid=0)
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[1]: Created slice user-501.slice - User Slice of UID 501.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[1]: Starting user-runtime-dir@501.service - User Runtime Directory /run/user/501...
+Nov 07 22:36:25 lima-chamber-debian-13 systemd-logind[597]: New session 2 of user donglinwang.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[1]: Finished user-runtime-dir@501.service - User Runtime Directory /run/user/501.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[1]: Starting user@501.service - User Manager for UID 501...
+Nov 07 22:36:25 lima-chamber-debian-13 (systemd)[705]: pam_unix(systemd-user:session): session opened for user donglinwang(uid=501) by donglinwang(uid=0)
+Nov 07 22:36:25 lima-chamber-debian-13 systemd-logind[597]: New session 3 of user donglinwang.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Queued start job for default target default.target.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Created slice app.slice - User Application Slice.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Reached target paths.target - Paths.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Reached target timers.target - Timers.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Starting dbus.socket - D-Bus User Message Bus Socket...
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Starting ssh-agent.socket - OpenSSH Agent socket...
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Listening on dbus.socket - D-Bus User Message Bus Socket.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Listening on ssh-agent.socket - OpenSSH Agent socket.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Reached target sockets.target - Sockets.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Reached target basic.target - Basic System.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Reached target default.target - Main User Target.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[705]: Startup finished in 44ms.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[1]: Started user@501.service - User Manager for UID 501.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[1]: Started session-2.scope - Session 2 of User donglinwang.
+Nov 07 22:36:25 lima-chamber-debian-13 sudo[724]: donglinwang : PWD=/home/donglinwang.guest ; USER=root ; COMMAND=/usr/bin/cat /mnt/lima-cidata/param.env
+Nov 07 22:36:25 lima-chamber-debian-13 sudo[724]: pam_unix(sudo:session): session opened for user root(uid=0) by donglinwang(uid=501)
+Nov 07 22:36:25 lima-chamber-debian-13 sudo[724]: pam_unix(sudo:session): session closed for user root
+Nov 07 22:36:25 lima-chamber-debian-13 sshd-session[721]: Received disconnect from UNKNOWN port 65535:11: disconnected by user
+Nov 07 22:36:25 lima-chamber-debian-13 sshd-session[721]: Disconnected from user donglinwang UNKNOWN port 65535
+Nov 07 22:36:25 lima-chamber-debian-13 sshd-session[698]: pam_unix(sshd:session): session closed for user donglinwang
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[1]: sshd@1-3:22-2:1173901937.service: Deactivated successfully.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[1]: session-2.scope: Deactivated successfully.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd-logind[597]: Session 2 logged out. Waiting for processes to exit.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd-logind[597]: Removed session 2.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[1]: sshd-keygen.service - Generate sshd host keys on first boot skipped, unmet condition check ConditionFirstBoot=yes
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[1]: Started sshd@2-3:22-2:806825150.service - OpenBSD Secure Shell server per-connection daemon (vsock:2:806825150).
+Nov 07 22:36:25 lima-chamber-debian-13 sshd-session[729]: Accepted publickey for donglinwang from UNKNOWN port 65535 ssh2: ED25519 SHA256:v7gBkrv/eXr0ihLgNpHl1um7t5A+YSlfjv7urEwF80g
+Nov 07 22:36:25 lima-chamber-debian-13 sshd-session[729]: pam_unix(sshd:session): session opened for user donglinwang(uid=501) by donglinwang(uid=0)
+Nov 07 22:36:25 lima-chamber-debian-13 systemd-logind[597]: New session 4 of user donglinwang.
+Nov 07 22:36:25 lima-chamber-debian-13 systemd[1]: Started session-4.scope - Session 4 of User donglinwang.
+Nov 07 22:36:25 lima-chamber-debian-13 sudo[742]: donglinwang : PWD=/home/donglinwang.guest ; USER=root ; COMMAND=/usr/bin/cat /mnt/lima-cidata/param.env
+Nov 07 22:36:25 lima-chamber-debian-13 sudo[742]: pam_unix(sudo:session): session opened for user root(uid=0) by donglinwang(uid=501)
+Nov 07 22:36:25 lima-chamber-debian-13 sudo[742]: pam_unix(sudo:session): session closed for user root
+Nov 07 22:36:25 lima-chamber-debian-13 sudo[747]: donglinwang : PWD=/home/donglinwang.guest ; USER=root ; COMMAND=/usr/bin/cat /mnt/lima-cidata/param.env
+Nov 07 22:36:25 lima-chamber-debian-13 sudo[747]: pam_unix(sudo:session): session opened for user root(uid=0) by donglinwang(uid=501)
+Nov 07 22:36:25 lima-chamber-debian-13 sudo[747]: pam_unix(sudo:session): session closed for user root
+Nov 07 22:36:25 lima-chamber-debian-13 sudo[756]: donglinwang : PWD=/home/donglinwang.guest ; USER=root ; COMMAND=/usr/bin/bash -s
+Nov 07 22:36:25 lima-chamber-debian-13 sudo[756]: pam_unix(sudo:session): session opened for user root(uid=0) by donglinwang(uid=501)
+Nov 07 22:36:27 lima-chamber-debian-13 systemd-resolved[318]: Using degraded feature set UDP instead of UDP+EDNS0 for DNS server 192.168.5.2.
+Nov 07 22:36:28 lima-chamber-debian-13 runuser[805]: pam_unix(runuser:session): session opened for user chamber-test(uid=1000) by donglinwang(uid=0)
+Nov 07 22:36:28 lima-chamber-debian-13 runuser[805]: pam_unix(runuser:session): session closed for user chamber-test
+Nov 07 22:36:29 lima-chamber-debian-13 runuser[841]: pam_unix(runuser:session): session opened for user chamber-test(uid=1000) by donglinwang(uid=0)
+Nov 07 22:36:29 lima-chamber-debian-13 runuser[841]: pam_unix(runuser:session): session closed for user chamber-test
+Nov 07 22:36:29 lima-chamber-debian-13 runuser[849]: pam_unix(runuser-l:session): session opened for user chamber-test(uid=1000) by donglinwang(uid=0)
+Nov 07 22:36:53 lima-chamber-debian-13 systemd-timesyncd[319]: Contacted time server 167.160.187.179:123 (2.debian.pool.ntp.org).
+Nov 07 22:36:53 lima-chamber-debian-13 systemd-resolved[318]: Clock change detected. Flushing caches.
+Nov 07 22:36:53 lima-chamber-debian-13 systemd-timesyncd[319]: Initial clock synchronization to Sat 2026-11-07 22:36:53.386607 UTC.
+Nov 07 22:37:52 lima-chamber-debian-13 runuser[849]: pam_unix(runuser-l:session): session closed for user chamber-test
+Nov 07 22:37:52 lima-chamber-debian-13 sudo[756]: pam_unix(sudo:session): session closed for user root
+Nov 07 22:37:52 lima-chamber-debian-13 sudo[2868]: donglinwang : PWD=/home/donglinwang.guest ; USER=root ; COMMAND=/usr/bin/journalctl -b --no-pager -n 300
+Nov 07 22:37:52 lima-chamber-debian-13 sudo[2868]: pam_unix(sudo:session): session opened for user root(uid=0) by donglinwang(uid=501)

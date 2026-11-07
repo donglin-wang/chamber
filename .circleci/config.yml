@@ -8,26 +8,26 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Allow rootless user namespaces on the CI VM
+          name: Set up Ubuntu for rootless Chamber execution
           command: |
-            # Chamber's host preflight checks these Ubuntu AppArmor settings.
-            # Change only the disposable VM used for this job.
-            for setting in \
-              kernel.apparmor_restrict_unprivileged_userns \
-              kernel.apparmor_restrict_unprivileged_unconfined; do
-              if sysctl "$setting" >/dev/null 2>&1; then
-                sudo sysctl -w "$setting=0"
-              fi
-            done
+            sudo ./scripts/setup-host.sh --allow-unrestricted-userns chamber-test
+            # Make the executor's selected Go toolchain available to the new user.
+            go_root=$(go env GOROOT)
+            sudo mkdir -p /opt/chamber-go
+            sudo cp -a "$go_root/." /opt/chamber-go/
+            sudo install -d -o chamber-test -g chamber-test /home/chamber-test/source
+            tar --exclude=.git -cf - . | sudo -u chamber-test tar -C /home/chamber-test/source -xf -
       - run:
-          name: Build the package test image
-          command: docker build --progress=plain -f Dockerfile.chamber -t chamber-tests .
-      - run:
-          name: Run package and integration tests
+          name: Run local-test on the Ubuntu VM
           no_output_timeout: 25m
-          # Nested runc and BuildKit need namespace and mount access. The image
-          # still runs Go tests as its non-root chamber user.
-          command: docker run --rm --privileged chamber-tests
+          command: |
+            sudo -iu chamber-test bash -s <<'TEST'
+            set -euo pipefail
+            export PATH=/opt/chamber-go/bin:/usr/local/bin:/usr/bin:/bin
+            export XDG_RUNTIME_DIR=/run/user/$(id -u)
+            cd "$HOME/source"
+            go run ./cmd/local-test
+            TEST
 
 workflows:
   packages:

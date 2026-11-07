@@ -1,0 +1,1067 @@
+status: done
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.dropbox.attrs'
+Updating and loading repositories:
+Repositories loaded.
+Nothing to do.
+Package "ca-certificates-2025.2.80_v9.0.304-1.1.fc43.noarch" is already installed.
+Package "curl-8.15.0-2.fc43.aarch64" is already installed.
+Package "git-2.56.0-1.fc43.aarch64" is already installed.
+Package "shadow-utils-2:4.18.0-3.fc43.aarch64" is already installed.
+Package "util-linux-2.41.1-17.fc43.aarch64" is already installed.
+Package "dbus-daemon-1:1.16.2-1.fc43.aarch64" is already installed.
+
+user.max_user_namespaces = 28633
+Host ready for chamber-test. Go must be installed separately; SDK operations run without sudo.
+Updating and loading repositories:
+Repositories loaded.
+Package "ca-certificates-2025.2.80_v9.0.304-1.1.fc43.noarch" is already installed.
+Package "curl-8.15.0-2.fc43.aarch64" is already installed.
+Package "git-2.56.0-1.fc43.aarch64" is already installed.
+Package "shadow-utils-2:4.18.0-3.fc43.aarch64" is already installed.
+Package "util-linux-2.41.1-17.fc43.aarch64" is already installed.
+Package "dbus-daemon-1:1.16.2-1.fc43.aarch64" is already installed.
+
+Nothing to do.
+user.max_user_namespaces = 28633
+Host ready for chamber-test. Go must be installed separately; SDK operations run without sudo.
+NAME="Fedora Linux"
+VERSION="43 (Cloud Edition)"
+RELEASE_TYPE=stable
+ID=fedora
+VERSION_ID=43
+VERSION_CODENAME=""
+PRETTY_NAME="Fedora Linux 43 (Cloud Edition)"
+ANSI_COLOR="0;38;2;60;110;180"
+LOGO=fedora-logo-icon
+CPE_NAME="cpe:/o:fedoraproject:fedora:43"
+HOME_URL="https://fedoraproject.org/"
+DOCUMENTATION_URL="https://docs.fedoraproject.org/en-US/fedora/f43/"
+SUPPORT_URL="https://ask.fedoraproject.org/"
+BUG_REPORT_URL="https://bugzilla.redhat.com/"
+REDHAT_BUGZILLA_PRODUCT="Fedora"
+REDHAT_BUGZILLA_PRODUCT_VERSION=43
+REDHAT_SUPPORT_PRODUCT="Fedora"
+REDHAT_SUPPORT_PRODUCT_VERSION=43
+SUPPORT_END=2026-12-02
+VARIANT="Cloud Edition"
+VARIANT_ID=cloud
+Linux lima-chamber-fedora-43 6.17.1-300.fc43.aarch64 #1 SMP PREEMPT_DYNAMIC Mon Oct  6 14:55:11 UTC 2025 aarch64 GNU/Linux
+Enforcing
+uid=1000(chamber-test) gid=1001(chamber-test) groups=1001(chamber-test) context=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023
+go version go1.26.4 linux/arm64
+?   	github.com/donglin-wang/chamber/cmd/local-test	[no test files]
+?   	github.com/donglin-wang/chamber/examples/compile	[no test files]
+=== RUN   TestDefaultConfig
+--- PASS: TestDefaultConfig (0.00s)
+=== RUN   TestValidateBundleID
+=== PAUSE TestValidateBundleID
+=== CONT  TestValidateBundleID
+=== RUN   TestValidateBundleID/valid_bundle-1
+=== PAUSE TestValidateBundleID/valid_bundle-1
+=== RUN   TestValidateBundleID/valid_bundle_1
+=== PAUSE TestValidateBundleID/valid_bundle_1
+=== RUN   TestValidateBundleID/valid_bundle.1
+=== PAUSE TestValidateBundleID/valid_bundle.1
+=== RUN   TestValidateBundleID/valid_aaaaaaaaaaaaaaaa
+=== PAUSE TestValidateBundleID/valid_aaaaaaaaaaaaaaaa
+=== RUN   TestValidateBundleID/invalid_
+=== PAUSE TestValidateBundleID/invalid_
+=== RUN   TestValidateBundleID/invalid_.
+=== PAUSE TestValidateBundleID/invalid_.
+=== RUN   TestValidateBundleID/invalid_..
+=== PAUSE TestValidateBundleID/invalid_..
+=== RUN   TestValidateBundleID/invalid_-bundle
+=== PAUSE TestValidateBundleID/invalid_-bundle
+=== RUN   TestValidateBundleID/invalid_.bundle
+=== PAUSE TestValidateBundleID/invalid_.bundle
+=== RUN   TestValidateBundleID/invalid_bundle_path
+=== PAUSE TestValidateBundleID/invalid_bundle_path
+=== RUN   TestValidateBundleID/invalid_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+=== PAUSE TestValidateBundleID/invalid_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+=== CONT  TestValidateBundleID/valid_bundle-1
+=== CONT  TestValidateBundleID/invalid_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+=== CONT  TestValidateBundleID/invalid_.
+=== CONT  TestValidateBundleID/invalid_bundle_path
+=== CONT  TestValidateBundleID/invalid_.bundle
+=== CONT  TestValidateBundleID/invalid_-bundle
+=== CONT  TestValidateBundleID/invalid_..
+=== CONT  TestValidateBundleID/valid_aaaaaaaaaaaaaaaa
+=== CONT  TestValidateBundleID/invalid_
+=== CONT  TestValidateBundleID/valid_bundle.1
+=== CONT  TestValidateBundleID/valid_bundle_1
+--- PASS: TestValidateBundleID (0.00s)
+    --- PASS: TestValidateBundleID/valid_bundle-1 (0.00s)
+    --- PASS: TestValidateBundleID/invalid_. (0.00s)
+    --- PASS: TestValidateBundleID/invalid_bundle_path (0.00s)
+    --- PASS: TestValidateBundleID/invalid_.bundle (0.00s)
+    --- PASS: TestValidateBundleID/invalid_-bundle (0.00s)
+    --- PASS: TestValidateBundleID/invalid_.. (0.00s)
+    --- PASS: TestValidateBundleID/valid_aaaaaaaaaaaaaaaa (0.00s)
+    --- PASS: TestValidateBundleID/invalid_ (0.00s)
+    --- PASS: TestValidateBundleID/valid_bundle.1 (0.00s)
+    --- PASS: TestValidateBundleID/valid_bundle_1 (0.00s)
+    --- PASS: TestValidateBundleID/invalid_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/bundle	0.002s
+=== RUN   TestNewProvisionerRequiresWorkspace
+--- PASS: TestNewProvisionerRequiresWorkspace (0.00s)
+=== RUN   TestNewProvisionerRejectsHostProbeFailure
+--- PASS: TestNewProvisionerRejectsHostProbeFailure (0.07s)
+=== RUN   TestNewProvisionerRequiresFinalConfig
+=== RUN   TestNewProvisionerRequiresFinalConfig/name
+--- PASS: TestNewProvisionerRequiresFinalConfig (0.00s)
+    --- PASS: TestNewProvisionerRequiresFinalConfig/name (0.00s)
+=== RUN   TestNewProvisionerRejectsUnsupportedName
+--- PASS: TestNewProvisionerRejectsUnsupportedName (0.00s)
+=== RUN   TestNewProvisionerRejectsMismatchedWorkspaceRoot
+--- PASS: TestNewProvisionerRejectsMismatchedWorkspaceRoot (0.00s)
+=== RUN   TestNewProvisionerRejectsMismatchedWorkspaceTmpRoot
+--- PASS: TestNewProvisionerRejectsMismatchedWorkspaceTmpRoot (0.00s)
+=== RUN   TestProvisionerImplementationsSatisfySharedConstructorContract
+=== RUN   TestProvisionerImplementationsSatisfySharedConstructorContract/directory
+--- PASS: TestProvisionerImplementationsSatisfySharedConstructorContract (0.00s)
+    --- PASS: TestProvisionerImplementationsSatisfySharedConstructorContract/directory (0.00s)
+=== RUN   TestSupportedProvisionerNamesListsKnownImplementations
+--- PASS: TestSupportedProvisionerNamesListsKnownImplementations (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/bundle/factory	0.085s
+=== RUN   TestApexBridgeRedirectsToSharedLogger
+--- PASS: TestApexBridgeRedirectsToSharedLogger (0.00s)
+=== RUN   TestApexBridgeDebugLogsAreFilteredBySharedLogger
+--- PASS: TestApexBridgeDebugLogsAreFilteredBySharedLogger (0.00s)
+=== RUN   TestNewUsesCurrentUserIDMap
+--- PASS: TestNewUsesCurrentUserIDMap (0.04s)
+=== RUN   TestRemoveReclaimsBundleTemporaryDirectories
+{"time":"2026-11-07T22:36:32.46304472Z","level":"INFO","msg":"removing bundle","bundle_id":"bundle-temp-cleanup","bundle_path":"/home/chamber-test/tmp/TestRemoveReclaimsBundleTemporaryDirectories1648165539/001/bundles/bundle-temp-cleanup"}
+{"time":"2026-11-07T22:36:32.463130619Z","level":"INFO","msg":"removed bundle","bundle_id":"bundle-temp-cleanup","bundle_path":"/home/chamber-test/tmp/TestRemoveReclaimsBundleTemporaryDirectories1648165539/001/bundles/bundle-temp-cleanup"}
+--- PASS: TestRemoveReclaimsBundleTemporaryDirectories (0.01s)
+=== RUN   TestDescriptorIdentifiesDirectoryProvisioner
+--- PASS: TestDescriptorIdentifiesDirectoryProvisioner (0.00s)
+=== RUN   TestProvisionClassifiesMissingImageLayoutAsInvalidRequest
+{"time":"2026-11-07T22:36:32.465306557Z","level":"INFO","msg":"provisioning bundle","bundle_id":"bundle-1","image_ref":"index.docker.io/library/golang:1.26.4-bookworm","image_layout":"/home/chamber-test/tmp/TestProvisionClassifiesMissingImageLayoutAsInvalidRequest1073617176/003/missing-layout","bundle_path":"/home/chamber-test/tmp/TestProvisionClassifiesMissingImageLayoutAsInvalidRequest1073617176/001/bundles/bundle-1"}
+--- PASS: TestProvisionClassifiesMissingImageLayoutAsInvalidRequest (0.00s)
+=== RUN   TestProvisionCanonicalizesImageRefBeforeUnpack
+{"time":"2026-11-07T22:36:32.466596765Z","level":"INFO","msg":"new image manifest created: sha256:ca1e57b5e9d0fa78daebb0a84a30d93a062da1661c515285d2a851030ec440f1","library":"umoci"}
+{"time":"2026-11-07T22:36:32.467152265Z","level":"INFO","msg":"created new tag for image manifest: index.docker.io/library/golang:1.26.4-bookworm","library":"umoci"}
+{"time":"2026-11-07T22:36:32.468832324Z","level":"INFO","msg":"provisioning bundle","bundle_id":"bundle-1","image_ref":"index.docker.io/library/golang:1.26.4-bookworm","image_layout":"/home/chamber-test/tmp/TestProvisionCanonicalizesImageRefBeforeUnpack4176981451/001/layout","bundle_path":"/home/chamber-test/tmp/TestProvisionCanonicalizesImageRefBeforeUnpack4176981451/002/bundles/bundle-1"}
+{"time":"2026-11-07T22:36:32.468959359Z","level":"INFO","msg":"unpack rootfs: /home/chamber-test/tmp/TestProvisionCanonicalizesImageRefBeforeUnpack4176981451/003/tmp/.bundle-1.tmp-1536906311/rootfs","library":"umoci"}
+{"time":"2026-11-07T22:36:32.46959606Z","level":"INFO","msg":"provisioned bundle","bundle_id":"bundle-1","bundle_path":"/home/chamber-test/tmp/TestProvisionCanonicalizesImageRefBeforeUnpack4176981451/002/bundles/bundle-1"}
+--- PASS: TestProvisionCanonicalizesImageRefBeforeUnpack (0.00s)
+=== RUN   TestRemoveTreatsMissingBundleAsRemoved
+{"time":"2026-11-07T22:36:32.471595845Z","level":"INFO","msg":"removing bundle","bundle_id":"bundle-1","bundle_path":"/home/chamber-test/tmp/TestRemoveTreatsMissingBundleAsRemoved125488852/001/bundles/bundle-1"}
+{"time":"2026-11-07T22:36:32.471612269Z","level":"INFO","msg":"removed bundle","bundle_id":"bundle-1","bundle_path":"/home/chamber-test/tmp/TestRemoveTreatsMissingBundleAsRemoved125488852/001/bundles/bundle-1"}
+--- PASS: TestRemoveTreatsMissingBundleAsRemoved (0.00s)
+=== RUN   TestRemoveDeletesRuntimeMutatedReadOnlyBundle
+{"time":"2026-11-07T22:36:32.473413481Z","level":"INFO","msg":"removing bundle","bundle_id":"bundle-1","bundle_path":"/home/chamber-test/tmp/TestRemoveDeletesRuntimeMutatedReadOnlyBundle1213152200/001/bundles/bundle-1"}
+{"time":"2026-11-07T22:36:32.473706737Z","level":"INFO","msg":"removed bundle","bundle_id":"bundle-1","bundle_path":"/home/chamber-test/tmp/TestRemoveDeletesRuntimeMutatedReadOnlyBundle1213152200/001/bundles/bundle-1"}
+--- PASS: TestRemoveDeletesRuntimeMutatedReadOnlyBundle (0.00s)
+=== RUN   TestRemoveRejectsBundleOutsideProvisionerRoot
+--- PASS: TestRemoveRejectsBundleOutsideProvisionerRoot (0.00s)
+=== RUN   TestRootlessProvisioningAllowsNestingAndPreservesUnrelatedSettings
+--- PASS: TestRootlessProvisioningAllowsNestingAndPreservesUnrelatedSettings (0.00s)
+=== RUN   TestSetupRootlessRuntimeSpec
+--- PASS: TestSetupRootlessRuntimeSpec (0.00s)
+=== RUN   TestWriteRootlessRuntimeSpecWritesPrivateConfig
+--- PASS: TestWriteRootlessRuntimeSpecWritesPrivateConfig (0.00s)
+=== RUN   TestSetupRootlessRuntimeSpecKeepsExistingProcessFieldsWhenRequestFieldsAreEmpty
+--- PASS: TestSetupRootlessRuntimeSpecKeepsExistingProcessFieldsWhenRequestFieldsAreEmpty (0.00s)
+=== RUN   TestSetupRootlessRuntimeSpecRejectsMissingProcess
+--- PASS: TestSetupRootlessRuntimeSpecRejectsMissingProcess (0.00s)
+=== RUN   TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser
+=== RUN   TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/request_additional_gid
+=== RUN   TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/image_uid
+=== RUN   TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/image_gid
+=== RUN   TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/image_additional_gid
+=== RUN   TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/request_uid
+=== RUN   TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/request_gid
+--- PASS: TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser (0.00s)
+    --- PASS: TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/request_additional_gid (0.00s)
+    --- PASS: TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/image_uid (0.00s)
+    --- PASS: TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/image_gid (0.00s)
+    --- PASS: TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/image_additional_gid (0.00s)
+    --- PASS: TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/request_uid (0.00s)
+    --- PASS: TestSetupRootlessRuntimeSpecRejectsUnmappedProcessUser/request_gid (0.00s)
+=== RUN   TestSetupRootlessRuntimeSpecAppendsBindMounts
+--- PASS: TestSetupRootlessRuntimeSpecAppendsBindMounts (0.00s)
+=== RUN   TestTranslateToOCIBindMountsDefaultsAndExplicitOptions
+--- PASS: TestTranslateToOCIBindMountsDefaultsAndExplicitOptions (0.00s)
+=== RUN   TestTranslateToOCIBindMountsRejectsInvalidRequests
+=== RUN   TestTranslateToOCIBindMountsRejectsInvalidRequests/relative_target
+=== RUN   TestTranslateToOCIBindMountsRejectsInvalidRequests/root_target
+=== RUN   TestTranslateToOCIBindMountsRejectsInvalidRequests/unsupported_type
+=== RUN   TestTranslateToOCIBindMountsRejectsInvalidRequests/empty_source
+=== RUN   TestTranslateToOCIBindMountsRejectsInvalidRequests/missing_source
+--- PASS: TestTranslateToOCIBindMountsRejectsInvalidRequests (0.00s)
+    --- PASS: TestTranslateToOCIBindMountsRejectsInvalidRequests/relative_target (0.00s)
+    --- PASS: TestTranslateToOCIBindMountsRejectsInvalidRequests/root_target (0.00s)
+    --- PASS: TestTranslateToOCIBindMountsRejectsInvalidRequests/unsupported_type (0.00s)
+    --- PASS: TestTranslateToOCIBindMountsRejectsInvalidRequests/empty_source (0.00s)
+    --- PASS: TestTranslateToOCIBindMountsRejectsInvalidRequests/missing_source (0.00s)
+=== RUN   TestImageManifestInLayoutRejectsMissingRef
+{"time":"2026-11-07T22:36:32.478938421Z","level":"INFO","msg":"new image manifest created: sha256:419e53d7f19b83176dd8b21c686e994c0c2ce145d9317f96b1015821d60efd0d","library":"umoci"}
+{"time":"2026-11-07T22:36:32.479302109Z","level":"INFO","msg":"created new tag for image manifest: present","library":"umoci"}
+--- PASS: TestImageManifestInLayoutRejectsMissingRef (0.00s)
+=== RUN   TestImageManifestInLayoutHonorsCanceledContext
+--- PASS: TestImageManifestInLayoutHonorsCanceledContext (0.00s)
+=== RUN   TestImageManifestInLayoutSelectsExactDigestAndPlatform
+--- PASS: TestImageManifestInLayoutSelectsExactDigestAndPlatform (0.00s)
+=== RUN   TestCreateBindMountTargetPathsCreatesRootfsPlaceholders
+--- PASS: TestCreateBindMountTargetPathsCreatesRootfsPlaceholders (0.00s)
+=== RUN   TestCreateBindMountTargetPathsRejectsDirectorySourceOntoFileTarget
+--- PASS: TestCreateBindMountTargetPathsRejectsDirectorySourceOntoFileTarget (0.00s)
+=== RUN   TestSanitizeBindMountTargetPathRejectsEscapes
+--- PASS: TestSanitizeBindMountTargetPathRejectsEscapes (0.00s)
+=== RUN   TestSubordinateRange
+=== RUN   TestSubordinateRange/username
+=== RUN   TestSubordinateRange/numeric_uid_for_group_allocation
+=== RUN   TestSubordinateRange/absent
+=== RUN   TestSubordinateRange/empty_username
+=== RUN   TestSubordinateRange/zero
+=== RUN   TestSubordinateRange/empty_range
+=== RUN   TestSubordinateRange/overlapping_caller
+=== RUN   TestSubordinateRange/overflow
+=== RUN   TestSubordinateRange/invalid_number
+=== RUN   TestSubordinateRange/malformed
+--- PASS: TestSubordinateRange (0.00s)
+    --- PASS: TestSubordinateRange/username (0.00s)
+    --- PASS: TestSubordinateRange/numeric_uid_for_group_allocation (0.00s)
+    --- PASS: TestSubordinateRange/absent (0.00s)
+    --- PASS: TestSubordinateRange/empty_username (0.00s)
+    --- PASS: TestSubordinateRange/zero (0.00s)
+    --- PASS: TestSubordinateRange/empty_range (0.00s)
+    --- PASS: TestSubordinateRange/overlapping_caller (0.00s)
+    --- PASS: TestSubordinateRange/overflow (0.00s)
+    --- PASS: TestSubordinateRange/invalid_number (0.00s)
+    --- PASS: TestSubordinateRange/malformed (0.00s)
+=== RUN   TestNamespaceCommandKeepsIdentityAndArguments
+--- PASS: TestNamespaceCommandKeepsIdentityAndArguments (0.00s)
+=== RUN   TestCleanupBeforeExtractionDoesNotNeedNamespaceHelper
+--- PASS: TestCleanupBeforeExtractionDoesNotNeedNamespaceHelper (0.00s)
+=== RUN   TestUnpackHelperRejectsUnverifiedDownload
+--- PASS: TestUnpackHelperRejectsUnverifiedDownload (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/bundle/internal/directory	0.075s
+=== RUN   TestDefaultConfig
+--- PASS: TestDefaultConfig (0.00s)
+=== RUN   TestNormalizePlatformDefaultsToLinuxHostArchitecture
+--- PASS: TestNormalizePlatformDefaultsToLinuxHostArchitecture (0.00s)
+=== RUN   TestValidateLayoutRequiresOCILayoutAndManifest
+--- PASS: TestValidateLayoutRequiresOCILayoutAndManifest (0.00s)
+=== RUN   TestValidateLayoutContextHonorsCanceledContext
+--- PASS: TestValidateLayoutContextHonorsCanceledContext (0.00s)
+=== RUN   TestValidateLayoutRejectsMissingLayoutFile
+--- PASS: TestValidateLayoutRejectsMissingLayoutFile (0.00s)
+=== RUN   TestValidateLayoutRejectsIndexWithoutManifests
+--- PASS: TestValidateLayoutRejectsIndexWithoutManifests (0.00s)
+=== RUN   TestValidateLayoutRejectsMissingManifestBlob
+--- PASS: TestValidateLayoutRejectsMissingManifestBlob (0.00s)
+=== RUN   TestValidateLayoutRejectsMissingManifestChildBlob
+--- PASS: TestValidateLayoutRejectsMissingManifestChildBlob (0.00s)
+=== RUN   TestValidateLayoutRejectsManifestBlobWithWrongDigest
+--- PASS: TestValidateLayoutRejectsManifestBlobWithWrongDigest (0.00s)
+=== RUN   TestCanonicalImageReferenceNormalizesDockerHubRegistry
+--- PASS: TestCanonicalImageReferenceNormalizesDockerHubRegistry (0.00s)
+=== RUN   TestValidateImageReferenceRejectsInvalidReferences
+--- PASS: TestValidateImageReferenceRejectsInvalidReferences (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/image	0.003s
+=== RUN   TestNewStorePreparesConfiguredImageRoot
+--- PASS: TestNewStorePreparesConfiguredImageRoot (0.01s)
+=== RUN   TestNewStoreRejectsHostProbeFailure
+--- PASS: TestNewStoreRejectsHostProbeFailure (0.00s)
+=== RUN   TestNewStoreRequiresConfiguredImageRoot
+--- PASS: TestNewStoreRequiresConfiguredImageRoot (0.00s)
+=== RUN   TestNewStoreRequiresWorkspace
+--- PASS: TestNewStoreRequiresWorkspace (0.00s)
+=== RUN   TestNewStoreRejectsMismatchedWorkspaceRoot
+--- PASS: TestNewStoreRejectsMismatchedWorkspaceRoot (0.00s)
+=== RUN   TestNewStoreRejectsMismatchedWorkspaceTmpRoot
+--- PASS: TestNewStoreRejectsMismatchedWorkspaceTmpRoot (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/image/factory	0.016s
+=== RUN   TestResolveRequestDefaultsDockerfileAndNormalizesPlatform
+--- PASS: TestResolveRequestDefaultsDockerfileAndNormalizesPlatform (0.00s)
+=== RUN   TestRemoveBuildDirectoryRecoversPrivateSnapshots
+=== RUN   TestRemoveBuildDirectoryRecoversPrivateSnapshots/false
+=== RUN   TestRemoveBuildDirectoryRecoversPrivateSnapshots/true
+--- PASS: TestRemoveBuildDirectoryRecoversPrivateSnapshots (0.01s)
+    --- PASS: TestRemoveBuildDirectoryRecoversPrivateSnapshots/false (0.01s)
+    --- PASS: TestRemoveBuildDirectoryRecoversPrivateSnapshots/true (0.00s)
+=== RUN   TestResolveRequestRejectsDockerfileSymlinkOutsideContext
+--- PASS: TestResolveRequestRejectsDockerfileSymlinkOutsideContext (0.00s)
+=== RUN   TestResolveRequestRejectsEmptyBuildArgKey
+--- PASS: TestResolveRequestRejectsEmptyBuildArgKey (0.00s)
+=== RUN   TestValidateConfigRejectsUnsupportedSnapshotterAndRelativePaths
+--- PASS: TestValidateConfigRejectsUnsupportedSnapshotterAndRelativePaths (0.00s)
+=== RUN   TestValidateRejectsRootThatWouldCreateOverlongBuildKitSocketPath
+--- PASS: TestValidateRejectsRootThatWouldCreateOverlongBuildKitSocketPath (0.00s)
+=== RUN   TestLocalToolDoesNotChangeCallerOwnedPermissions
+--- PASS: TestLocalToolDoesNotChangeCallerOwnedPermissions (0.00s)
+=== RUN   TestManagedArchivesRequireOverrideTriples
+--- PASS: TestManagedArchivesRequireOverrideTriples (0.00s)
+=== RUN   TestManagedArchiveDefaultsMapArchitectures
+--- PASS: TestManagedArchiveDefaultsMapArchitectures (0.00s)
+=== RUN   TestDownloadAndExtractArchiveInstallsOnlyExpectedExecutables
+--- PASS: TestDownloadAndExtractArchiveInstallsOnlyExpectedExecutables (0.01s)
+=== RUN   TestDownloadAndExtractArchiveAllowsOfficialUnextractedHelpers
+--- PASS: TestDownloadAndExtractArchiveAllowsOfficialUnextractedHelpers (0.00s)
+=== RUN   TestDownloadAndExtractArchiveRejectsUnsafeEntries
+=== RUN   TestDownloadAndExtractArchiveRejectsUnsafeEntries/absolute
+=== RUN   TestDownloadAndExtractArchiveRejectsUnsafeEntries/dotdot
+=== RUN   TestDownloadAndExtractArchiveRejectsUnsafeEntries/symlink
+=== RUN   TestDownloadAndExtractArchiveRejectsUnsafeEntries/hardlink
+=== RUN   TestDownloadAndExtractArchiveRejectsUnsafeEntries/device
+=== RUN   TestDownloadAndExtractArchiveRejectsUnsafeEntries/unexpected
+--- PASS: TestDownloadAndExtractArchiveRejectsUnsafeEntries (0.02s)
+    --- PASS: TestDownloadAndExtractArchiveRejectsUnsafeEntries/absolute (0.00s)
+    --- PASS: TestDownloadAndExtractArchiveRejectsUnsafeEntries/dotdot (0.00s)
+    --- PASS: TestDownloadAndExtractArchiveRejectsUnsafeEntries/symlink (0.00s)
+    --- PASS: TestDownloadAndExtractArchiveRejectsUnsafeEntries/hardlink (0.01s)
+    --- PASS: TestDownloadAndExtractArchiveRejectsUnsafeEntries/device (0.00s)
+    --- PASS: TestDownloadAndExtractArchiveRejectsUnsafeEntries/unexpected (0.00s)
+=== RUN   TestDownloadAndExtractArchiveRejectsWrongChecksum
+--- PASS: TestDownloadAndExtractArchiveRejectsWrongChecksum (0.00s)
+=== RUN   TestBuildCommandsUseChamberOwnedStateAndEnvironment
+--- PASS: TestBuildCommandsUseChamberOwnedStateAndEnvironment (0.00s)
+=== RUN   TestProcessOutputBufferCapturesAndLogsLines
+--- PASS: TestProcessOutputBufferCapturesAndLogsLines (0.00s)
+=== RUN   TestExtractOCITarWritesLayout
+--- PASS: TestExtractOCITarWritesLayout (0.00s)
+=== RUN   TestBuildParentDeathIntegration
+    crash_integration_test.go:127: parent SIGKILL: worker/client/payload=[1430 1443 1462 1529 1537 1549] stopped; retained directories=[/home/chamber-test/tmp/ch-crash-2249747744/tmp/.bk-home-4037628536 /home/chamber-test/tmp/ch-crash-2249747744/tmp/.bk-output-1410849318.tar /home/chamber-test/tmp/ch-crash-2249747744/tmp/.bk-state-2643627563 /home/chamber-test/tmp/ch-crash-2249747744/tmp/.bk-tmp-2442575913]
+--- PASS: TestBuildParentDeathIntegration (21.55s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/image/internal/buildkit	21.595s
+=== RUN   TestJSONMetadataPutGetListAndDelete
+--- PASS: TestJSONMetadataPutGetListAndDelete (0.01s)
+=== RUN   TestJSONMetadataRejectsCorruptRecords
+--- PASS: TestJSONMetadataRejectsCorruptRecords (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/image/internal/metadata	0.012s
+=== RUN   TestPullWritesOCIImageLayoutWithReferenceAnnotation
+--- PASS: TestPullWritesOCIImageLayoutWithReferenceAnnotation (0.00s)
+=== RUN   TestPullFetchFailureLeavesNoDestinationLayout
+--- PASS: TestPullFetchFailureLeavesNoDestinationLayout (0.00s)
+=== RUN   TestPullRejectsInvalidCanonicalReference
+--- PASS: TestPullRejectsInvalidCanonicalReference (0.00s)
+=== RUN   TestGeneratedLayoutValidationErrorPreservesCancellationCode
+--- PASS: TestGeneratedLayoutValidationErrorPreservesCancellationCode (0.00s)
+=== RUN   TestResolvePlatformDefaultsToLinuxHostArchitecture
+--- PASS: TestResolvePlatformDefaultsToLinuxHostArchitecture (0.00s)
+=== RUN   TestResolvePlatformAppliesRequestFields
+--- PASS: TestResolvePlatformAppliesRequestFields (0.00s)
+=== RUN   TestAuthenticatorAppliesBasicAndTokenAuth
+--- PASS: TestAuthenticatorAppliesBasicAndTokenAuth (0.00s)
+=== RUN   TestRegistryRealWorldBusybox
+--- PASS: TestRegistryRealWorldBusybox (0.72s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/image/internal/registry	0.730s
+=== RUN   TestStorePullCommitsToSharedLayoutAndReusesMetadata
+{"time":"2026-11-07T22:36:33.741159853Z","level":"INFO","msg":"pulling image","image_ref":"127.0.0.1:39679/library/app:latest","layout_path":"/home/chamber-test/tmp/ch-img-432111517/layout","platform_os":"linux","platform_architecture":"arm64","platform_variant":""}
+{"time":"2026-11-07T22:36:33.746175547Z","level":"INFO","msg":"committed image","image_ref":"127.0.0.1:39679/library/app:latest","digest":"sha256:5c2523438cf630e345a54a2068548bd2c7f68ca0a499bbfb578b104c4245c12b","layout_path":"/home/chamber-test/tmp/ch-img-432111517/layout","size_bytes":1974,"source":"pulled"}
+{"time":"2026-11-07T22:36:33.746472012Z","level":"INFO","msg":"reused image","image_ref":"127.0.0.1:39679/library/app:latest","digest":"sha256:5c2523438cf630e345a54a2068548bd2c7f68ca0a499bbfb578b104c4245c12b","size_bytes":1974}
+--- PASS: TestStorePullCommitsToSharedLayoutAndReusesMetadata (0.01s)
+=== RUN   TestStoreImagesUseCurrentLayoutAfterRelocation
+{"time":"2026-11-07T22:36:33.750799787Z","level":"INFO","msg":"pulling image","image_ref":"127.0.0.1:46495/library/relocated:latest","layout_path":"/home/chamber-test/tmp/TestStoreImagesUseCurrentLayoutAfterRelocation3591581996/001/images/layout","platform_os":"linux","platform_architecture":"arm64","platform_variant":""}
+{"time":"2026-11-07T22:36:33.75518936Z","level":"INFO","msg":"committed image","image_ref":"127.0.0.1:46495/library/relocated:latest","digest":"sha256:2ca4341f115e59dd698d4ce71a9fc9046decd188280ec8baf10630f9a55ebfcd","layout_path":"/home/chamber-test/tmp/TestStoreImagesUseCurrentLayoutAfterRelocation3591581996/001/images/layout","size_bytes":1972,"source":"pulled"}
+{"time":"2026-11-07T22:36:33.756908301Z","level":"INFO","msg":"reused image","image_ref":"127.0.0.1:46495/library/relocated:latest","digest":"sha256:2ca4341f115e59dd698d4ce71a9fc9046decd188280ec8baf10630f9a55ebfcd","size_bytes":1972}
+--- PASS: TestStoreImagesUseCurrentLayoutAfterRelocation (0.01s)
+=== RUN   TestStorePullAlwaysRefreshesSharedLayoutReference
+{"time":"2026-11-07T22:36:33.760794471Z","level":"INFO","msg":"pulling image","image_ref":"127.0.0.1:39055/library/mutable:latest","layout_path":"/home/chamber-test/tmp/ch-img-3442600326/layout","platform_os":"linux","platform_architecture":"arm64","platform_variant":""}
+{"time":"2026-11-07T22:36:33.764558228Z","level":"INFO","msg":"committed image","image_ref":"127.0.0.1:39055/library/mutable:latest","digest":"sha256:8c624ca7b86189b17b98b292a9104df446a4df92b63495cce837dd2250d7c265","layout_path":"/home/chamber-test/tmp/ch-img-3442600326/layout","size_bytes":1975,"source":"pulled"}
+{"time":"2026-11-07T22:36:33.766417839Z","level":"INFO","msg":"pulling image","image_ref":"127.0.0.1:39055/library/mutable:latest","layout_path":"/home/chamber-test/tmp/ch-img-3442600326/layout","platform_os":"linux","platform_architecture":"arm64","platform_variant":""}
+{"time":"2026-11-07T22:36:33.770831398Z","level":"INFO","msg":"committed image","image_ref":"127.0.0.1:39055/library/mutable:latest","digest":"sha256:b70923d3abee160ad448093145101176b2a4d34796a1ae711d0405e5db061ffe","layout_path":"/home/chamber-test/tmp/ch-img-3442600326/layout","size_bytes":1975,"source":"pulled"}
+--- PASS: TestStorePullAlwaysRefreshesSharedLayoutReference (0.01s)
+=== RUN   TestStoreRemoveDeletesMetadataAndIndexReferenceButLeavesLayout
+{"time":"2026-11-07T22:36:33.775254926Z","level":"INFO","msg":"pulling image","image_ref":"127.0.0.1:35903/library/app:latest","layout_path":"/home/chamber-test/tmp/ch-img-1577096091/layout","platform_os":"linux","platform_architecture":"arm64","platform_variant":""}
+{"time":"2026-11-07T22:36:33.780174141Z","level":"INFO","msg":"committed image","image_ref":"127.0.0.1:35903/library/app:latest","digest":"sha256:5e1ea24e0297125f22c44ccc8ffcd5da9ec866949c2b5b9e384e1243111a4687","layout_path":"/home/chamber-test/tmp/ch-img-1577096091/layout","size_bytes":1977,"source":"pulled"}
+--- PASS: TestStoreRemoveDeletesMetadataAndIndexReferenceButLeavesLayout (0.01s)
+=== RUN   TestStoreBuildValidatesContextPath
+--- PASS: TestStoreBuildValidatesContextPath (0.00s)
+=== RUN   TestStoreBuildKitBuilderLazyInitializesOnce
+--- PASS: TestStoreBuildKitBuilderLazyInitializesOnce (0.01s)
+=== RUN   TestStoreBuildKitBuilderRetriesAfterInitializationFailure
+--- PASS: TestStoreBuildKitBuilderRetriesAfterInitializationFailure (0.00s)
+=== RUN   TestStoreRealWorldBusybox
+{"time":"2026-11-07T22:36:33.796358426Z","level":"INFO","msg":"pulling image","image_ref":"index.docker.io/library/busybox:latest","layout_path":"/home/chamber-test/tmp/TestStoreRealWorldBusybox1568789645/001/images/layout","platform_os":"linux","platform_architecture":"arm64","platform_variant":""}
+{"time":"2026-11-07T22:36:34.510207742Z","level":"INFO","msg":"committed image","image_ref":"index.docker.io/library/busybox:latest","digest":"sha256:365a051f12e05767b598e643676f14a450fb678a75ccf2beb0052c95d5c73b83","layout_path":"/home/chamber-test/tmp/TestStoreRealWorldBusybox1568789645/001/images/layout","size_bytes":1916477,"source":"pulled"}
+--- PASS: TestStoreRealWorldBusybox (0.72s)
+=== RUN   TestStoreRealBuildKitDockerfile
+{"time":"2026-11-07T22:36:59.437869465Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:36:59Z\" level=warning msg=\"CDI setup error /etc/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:36:59.438024382Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:36:59Z\" level=warning msg=\"CDI setup error /var/run/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:36:59.438030632Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:36:59Z\" level=warning msg=\"CDI setup error /etc/buildkit/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:36:59.476508358Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:36:59Z\" level=info msg=\"found worker \\\"ah3jnkn5gywzf155s4191554w\\\", labels=map[org.mobyproject.buildkit.worker.executor:oci org.mobyproject.buildkit.worker.hostname:lima-chamber-fedora-43 org.mobyproject.buildkit.worker.network:host org.mobyproject.buildkit.worker.oci.process-mode:sandbox org.mobyproject.buildkit.worker.selinux.enabled:false org.mobyproject.buildkit.worker.snapshotter:native], platforms=[linux/arm64 linux/amd64 linux/amd64/v2 linux/riscv64 linux/ppc64 linux/ppc64le linux/s390x linux/386 linux/mips64le linux/mips64 linux/loong64]\""}
+{"time":"2026-11-07T22:36:59.490384202Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:36:59Z\" level=info msg=\"found 1 workers, default=\\\"ah3jnkn5gywzf155s4191554w\\\"\""}
+{"time":"2026-11-07T22:36:59.490408452Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:36:59Z\" level=warning msg=\"currently, only the default worker can be used.\""}
+{"time":"2026-11-07T22:36:59.493735922Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:36:59Z\" level=info msg=\"running server on /home/chamber-test/tmp/.ch-img-2119546432.tmp/.bk-run-2410403417/buildkitd.sock\""}
+{"time":"2026-11-07T22:36:59.631372142Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 [internal] load build definition from Dockerfile"}
+{"time":"2026-11-07T22:36:59.631486518Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 transferring dockerfile: 134B done"}
+{"time":"2026-11-07T22:36:59.631507726Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 DONE 0.0s"}
+{"time":"2026-11-07T22:36:59.631513559Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#2 [internal] load .dockerignore"}
+{"time":"2026-11-07T22:36:59.631531726Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#2 transferring context: 2B done"}
+{"time":"2026-11-07T22:36:59.631533018Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#2 DONE 0.0s"}
+{"time":"2026-11-07T22:36:59.631533976Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 [internal] load build context"}
+{"time":"2026-11-07T22:36:59.631535018Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 transferring context: 114B done"}
+{"time":"2026-11-07T22:36:59.631536018Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 DONE 0.0s"}
+{"time":"2026-11-07T22:36:59.631537226Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 [1/1] COPY hello.txt /hello.txt"}
+{"time":"2026-11-07T22:36:59.63153831Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 DONE 0.0s"}
+{"time":"2026-11-07T22:36:59.631539268Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 exporting to oci image format"}
+{"time":"2026-11-07T22:36:59.631540226Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 exporting layers 0.1s done"}
+{"time":"2026-11-07T22:36:59.631541976Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 exporting manifest sha256:d3b798419055def70953e40d2a2121c124adfde06d498c2170c53e7aafadbb36"}
+{"time":"2026-11-07T22:36:59.69716247Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 exporting manifest sha256:d3b798419055def70953e40d2a2121c124adfde06d498c2170c53e7aafadbb36 done"}
+{"time":"2026-11-07T22:36:59.697175512Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 exporting config sha256:8f4d91066d4e993704e0a42114428b72ed1bfd746469f37d4b547bae961bf981 done"}
+{"time":"2026-11-07T22:36:59.697177512Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 sending tarball done"}
+{"time":"2026-11-07T22:36:59.697179012Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 DONE 0.1s"}
+{"time":"2026-11-07T22:36:59.724198112Z","level":"INFO","msg":"committed image","image_ref":"example.com/chamber/buildkit-e2e:latest","digest":"sha256:d3b798419055def70953e40d2a2121c124adfde06d498c2170c53e7aafadbb36","layout_path":"/home/chamber-test/tmp/ch-img-2119546432/layout","size_bytes":1040,"source":"built"}
+--- PASS: TestStoreRealBuildKitDockerfile (25.22s)
+=== RUN   TestStoreRealBuildKitDockerfileWithRun
+{"time":"2026-11-07T22:37:17.919225748Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:17Z\" level=warning msg=\"CDI setup error /etc/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:37:17.91928279Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:17Z\" level=warning msg=\"CDI setup error /var/run/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:37:17.919285623Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:17Z\" level=warning msg=\"CDI setup error /etc/buildkit/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:37:18.0274429Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:18Z\" level=info msg=\"found worker \\\"1v8ie4qh7gecicadk0ula18qe\\\", labels=map[org.mobyproject.buildkit.worker.executor:oci org.mobyproject.buildkit.worker.hostname:lima-chamber-fedora-43 org.mobyproject.buildkit.worker.network:host org.mobyproject.buildkit.worker.oci.process-mode:sandbox org.mobyproject.buildkit.worker.selinux.enabled:false org.mobyproject.buildkit.worker.snapshotter:native], platforms=[linux/arm64 linux/amd64 linux/amd64/v2 linux/riscv64 linux/ppc64 linux/ppc64le linux/s390x linux/386 linux/mips64le linux/mips64 linux/loong64]\""}
+{"time":"2026-11-07T22:37:18.042520873Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:18Z\" level=info msg=\"found 1 workers, default=\\\"1v8ie4qh7gecicadk0ula18qe\\\"\""}
+{"time":"2026-11-07T22:37:18.042533332Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:18Z\" level=warning msg=\"currently, only the default worker can be used.\""}
+{"time":"2026-11-07T22:37:18.045947428Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:18Z\" level=info msg=\"running server on /home/chamber-test/tmp/.ch-img-2062609489.tmp/.bk-run-2396048200/buildkitd.sock\""}
+{"time":"2026-11-07T22:37:18.055872006Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 [internal] load build definition from Dockerfile"}
+{"time":"2026-11-07T22:37:18.23256783Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 transferring dockerfile: 170B done"}
+{"time":"2026-11-07T22:37:18.232586955Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 DONE 0.0s"}
+{"time":"2026-11-07T22:37:18.23258933Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#2 [internal] load metadata for docker.io/library/busybox:latest"}
+{"time":"2026-11-07T22:37:18.867823899Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#2 DONE 0.8s"}
+{"time":"2026-11-07T22:37:19.07288562Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 [internal] load .dockerignore"}
+{"time":"2026-11-07T22:37:19.072951954Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 transferring context: 2B done"}
+{"time":"2026-11-07T22:37:19.07296962Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 DONE 0.0s"}
+{"time":"2026-11-07T22:37:19.073008912Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 [1/2] FROM docker.io/library/busybox:latest@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4"}
+{"time":"2026-11-07T22:37:19.073023121Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 resolve docker.io/library/busybox:latest@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4 0.0s done"}
+{"time":"2026-11-07T22:37:19.07519617Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 sha256:55d2dadd4bbc7132e31b89f47d8f7cc517cac013563328b707c933d42c4a2c07 0B / 1.92MB 0.2s"}
+{"time":"2026-11-07T22:37:19.227301902Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:19Z\" level=info msg=\"detected 127.0.0.53 nameserver, assuming systemd-resolved, so using resolv.conf: /run/systemd/resolve/resolv.conf\""}
+{"time":"2026-11-07T22:37:19.259453064Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 sha256:55d2dadd4bbc7132e31b89f47d8f7cc517cac013563328b707c933d42c4a2c07 1.92MB / 1.92MB 0.2s done"}
+{"time":"2026-11-07T22:37:19.259634981Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 extracting sha256:55d2dadd4bbc7132e31b89f47d8f7cc517cac013563328b707c933d42c4a2c07 0.1s done"}
+{"time":"2026-11-07T22:37:19.259643564Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 DONE 0.3s"}
+{"time":"2026-11-07T22:37:19.259645856Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 [2/2] RUN echo hello-from-run > /hello.txt"}
+{"time":"2026-11-07T22:37:19.259647148Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 DONE 0.1s"}
+{"time":"2026-11-07T22:37:19.361066191Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 exporting to oci image format"}
+{"time":"2026-11-07T22:37:19.361079566Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 exporting layers 0.1s done"}
+{"time":"2026-11-07T22:37:19.361081275Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 exporting manifest sha256:e0091daa908a694f9361bbf9928836121027719f22e3dd50cbf8200155f33682"}
+{"time":"2026-11-07T22:37:19.414527223Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 exporting manifest sha256:e0091daa908a694f9361bbf9928836121027719f22e3dd50cbf8200155f33682 done"}
+{"time":"2026-11-07T22:37:19.414538307Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 exporting config sha256:c3ad4859a223ec15b72a7e24d201af6b7ea6dead965a04d991afa564554bba08 done"}
+{"time":"2026-11-07T22:37:19.414539807Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 sending tarball 0.0s done"}
+{"time":"2026-11-07T22:37:19.414541098Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 DONE 0.1s"}
+{"time":"2026-11-07T22:37:19.445141837Z","level":"INFO","msg":"committed image","image_ref":"example.com/chamber/buildkit-run-e2e:latest","digest":"sha256:e0091daa908a694f9361bbf9928836121027719f22e3dd50cbf8200155f33682","layout_path":"/home/chamber-test/tmp/ch-img-2062609489/layout","size_bytes":1916831,"source":"built"}
+--- PASS: TestStoreRealBuildKitDockerfileWithRun (19.72s)
+=== RUN   TestStoreRealBuildKitDockerfileWithNetworkedRun
+{"time":"2026-11-07T22:37:39.526231094Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:39Z\" level=warning msg=\"CDI setup error /etc/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:37:39.526301052Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:39Z\" level=warning msg=\"CDI setup error /var/run/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:37:39.526303594Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:39Z\" level=warning msg=\"CDI setup error /etc/buildkit/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:37:39.582008426Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:39Z\" level=info msg=\"found worker \\\"x8fsj7fkk7jr31y7loobvceyd\\\", labels=map[org.mobyproject.buildkit.worker.executor:oci org.mobyproject.buildkit.worker.hostname:lima-chamber-fedora-43 org.mobyproject.buildkit.worker.network:host org.mobyproject.buildkit.worker.oci.process-mode:sandbox org.mobyproject.buildkit.worker.selinux.enabled:false org.mobyproject.buildkit.worker.snapshotter:native], platforms=[linux/arm64 linux/amd64 linux/amd64/v2 linux/riscv64 linux/ppc64 linux/ppc64le linux/s390x linux/386 linux/mips64le linux/mips64 linux/loong64]\""}
+{"time":"2026-11-07T22:37:39.601665046Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:39Z\" level=info msg=\"found 1 workers, default=\\\"x8fsj7fkk7jr31y7loobvceyd\\\"\""}
+{"time":"2026-11-07T22:37:39.601702588Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:39Z\" level=warning msg=\"currently, only the default worker can be used.\""}
+{"time":"2026-11-07T22:37:39.60671894Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:39Z\" level=info msg=\"running server on /home/chamber-test/tmp/.ch-img-1419798213.tmp/.bk-run-3162188544/buildkitd.sock\""}
+{"time":"2026-11-07T22:37:39.783875769Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 [internal] load build definition from Dockerfile"}
+{"time":"2026-11-07T22:37:39.78394831Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 transferring dockerfile: 156B done"}
+{"time":"2026-11-07T22:37:39.783955227Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 DONE 0.0s"}
+{"time":"2026-11-07T22:37:39.78396406Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#2 [internal] load metadata for docker.io/library/debian:trixie-slim"}
+{"time":"2026-11-07T22:37:40.22250838Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#2 DONE 0.6s"}
+{"time":"2026-11-07T22:37:40.419743118Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 [internal] load .dockerignore"}
+{"time":"2026-11-07T22:37:40.419761785Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 transferring context: 2B done"}
+{"time":"2026-11-07T22:37:40.419763868Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 DONE 0.0s"}
+{"time":"2026-11-07T22:37:40.419765326Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 [1/2] FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"}
+{"time":"2026-11-07T22:37:40.41976741Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 resolve docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 0.0s done"}
+{"time":"2026-11-07T22:37:40.421048487Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef 0B / 30.21MB 0.2s"}
+{"time":"2026-11-07T22:37:40.57162431Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef 11.53MB / 30.21MB 0.3s"}
+{"time":"2026-11-07T22:37:40.721284137Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef 30.21MB / 30.21MB 0.5s"}
+{"time":"2026-11-07T22:37:40.881337251Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef 30.21MB / 30.21MB 0.5s done"}
+{"time":"2026-11-07T22:37:40.881348751Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 extracting sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef"}
+{"time":"2026-11-07T22:37:41.423296481Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 extracting sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef 0.7s done"}
+{"time":"2026-11-07T22:37:41.42355248Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 DONE 1.2s"}
+{"time":"2026-11-07T22:37:41.580891564Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 [2/2] RUN apt-get update"}
+{"time":"2026-11-07T22:37:42.628267563Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:42Z\" level=info msg=\"detected 127.0.0.53 nameserver, assuming systemd-resolved, so using resolv.conf: /run/systemd/resolve/resolv.conf\""}
+{"time":"2026-11-07T22:37:42.778747012Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 1.347 Get:1 http://deb.debian.org/debian trixie InRelease [140 kB]"}
+{"time":"2026-11-07T22:37:42.986920409Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 1.375 Get:2 http://deb.debian.org/debian trixie-updates InRelease [47.3 kB]"}
+{"time":"2026-11-07T22:37:42.986938367Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 1.387 Get:3 http://deb.debian.org/debian-security trixie-security InRelease [43.4 kB]"}
+{"time":"2026-11-07T22:37:42.986941075Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 1.406 Get:4 http://deb.debian.org/debian trixie/main arm64 Packages [9614 kB]"}
+{"time":"2026-11-07T22:37:43.183868648Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 1.753 Get:5 http://deb.debian.org/debian trixie-updates/main arm64 Packages [1108 B]"}
+{"time":"2026-11-07T22:37:43.334969552Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 1.753 Get:6 http://deb.debian.org/debian-security trixie-security/main arm64 Packages [300 kB]"}
+{"time":"2026-11-07T22:37:43.978579492Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 2.545 Fetched 10.1 MB in 1s (8295 kB/s)"}
+{"time":"2026-11-07T22:37:44.33778896Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 2.545 Reading package lists..."}
+{"time":"2026-11-07T22:37:44.518222524Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 DONE 2.9s"}
+{"time":"2026-11-07T22:37:44.518244274Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 exporting to oci image format"}
+{"time":"2026-11-07T22:37:44.518468314Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 exporting layers"}
+{"time":"2026-11-07T22:37:45.473094064Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 exporting layers 1.1s done"}
+{"time":"2026-11-07T22:37:45.473117647Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 exporting manifest sha256:1409679d563fe7fd5279a4ce4115ff189dee7be85fdd8d241cf5fb326e8d9d35"}
+{"time":"2026-11-07T22:37:45.634456922Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 exporting manifest sha256:1409679d563fe7fd5279a4ce4115ff189dee7be85fdd8d241cf5fb326e8d9d35 done"}
+{"time":"2026-11-07T22:37:45.634482213Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 exporting config sha256:98414ae3768736fa2a94417eff32108818720c619fd43a6d2200f3675f1c268a done"}
+{"time":"2026-11-07T22:37:45.634484255Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 sending tarball"}
+{"time":"2026-11-07T22:37:45.637853198Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 sending tarball 0.2s done"}
+{"time":"2026-11-07T22:37:45.637861448Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 DONE 1.3s"}
+{"time":"2026-11-07T22:37:45.96629743Z","level":"INFO","msg":"committed image","image_ref":"example.com/chamber/buildkit-network-e2e:latest","digest":"sha256:1409679d563fe7fd5279a4ce4115ff189dee7be85fdd8d241cf5fb326e8d9d35","layout_path":"/home/chamber-test/tmp/ch-img-1419798213/layout","size_bytes":46899694,"source":"built"}
+--- PASS: TestStoreRealBuildKitDockerfileWithNetworkedRun (26.53s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/image/internal/store	72.249s
+?   	github.com/donglin-wang/chamber/pkg/runtime	[no test files]
+=== RUN   TestDefaultConfig
+--- PASS: TestDefaultConfig (0.00s)
+=== RUN   TestNewRuntimeComposesBundleProvisioner
+{"time":"2026-11-07T22:36:54.586343347Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"v1.5.0","path":"/home/chamber-test/tmp/TestNewRuntimeComposesBundleProvisioner2171083501/001/runc","source":"local"}
+--- PASS: TestNewRuntimeComposesBundleProvisioner (0.02s)
+=== RUN   TestNewRejectsUnsupportedRuntimeName
+--- PASS: TestNewRejectsUnsupportedRuntimeName (0.00s)
+=== RUN   TestNewRequiresFinalRuntimeConfig
+=== RUN   TestNewRequiresFinalRuntimeConfig/name
+--- PASS: TestNewRequiresFinalRuntimeConfig (0.01s)
+    --- PASS: TestNewRequiresFinalRuntimeConfig/name (0.00s)
+=== RUN   TestNewRejectsHostProbeFailureWithErrorCode
+--- PASS: TestNewRejectsHostProbeFailureWithErrorCode (0.00s)
+=== RUN   TestNewRejectsMismatchedRuntimeWorkspaceRoot
+--- PASS: TestNewRejectsMismatchedRuntimeWorkspaceRoot (0.00s)
+=== RUN   TestNewRejectsMismatchedRuntimeWorkspaceTmpRoot
+--- PASS: TestNewRejectsMismatchedRuntimeWorkspaceTmpRoot (0.00s)
+=== RUN   TestNewRejectsMismatchedRuntimeBinaryWorkspaceTmpRoot
+--- PASS: TestNewRejectsMismatchedRuntimeBinaryWorkspaceTmpRoot (0.00s)
+=== RUN   TestRuntimeImplementationsListSharedConstructorNames
+--- PASS: TestRuntimeImplementationsListSharedConstructorNames (0.00s)
+=== RUN   TestRuntimeParentDeathIntegration
+    crash_integration_test.go:123: parent SIGKILL: runc=[1597] init=1611 stopped; bundle and logs retained at /home/chamber-test/tmp/TestRuntimeParentDeathIntegration1597791252/001
+--- PASS: TestRuntimeParentDeathIntegration (2.37s)
+=== RUN   TestRunImageIntegration
+{"time":"2026-11-07T22:36:56.989751323Z","level":"INFO","msg":"pulling image","image_ref":"index.docker.io/library/busybox:1.36.1","layout_path":"/home/chamber-test/tmp/TestRunImageIntegration1182742956/001/images/layout","platform_os":"linux","platform_architecture":"arm64","platform_variant":""}
+    image_integration_test.go:37: pull_failed: fetch image: GET https://index.docker.io/v2/library/busybox/manifests/1.36.1: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit
+--- FAIL: TestRunImageIntegration (4.45s)
+=== RUN   TestNestedContainersIntegration
+{"time":"2026-11-07T22:37:20.149214246Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:20Z\" level=warning msg=\"CDI setup error /etc/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:37:20.149259163Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:20Z\" level=warning msg=\"CDI setup error /var/run/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:37:20.149260871Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:20Z\" level=warning msg=\"CDI setup error /etc/buildkit/cdi: failed to monitor for changes: no such file or directory\""}
+{"time":"2026-11-07T22:37:20.211873687Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:20Z\" level=info msg=\"found worker \\\"soxsj4kxlbb5qk656tehl5ntw\\\", labels=map[org.mobyproject.buildkit.worker.executor:oci org.mobyproject.buildkit.worker.hostname:lima-chamber-fedora-43 org.mobyproject.buildkit.worker.network:host org.mobyproject.buildkit.worker.oci.process-mode:sandbox org.mobyproject.buildkit.worker.selinux.enabled:false org.mobyproject.buildkit.worker.snapshotter:native], platforms=[linux/arm64 linux/amd64 linux/amd64/v2 linux/riscv64 linux/ppc64 linux/ppc64le linux/s390x linux/386 linux/mips64le linux/mips64 linux/loong64]\""}
+{"time":"2026-11-07T22:37:20.232933807Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:20Z\" level=info msg=\"found 1 workers, default=\\\"soxsj4kxlbb5qk656tehl5ntw\\\"\""}
+{"time":"2026-11-07T22:37:20.233020391Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:20Z\" level=warning msg=\"currently, only the default worker can be used.\""}
+{"time":"2026-11-07T22:37:20.248377865Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:20Z\" level=info msg=\"running server on /home/chamber-test/tmp/chamber-1000/images/.bk-run-2481850390/buildkitd.sock\""}
+{"time":"2026-11-07T22:37:20.440046077Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 [internal] load build definition from Dockerfile.chamber"}
+{"time":"2026-11-07T22:37:20.440142119Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 transferring dockerfile: 638B done"}
+{"time":"2026-11-07T22:37:20.440165869Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#1 DONE 0.0s"}
+{"time":"2026-11-07T22:37:20.440172828Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#2 [internal] load metadata for docker.io/library/debian:trixie-slim"}
+{"time":"2026-11-07T22:37:20.949237595Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#2 DONE 0.7s"}
+{"time":"2026-11-07T22:37:21.048547172Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 [internal] load .dockerignore"}
+{"time":"2026-11-07T22:37:21.048567339Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 transferring context: 2B done"}
+{"time":"2026-11-07T22:37:21.048569381Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#3 DONE 0.0s"}
+{"time":"2026-11-07T22:37:21.048574339Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 [1/4] FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"}
+{"time":"2026-11-07T22:37:21.048585006Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 resolve docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 0.0s done"}
+{"time":"2026-11-07T22:37:21.214547039Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 ..."}
+{"time":"2026-11-07T22:37:21.214563998Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 [internal] load build context"}
+{"time":"2026-11-07T22:37:21.214565831Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 transferring context: 562B done"}
+{"time":"2026-11-07T22:37:21.214567123Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#5 DONE 0.1s"}
+{"time":"2026-11-07T22:37:21.214568665Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 [1/4] FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"}
+{"time":"2026-11-07T22:37:21.214577831Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef 1.05MB / 30.21MB 0.2s"}
+{"time":"2026-11-07T22:37:21.363833011Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef 12.58MB / 30.21MB 0.3s"}
+{"time":"2026-11-07T22:37:21.514990323Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef 18.87MB / 30.21MB 0.5s"}
+{"time":"2026-11-07T22:37:21.625029899Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef 30.21MB / 30.21MB 0.6s done"}
+{"time":"2026-11-07T22:37:21.787675337Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 extracting sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef"}
+{"time":"2026-11-07T22:37:22.421321234Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 extracting sha256:acd43e9bebc37bc4ba7a5f47bd7598913337803e53d468f37d940f11f5d5f1ef 0.8s done"}
+{"time":"2026-11-07T22:37:22.421349817Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#4 DONE 1.4s"}
+{"time":"2026-11-07T22:37:22.599382646Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 [2/4] RUN apt-get update  && apt-get install -y --no-install-recommends uidmap util-linux libcap2-bin  && useradd --create-home --uid 1000 chamber  && printf 'chamber:2000:60000\\n' > /etc/subuid  && printf 'chamber:2000:60000\\n' > /etc/subgid  && chmod 0755 /usr/bin/newuidmap /usr/bin/newgidmap  && setcap cap_setuid=ep /usr/bin/newuidmap  && setcap cap_setgid=ep /usr/bin/newgidmap"}
+{"time":"2026-11-07T22:37:23.598976138Z","level":"INFO","msg":"buildkit process output","process":"buildkitd","stream":"stderr","line":"time=\"2026-11-07T22:37:23Z\" level=info msg=\"detected 127.0.0.53 nameserver, assuming systemd-resolved, so using resolv.conf: /run/systemd/resolve/resolv.conf\""}
+{"time":"2026-11-07T22:37:23.764291429Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 1.316 Get:1 http://deb.debian.org/debian trixie InRelease [140 kB]"}
+{"time":"2026-11-07T22:37:23.963865846Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 1.342 Get:2 http://deb.debian.org/debian trixie-updates InRelease [47.3 kB]"}
+{"time":"2026-11-07T22:37:23.963915846Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 1.352 Get:3 http://deb.debian.org/debian-security trixie-security InRelease [43.4 kB]"}
+{"time":"2026-11-07T22:37:23.963918179Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 1.365 Get:4 http://deb.debian.org/debian trixie/main arm64 Packages [9614 kB]"}
+{"time":"2026-11-07T22:37:23.969403596Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 1.521 Get:5 http://deb.debian.org/debian trixie-updates/main arm64 Packages [1108 B]"}
+{"time":"2026-11-07T22:37:24.121736888Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 1.523 Get:6 http://deb.debian.org/debian-security trixie-security/main arm64 Packages [300 kB]"}
+{"time":"2026-11-07T22:37:24.722559347Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 2.274 Fetched 10.1 MB in 1s (10.2 MB/s)"}
+{"time":"2026-11-07T22:37:25.094788347Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 2.274 Reading package lists..."}
+{"time":"2026-11-07T22:37:25.492849222Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 2.655 Reading package lists..."}
+{"time":"2026-11-07T22:37:25.598588597Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.050 Building dependency tree..."}
+{"time":"2026-11-07T22:37:25.729471097Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.150 Reading state information..."}
+{"time":"2026-11-07T22:37:25.729525555Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.281 util-linux is already the newest version (2.41.5-0+deb13u1)."}
+{"time":"2026-11-07T22:37:25.729528972Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.281 util-linux set to manually installed."}
+{"time":"2026-11-07T22:37:25.729542264Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.281 Recommended packages:"}
+{"time":"2026-11-07T22:37:25.729587139Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.281   libpam-cap"}
+{"time":"2026-11-07T22:37:25.837128805Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.305 The following NEW packages will be installed:"}
+{"time":"2026-11-07T22:37:25.837165639Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.305   libcap2-bin libsubid5 uidmap"}
+{"time":"2026-11-07T22:37:25.837168014Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.347 0 upgraded, 3 newly installed, 0 to remove and 1 not upgraded."}
+{"time":"2026-11-07T22:37:25.83716918Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.347 Need to get 447 kB of archives."}
+{"time":"2026-11-07T22:37:25.837170222Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.347 After this operation, 1094 kB of additional disk space will be used."}
+{"time":"2026-11-07T22:37:25.837171555Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.347 Get:1 http://deb.debian.org/debian trixie/main arm64 libcap2-bin arm64 1:2.75-10+deb13u1+b3 [35.6 kB]"}
+{"time":"2026-11-07T22:37:25.837172639Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.362 Get:2 http://deb.debian.org/debian trixie/main arm64 libsubid5 arm64 1:4.17.4-2 [219 kB]"}
+{"time":"2026-11-07T22:37:25.837179472Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.388 Get:3 http://deb.debian.org/debian trixie/main arm64 uidmap arm64 1:4.17.4-2 [193 kB]"}
+{"time":"2026-11-07T22:37:26.072843514Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.472 debconf: unable to initialize frontend: Dialog"}
+{"time":"2026-11-07T22:37:26.07285893Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.472 debconf: (TERM is not set, so the dialog frontend is not usable.)"}
+{"time":"2026-11-07T22:37:26.072860305Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.472 debconf: falling back to frontend: Readline"}
+{"time":"2026-11-07T22:37:26.072862139Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.472 debconf: unable to initialize frontend: Readline"}
+{"time":"2026-11-07T22:37:26.072891514Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.472 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC entries checked: /etc/perl /usr/local/lib/aarch64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/aarch64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/aarch64-linux-gnu/perl-base /usr/lib/aarch64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 8, <STDIN> line 3.)"}
+{"time":"2026-11-07T22:37:26.072895014Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.472 debconf: falling back to frontend: Teletype"}
+{"time":"2026-11-07T22:37:26.072896264Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.474 debconf: unable to initialize frontend: Teletype"}
+{"time":"2026-11-07T22:37:26.072897389Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.474 debconf: (This frontend requires a controlling tty.)"}
+{"time":"2026-11-07T22:37:26.072898389Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.474 debconf: falling back to frontend: Noninteractive"}
+{"time":"2026-11-07T22:37:26.328283639Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.880 Fetched 447 kB in 0s (5844 kB/s)"}
+{"time":"2026-11-07T22:37:26.457622972Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.894 Selecting previously unselected package libcap2-bin."}
+{"time":"2026-11-07T22:37:26.457692931Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.894 (Reading database ... \r(Reading database ... 5%\r(Reading database ... 10%\r(Reading database ... 15%\r(Reading database ... 20%\r(Reading database ... 25%\r(Reading database ... 30%\r(Reading database ... 35%\r(Reading database ... 40%\r(Reading database ... 45%\r(Reading database ... 50%\r(Reading database ... 55%\r(Reading database ... 60%\r(Reading database ... 65%\r(Reading database ... 70%\r(Reading database ... 75%\r(Reading database ... 80%\r(Reading database ... 85%\r(Reading database ... 90%\r(Reading database ... 95%\r(Reading database ... 100%\r(Reading database ... 4948 files and directories currently installed.)"}
+{"time":"2026-11-07T22:37:26.457699014Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.901 Preparing to unpack .../libcap2-bin_1%3a2.75-10+deb13u1+b3_arm64.deb ..."}
+{"time":"2026-11-07T22:37:26.457700514Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.903 Unpacking libcap2-bin (1:2.75-10+deb13u1+b3) ..."}
+{"time":"2026-11-07T22:37:26.457701847Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.918 Selecting previously unselected package libsubid5:arm64."}
+{"time":"2026-11-07T22:37:26.457703014Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.918 Preparing to unpack .../libsubid5_1%3a4.17.4-2_arm64.deb ..."}
+{"time":"2026-11-07T22:37:26.457704264Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.919 Unpacking libsubid5:arm64 (1:4.17.4-2) ..."}
+{"time":"2026-11-07T22:37:26.457705347Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.932 Selecting previously unselected package uidmap."}
+{"time":"2026-11-07T22:37:26.457706347Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.933 Preparing to unpack .../uidmap_1%3a4.17.4-2_arm64.deb ..."}
+{"time":"2026-11-07T22:37:26.457707806Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.934 Unpacking uidmap (1:4.17.4-2) ..."}
+{"time":"2026-11-07T22:37:26.457709306Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.948 Setting up libsubid5:arm64 (1:4.17.4-2) ..."}
+{"time":"2026-11-07T22:37:26.457710347Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.954 Setting up libcap2-bin (1:2.75-10+deb13u1+b3) ..."}
+{"time":"2026-11-07T22:37:26.457711722Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.957 Setting up uidmap (1:4.17.4-2) ..."}
+{"time":"2026-11-07T22:37:26.457712889Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 3.959 Processing triggers for libc-bin (2.41-12+deb13u4) ..."}
+{"time":"2026-11-07T22:37:26.457723097Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#6 DONE 4.0s"}
+{"time":"2026-11-07T22:37:26.612954639Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#7 [3/4] COPY --chmod=0644 check-nested.sh /check-nested.sh"}
+{"time":"2026-11-07T22:37:27.800339556Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#7 DONE 1.3s"}
+{"time":"2026-11-07T22:37:27.953817265Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#8 [4/4] WORKDIR /home/chamber"}
+{"time":"2026-11-07T22:37:28.931116849Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#8 DONE 1.1s"}
+{"time":"2026-11-07T22:37:29.08539014Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#9 exporting to oci image format"}
+{"time":"2026-11-07T22:37:29.085404765Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#9 exporting layers"}
+{"time":"2026-11-07T22:37:30.302392766Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#9 exporting layers 1.4s done"}
+{"time":"2026-11-07T22:37:30.464838849Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#9 exporting manifest sha256:3a5bae79fef2b1b965dce6ea5807b46eda9c61c34dcf569a6bbfc82035f83052 done"}
+{"time":"2026-11-07T22:37:30.464867641Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#9 exporting config sha256:115d2d082b89e4ff3737605b0eaa1f27221ac927dc3218dc20278f4cc3d61c45 done"}
+{"time":"2026-11-07T22:37:30.464874224Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#9 sending tarball"}
+{"time":"2026-11-07T22:37:30.475331599Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#9 sending tarball 0.2s done"}
+{"time":"2026-11-07T22:37:30.475366391Z","level":"INFO","msg":"buildkit process output","process":"buildctl","stream":"stderr","line":"#9 DONE 1.5s"}
+{"time":"2026-11-07T22:37:31.019866266Z","level":"INFO","msg":"committed image","image_ref":"chamber.local/nested:test","digest":"sha256:3a5bae79fef2b1b965dce6ea5807b46eda9c61c34dcf569a6bbfc82035f83052","layout_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/images/layout","size_bytes":47125517,"source":"built"}
+{"time":"2026-11-07T22:37:31.065569891Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"v1.5.0","url":"https://github.com/opencontainers/runc/releases/download/v1.5.0/runc.arm64","path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/bin/runc"}
+{"time":"2026-11-07T22:37:33.068309434Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"v1.5.0","path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/bin/runc","source":"download"}
+=== RUN   TestNestedContainersIntegration/RunImage
+{"time":"2026-11-07T22:37:33.0684936Z","level":"INFO","msg":"provisioning bundle","bundle_id":"image-74cc6754-e596-4e4e-93f3-0b65102583b2","image_ref":"chamber.local/nested:test","image_layout":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/images/layout","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/run/runtime/bundles/image-74cc6754-e596-4e4e-93f3-0b65102583b2"}
+{"time":"2026-11-07T22:37:35.402990893Z","level":"INFO","msg":"provisioned bundle","bundle_id":"image-74cc6754-e596-4e4e-93f3-0b65102583b2","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/run/runtime/bundles/image-74cc6754-e596-4e4e-93f3-0b65102583b2"}
+{"time":"2026-11-07T22:37:35.403264518Z","level":"INFO","msg":"starting runtime container","container_id":"chamber-610eeee2-5400-4617-bad0-bcf472298b82","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/run/runtime/bundles/image-74cc6754-e596-4e4e-93f3-0b65102583b2","state_root":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/run/runtime"}
+{"time":"2026-11-07T22:37:35.46048681Z","level":"INFO","msg":"started runtime container","container_id":"chamber-610eeee2-5400-4617-bad0-bcf472298b82","pid":2110}
+{"time":"2026-11-07T22:37:35.460585185Z","level":"INFO","msg":"deleting runtime container","container_id":"chamber-610eeee2-5400-4617-bad0-bcf472298b82","force":true}
+{"time":"2026-11-07T22:37:35.462284393Z","level":"INFO","msg":"removing bundle","bundle_id":"image-74cc6754-e596-4e4e-93f3-0b65102583b2","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/run/runtime/bundles/image-74cc6754-e596-4e4e-93f3-0b65102583b2"}
+{"time":"2026-11-07T22:37:35.52826931Z","level":"INFO","msg":"removed bundle","bundle_id":"image-74cc6754-e596-4e4e-93f3-0b65102583b2","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/run/runtime/bundles/image-74cc6754-e596-4e4e-93f3-0b65102583b2"}
+    nested_integration_test.go:129: mapped subordinate UIDs/GIDs, mounted nested proc, and removed private mapped files
+{"time":"2026-11-07T22:37:35.528409435Z","level":"INFO","msg":"deleting runtime container","container_id":"chamber-610eeee2-5400-4617-bad0-bcf472298b82","force":true}
+{"time":"2026-11-07T22:37:35.530491102Z","level":"INFO","msg":"removing bundle","bundle_id":"image-74cc6754-e596-4e4e-93f3-0b65102583b2","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/run/runtime/bundles/image-74cc6754-e596-4e4e-93f3-0b65102583b2"}
+{"time":"2026-11-07T22:37:35.530530185Z","level":"INFO","msg":"removed bundle","bundle_id":"image-74cc6754-e596-4e4e-93f3-0b65102583b2","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/run/runtime/bundles/image-74cc6754-e596-4e4e-93f3-0b65102583b2"}
+=== RUN   TestNestedContainersIntegration/Run
+{"time":"2026-11-07T22:37:35.544446268Z","level":"INFO","msg":"provisioning bundle","bundle_id":"nested","image_ref":"chamber.local/nested:test","image_layout":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/images/layout","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/caller/bundles/nested"}
+{"time":"2026-11-07T22:37:37.868315882Z","level":"INFO","msg":"provisioned bundle","bundle_id":"nested","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/caller/bundles/nested"}
+{"time":"2026-11-07T22:37:37.868407048Z","level":"INFO","msg":"starting runtime container","container_id":"nested","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/caller/bundles/nested","state_root":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/run/runtime"}
+{"time":"2026-11-07T22:37:37.88909433Z","level":"INFO","msg":"started runtime container","container_id":"nested","pid":2173}
+{"time":"2026-11-07T22:37:37.892965604Z","level":"INFO","msg":"deleting runtime container","container_id":"nested","force":true}
+    nested_integration_test.go:129: mapped subordinate UIDs/GIDs, mounted nested proc, and removed private mapped files
+{"time":"2026-11-07T22:37:37.894400389Z","level":"INFO","msg":"deleting runtime container","container_id":"nested","force":true}
+{"time":"2026-11-07T22:37:37.89580505Z","level":"INFO","msg":"removing bundle","bundle_id":"nested","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/caller/bundles/nested"}
+{"time":"2026-11-07T22:37:37.940330766Z","level":"INFO","msg":"removed bundle","bundle_id":"nested","bundle_path":"/home/chamber-test/tmp/TestNestedContainersIntegration127502707/001/sdk/caller/bundles/nested"}
+--- PASS: TestNestedContainersIntegration (36.52s)
+    --- PASS: TestNestedContainersIntegration/RunImage (2.46s)
+    --- PASS: TestNestedContainersIntegration/Run (2.41s)
+=== RUN   TestRunImageNonRootUserIntegration
+{"time":"2026-11-07T22:37:37.970035383Z","level":"INFO","msg":"pulling image","image_ref":"index.docker.io/library/busybox:1.36.1","layout_path":"/home/chamber-test/tmp/TestRunImageNonRootUserIntegration353512588/001/sdk/images/layout","platform_os":"linux","platform_architecture":"arm64","platform_variant":""}
+    user_integration_test.go:41: pull_failed: fetch image: GET https://index.docker.io/v2/library/busybox/manifests/1.36.1: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit
+--- FAIL: TestRunImageNonRootUserIntegration (4.34s)
+FAIL
+FAIL	github.com/donglin-wang/chamber/pkg/runtime/factory	47.725s
+=== RUN   TestRunImageOwnsBundleAndPreservesLogs
+{"time":"2026-11-07T22:37:42.586929166Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunImageOwnsBundleAndPreservesLogs2750306100/002/runc","source":"cache"}
+{"time":"2026-11-07T22:37:42.587186456Z","level":"INFO","msg":"starting runtime container","container_id":"chamber-ef0e4234-1908-466b-b57e-7b4ecc4f4bcf","bundle_path":"/home/chamber-test/tmp/TestRunImageOwnsBundleAndPreservesLogs2750306100/004","state_root":"/home/chamber-test/tmp/TestRunImageOwnsBundleAndPreservesLogs2750306100/003/runtime"}
+{"time":"2026-11-07T22:37:42.594068425Z","level":"INFO","msg":"started runtime container","container_id":"chamber-ef0e4234-1908-466b-b57e-7b4ecc4f4bcf","pid":2329}
+{"time":"2026-11-07T22:37:42.5941888Z","level":"INFO","msg":"deleting runtime container","container_id":"chamber-ef0e4234-1908-466b-b57e-7b4ecc4f4bcf","force":true}
+{"time":"2026-11-07T22:37:42.595122712Z","level":"INFO","msg":"deleting runtime container","container_id":"chamber-ef0e4234-1908-466b-b57e-7b4ecc4f4bcf","force":true}
+--- PASS: TestRunImageOwnsBundleAndPreservesLogs (0.06s)
+=== RUN   TestRunImageRollsBackLaunchFailureWithUncanceledContext
+--- PASS: TestRunImageRollsBackLaunchFailureWithUncanceledContext (0.00s)
+=== RUN   TestRunImageRollsBackRuntimeInitializationFailure
+{"time":"2026-11-07T22:37:42.604641253Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunImageRollsBackRuntimeInitializationFailure3959737848/002/runc","source":"cache"}
+{"time":"2026-11-07T22:37:42.604749127Z","level":"INFO","msg":"starting runtime container","container_id":"chamber-e4ddc27d-63dd-4c2b-b981-2873c8553447","bundle_path":"/home/chamber-test/tmp/TestRunImageRollsBackRuntimeInitializationFailure3959737848/004","state_root":"/home/chamber-test/tmp/TestRunImageRollsBackRuntimeInitializationFailure3959737848/003"}
+{"time":"2026-11-07T22:37:42.606306995Z","level":"INFO","msg":"deleting runtime container","container_id":"chamber-e4ddc27d-63dd-4c2b-b981-2873c8553447","force":true}
+--- PASS: TestRunImageRollsBackRuntimeInitializationFailure (0.01s)
+=== RUN   TestRunImageRejectsInvalidLaunchBeforeProvisioning
+=== RUN   TestRunImageRejectsInvalidLaunchBeforeProvisioning/nil_context
+=== RUN   TestRunImageRejectsInvalidLaunchBeforeProvisioning/canceled
+=== RUN   TestRunImageRejectsInvalidLaunchBeforeProvisioning/invalid_ID
+--- PASS: TestRunImageRejectsInvalidLaunchBeforeProvisioning (0.00s)
+    --- PASS: TestRunImageRejectsInvalidLaunchBeforeProvisioning/nil_context (0.00s)
+    --- PASS: TestRunImageRejectsInvalidLaunchBeforeProvisioning/canceled (0.00s)
+    --- PASS: TestRunImageRejectsInvalidLaunchBeforeProvisioning/invalid_ID (0.00s)
+=== RUN   TestRunImagePreservesExplicitTerminalAndProvisioningError
+--- PASS: TestRunImagePreservesExplicitTerminalAndProvisioningError (0.00s)
+=== RUN   TestManagedBundleDeleteRetainsBundleOnControlFailureAndRetriesCleanup
+{"time":"2026-11-07T22:37:42.608004488Z","level":"INFO","msg":"deleting runtime container","container_id":"managed","force":false}
+{"time":"2026-11-07T22:37:42.608898234Z","level":"INFO","msg":"deleting runtime container","container_id":"managed","force":true}
+{"time":"2026-11-07T22:37:42.610104186Z","level":"INFO","msg":"deleting runtime container","container_id":"managed","force":true}
+--- PASS: TestManagedBundleDeleteRetainsBundleOnControlFailureAndRetriesCleanup (0.00s)
+=== RUN   TestNewPreparesRuntimeDirectories
+{"time":"2026-11-07T22:37:42.61963931Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestNewPreparesRuntimeDirectories2874829579/002/bin/runc"}
+{"time":"2026-11-07T22:37:42.622631797Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestNewPreparesRuntimeDirectories2874829579/002/bin/runc","source":"download"}
+--- PASS: TestNewPreparesRuntimeDirectories (0.01s)
+=== RUN   TestNewRequiresWorkspace
+--- PASS: TestNewRequiresWorkspace (0.00s)
+=== RUN   TestNewDownloadsValidRuntimeBinary
+{"time":"2026-11-07T22:37:42.630738719Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestNewDownloadsValidRuntimeBinary3827145362/001/runc"}
+{"time":"2026-11-07T22:37:42.631281925Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestNewDownloadsValidRuntimeBinary3827145362/001/runc","source":"download"}
+--- PASS: TestNewDownloadsValidRuntimeBinary (0.01s)
+=== RUN   TestNewDefaultsToRuncAdapterName
+{"time":"2026-11-07T22:37:42.634912867Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestNewDefaultsToRuncAdapterName1594622547/001/runc"}
+{"time":"2026-11-07T22:37:42.635421614Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestNewDefaultsToRuncAdapterName1594622547/001/runc","source":"download"}
+--- PASS: TestNewDefaultsToRuncAdapterName (0.00s)
+=== RUN   TestNewUsesConfiguredLocalRuntimePath
+{"time":"2026-11-07T22:37:42.637649729Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"v1.5.0","path":"/home/chamber-test/tmp/TestNewUsesConfiguredLocalRuntimePath2649780427/001/runc","source":"local"}
+--- PASS: TestNewUsesConfiguredLocalRuntimePath (0.00s)
+=== RUN   TestNewRejectsWrongDigest
+{"time":"2026-11-07T22:37:42.640212343Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestNewRejectsWrongDigest3473086538/001/runc"}
+--- PASS: TestNewRejectsWrongDigest (0.00s)
+=== RUN   TestNewRejectsNonOKResponse
+{"time":"2026-11-07T22:37:42.642923456Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestNewRejectsNonOKResponse1741132559/002/runc"}
+--- PASS: TestNewRejectsNonOKResponse (0.00s)
+=== RUN   TestNewRejectsInterruptedBody
+{"time":"2026-11-07T22:37:42.646120025Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestNewRejectsInterruptedBody1925780688/001/runc"}
+--- PASS: TestNewRejectsInterruptedBody (0.00s)
+=== RUN   TestNewDownloadCancellationHasCanceledCode
+{"time":"2026-11-07T22:37:42.648653888Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestNewDownloadCancellationHasCanceledCode3745496231/002/runc"}
+--- PASS: TestNewDownloadCancellationHasCanceledCode (0.00s)
+=== RUN   TestNewUsesExistingValidBinary
+{"time":"2026-11-07T22:37:42.651187127Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestNewUsesExistingValidBinary3837621661/001/runc","source":"cache"}
+--- PASS: TestNewUsesExistingValidBinary (0.00s)
+=== RUN   TestNewMakesExistingValidBinaryExecutable
+{"time":"2026-11-07T22:37:42.653325034Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestNewMakesExistingValidBinaryExecutable1463408332/001/runc","source":"cache"}
+--- PASS: TestNewMakesExistingValidBinaryExecutable (0.00s)
+=== RUN   TestNewReplacesExistingInvalidBinary
+{"time":"2026-11-07T22:37:42.659388298Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestNewReplacesExistingInvalidBinary2606305027/001/runc"}
+{"time":"2026-11-07T22:37:42.663425155Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestNewReplacesExistingInvalidBinary2606305027/001/runc","source":"download"}
+--- PASS: TestNewReplacesExistingInvalidBinary (0.01s)
+=== RUN   TestDescriptorIdentifiesRuncRuntime
+--- PASS: TestDescriptorIdentifiesRuncRuntime (0.00s)
+=== RUN   TestDescriptorDefaultsToRuncAdapterName
+--- PASS: TestDescriptorDefaultsToRuncAdapterName (0.00s)
+=== RUN   TestDescriptorNameDoesNotFollowBinaryPath
+--- PASS: TestDescriptorNameDoesNotFollowBinaryPath (0.00s)
+=== RUN   TestNewReturnsAbsoluteBinaryPath
+{"time":"2026-11-07T22:37:42.673722942Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestNewReturnsAbsoluteBinaryPath2648063635/001/TestNewReturnsAbsoluteBinaryPath/runc"}
+{"time":"2026-11-07T22:37:42.67497127Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestNewReturnsAbsoluteBinaryPath2648063635/001/TestNewReturnsAbsoluteBinaryPath/runc","source":"download"}
+--- PASS: TestNewReturnsAbsoluteBinaryPath (0.01s)
+=== RUN   TestNewRequiresCompleteRuntimeBinaryConfiguration
+--- PASS: TestNewRequiresCompleteRuntimeBinaryConfiguration (0.01s)
+=== RUN   TestDefaultRuntimeBinarySupportsLinuxReleaseArchitectures
+=== RUN   TestDefaultRuntimeBinarySupportsLinuxReleaseArchitectures/arm64
+=== RUN   TestDefaultRuntimeBinarySupportsLinuxReleaseArchitectures/amd64
+--- PASS: TestDefaultRuntimeBinarySupportsLinuxReleaseArchitectures (0.00s)
+    --- PASS: TestDefaultRuntimeBinarySupportsLinuxReleaseArchitectures/arm64 (0.00s)
+    --- PASS: TestDefaultRuntimeBinarySupportsLinuxReleaseArchitectures/amd64 (0.00s)
+=== RUN   TestDefaultRuntimeBinaryRejectsUnsupportedArchitectureWithHostCode
+--- PASS: TestDefaultRuntimeBinaryRejectsUnsupportedArchitectureWithHostCode (0.00s)
+=== RUN   TestRunStartsRuncAndReturnsContainer
+{"time":"2026-11-07T22:37:42.700100948Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunStartsRuncAndReturnsContainer2544381330/002/runc","source":"cache"}
+{"time":"2026-11-07T22:37:42.700174865Z","level":"INFO","msg":"starting runtime container","container_id":"container-1","bundle_path":"/home/chamber-test/tmp/TestRunStartsRuncAndReturnsContainer2544381330/003","state_root":"/home/chamber-test/tmp/TestRunStartsRuncAndReturnsContainer2544381330/004/state"}
+{"time":"2026-11-07T22:37:42.711437648Z","level":"INFO","msg":"started runtime container","container_id":"container-1","pid":2359}
+--- PASS: TestRunStartsRuncAndReturnsContainer (0.03s)
+=== RUN   TestRunPreservesCallerBundleSpec
+{"time":"2026-11-07T22:37:42.729474983Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunPreservesCallerBundleSpec2802168485/002/runc","source":"cache"}
+{"time":"2026-11-07T22:37:42.729514108Z","level":"INFO","msg":"starting runtime container","container_id":"caller","bundle_path":"/home/chamber-test/tmp/TestRunPreservesCallerBundleSpec2802168485/003","state_root":"/home/chamber-test/tmp/TestRunPreservesCallerBundleSpec2802168485/004"}
+{"time":"2026-11-07T22:37:42.731919014Z","level":"INFO","msg":"started runtime container","container_id":"caller","pid":2365}
+{"time":"2026-11-07T22:37:42.731983763Z","level":"INFO","msg":"deleting runtime container","container_id":"caller","force":true}
+{"time":"2026-11-07T22:37:42.732729427Z","level":"INFO","msg":"deleting runtime container","container_id":"caller","force":true}
+--- PASS: TestRunPreservesCallerBundleSpec (0.01s)
+=== RUN   TestRunReturnsContainerForFastExit
+{"time":"2026-11-07T22:37:42.740766557Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunReturnsContainerForFastExit1513336461/002/runc","source":"cache"}
+{"time":"2026-11-07T22:37:42.740833015Z","level":"INFO","msg":"starting runtime container","container_id":"short.job","bundle_path":"/home/chamber-test/tmp/TestRunReturnsContainerForFastExit1513336461/004","state_root":"/home/chamber-test/tmp/TestRunReturnsContainerForFastExit1513336461/003"}
+{"time":"2026-11-07T22:37:42.742815756Z","level":"INFO","msg":"started runtime container","container_id":"short.job","pid":2372}
+--- PASS: TestRunReturnsContainerForFastExit (0.01s)
+=== RUN   TestRunRejectsRuntimeInitializationFailure
+{"time":"2026-11-07T22:37:42.75007764Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunRejectsRuntimeInitializationFailure3368992364/002/runc","source":"cache"}
+{"time":"2026-11-07T22:37:42.750194723Z","level":"INFO","msg":"starting runtime container","container_id":"init-fails","bundle_path":"/home/chamber-test/tmp/TestRunRejectsRuntimeInitializationFailure3368992364/004","state_root":"/home/chamber-test/tmp/TestRunRejectsRuntimeInitializationFailure3368992364/003"}
+{"time":"2026-11-07T22:37:42.751435718Z","level":"INFO","msg":"deleting runtime container","container_id":"init-fails","force":true}
+--- PASS: TestRunRejectsRuntimeInitializationFailure (0.01s)
+=== RUN   TestWaitCancellationBoundsStuckDeleteAndLeavesOutcomeUnknown
+{"time":"2026-11-07T22:37:42.75531095Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestWaitCancellationBoundsStuckDeleteAndLeavesOutcomeUnknown913166659/002/runc","source":"cache"}
+{"time":"2026-11-07T22:37:42.7553707Z","level":"INFO","msg":"starting runtime container","container_id":"stuck-delete","bundle_path":"/home/chamber-test/tmp/TestWaitCancellationBoundsStuckDeleteAndLeavesOutcomeUnknown913166659/004","state_root":"/home/chamber-test/tmp/TestWaitCancellationBoundsStuckDeleteAndLeavesOutcomeUnknown913166659/003"}
+{"time":"2026-11-07T22:37:42.766675899Z","level":"INFO","msg":"started runtime container","container_id":"stuck-delete","pid":2378}
+{"time":"2026-11-07T22:37:42.766762899Z","level":"INFO","msg":"deleting runtime container","container_id":"stuck-delete","force":true}
+--- PASS: TestWaitCancellationBoundsStuckDeleteAndLeavesOutcomeUnknown (10.03s)
+=== RUN   TestWaitContextCancellationForceDeletesContainer
+{"time":"2026-11-07T22:37:52.797526382Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestWaitContextCancellationForceDeletesContainer1166812006/002/runc","source":"cache"}
+{"time":"2026-11-07T22:37:52.797833297Z","level":"INFO","msg":"starting runtime container","container_id":"timeout","bundle_path":"/home/chamber-test/tmp/TestWaitContextCancellationForceDeletesContainer1166812006/004","state_root":"/home/chamber-test/tmp/TestWaitContextCancellationForceDeletesContainer1166812006/003"}
+{"time":"2026-11-07T22:37:52.809610161Z","level":"INFO","msg":"started runtime container","container_id":"timeout","pid":3311}
+{"time":"2026-11-07T22:37:52.809752202Z","level":"INFO","msg":"deleting runtime container","container_id":"timeout","force":true}
+--- PASS: TestWaitContextCancellationForceDeletesContainer (0.03s)
+=== RUN   TestRunStartFailureHasErrorCodeAndRemovesLogs
+{"time":"2026-11-07T22:37:52.817558917Z","level":"INFO","msg":"starting runtime container","container_id":"start-fails","bundle_path":"/home/chamber-test/tmp/TestRunStartFailureHasErrorCodeAndRemovesLogs3751808298/003","state_root":"/home/chamber-test/tmp/TestRunStartFailureHasErrorCodeAndRemovesLogs3751808298/001"}
+--- PASS: TestRunStartFailureHasErrorCodeAndRemovesLogs (0.00s)
+=== RUN   TestRunRejectsTerminalBundleBeforeStartingRunc
+{"time":"2026-11-07T22:37:52.823736805Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunRejectsTerminalBundleBeforeStartingRunc432021285/002/runc","source":"cache"}
+--- PASS: TestRunRejectsTerminalBundleBeforeStartingRunc (0.01s)
+=== RUN   TestRunRejectsMissingBundleSpecBeforeStartingRunc
+{"time":"2026-11-07T22:37:52.828894324Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunRejectsMissingBundleSpecBeforeStartingRunc3465203192/002/runc","source":"cache"}
+--- PASS: TestRunRejectsMissingBundleSpecBeforeStartingRunc (0.01s)
+=== RUN   TestRunContextCancellationDoesNotStopContainer
+{"time":"2026-11-07T22:37:52.833648094Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunContextCancellationDoesNotStopContainer294176977/002/runc","source":"cache"}
+{"time":"2026-11-07T22:37:52.833725802Z","level":"INFO","msg":"starting runtime container","container_id":"cancelled","bundle_path":"/home/chamber-test/tmp/TestRunContextCancellationDoesNotStopContainer294176977/004","state_root":"/home/chamber-test/tmp/TestRunContextCancellationDoesNotStopContainer294176977/003"}
+{"time":"2026-11-07T22:37:52.844691295Z","level":"INFO","msg":"started runtime container","container_id":"cancelled","pid":3318}
+{"time":"2026-11-07T22:37:52.94575809Z","level":"INFO","msg":"signaling runtime container","container_id":"cancelled","signal":15}
+--- PASS: TestRunContextCancellationDoesNotStopContainer (0.13s)
+=== RUN   TestStateReadsRuncState
+--- PASS: TestStateReadsRuncState (0.00s)
+=== RUN   TestSignalSendsRuncKill
+{"time":"2026-11-07T22:37:52.958949947Z","level":"INFO","msg":"signaling runtime container","container_id":"signaled","signal":15}
+--- PASS: TestSignalSendsRuncKill (0.00s)
+=== RUN   TestSignalFailureHasRuntimeControlCode
+{"time":"2026-11-07T22:37:52.960728231Z","level":"INFO","msg":"signaling runtime container","container_id":"signaled","signal":15}
+--- PASS: TestSignalFailureHasRuntimeControlCode (0.00s)
+=== RUN   TestSignalRejectsUnsupportedSignal
+--- PASS: TestSignalRejectsUnsupportedSignal (0.00s)
+=== RUN   TestDeleteRemovesRuncContainer
+{"time":"2026-11-07T22:37:52.962447015Z","level":"INFO","msg":"deleting runtime container","container_id":"deleted","force":true}
+--- PASS: TestDeleteRemovesRuncContainer (0.00s)
+=== RUN   TestDeleteFailureHasRuntimeControlCode
+{"time":"2026-11-07T22:37:52.964279632Z","level":"INFO","msg":"deleting runtime container","container_id":"deleted","force":true}
+--- PASS: TestDeleteFailureHasRuntimeControlCode (0.00s)
+=== RUN   TestControlCommandCancellationHasCanceledCode
+=== RUN   TestControlCommandCancellationHasCanceledCode/state
+=== RUN   TestControlCommandCancellationHasCanceledCode/signal
+{"time":"2026-11-07T22:37:53.970474358Z","level":"INFO","msg":"signaling runtime container","container_id":"cancelled-control","signal":15}
+=== RUN   TestControlCommandCancellationHasCanceledCode/delete
+{"time":"2026-11-07T22:37:54.982533891Z","level":"INFO","msg":"deleting runtime container","container_id":"cancelled-control","force":true}
+--- PASS: TestControlCommandCancellationHasCanceledCode (3.03s)
+    --- PASS: TestControlCommandCancellationHasCanceledCode/state (1.00s)
+    --- PASS: TestControlCommandCancellationHasCanceledCode/signal (1.01s)
+    --- PASS: TestControlCommandCancellationHasCanceledCode/delete (1.02s)
+=== RUN   TestRunRejectsUnsafeContainerID
+=== RUN   TestRunRejectsUnsafeContainerID/#00
+{"time":"2026-11-07T22:37:56.010577185Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestRunRejectsUnsafeContainerID#001131417547/002/runc"}
+{"time":"2026-11-07T22:37:56.012450593Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunRejectsUnsafeContainerID#001131417547/002/runc","source":"download"}
+=== RUN   TestRunRejectsUnsafeContainerID/-starts-with-dash
+{"time":"2026-11-07T22:37:56.023631626Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestRunRejectsUnsafeContainerID-starts-with-dash1579882429/002/runc"}
+{"time":"2026-11-07T22:37:56.025329702Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunRejectsUnsafeContainerID-starts-with-dash1579882429/002/runc","source":"download"}
+=== RUN   TestRunRejectsUnsafeContainerID/.starts-with-dot
+{"time":"2026-11-07T22:37:56.034217912Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestRunRejectsUnsafeContainerID.starts-with-dot2758996363/002/runc"}
+{"time":"2026-11-07T22:37:56.034799201Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunRejectsUnsafeContainerID.starts-with-dot2758996363/002/runc","source":"download"}
+=== RUN   TestRunRejectsUnsafeContainerID/has/slash
+{"time":"2026-11-07T22:37:56.040970673Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestRunRejectsUnsafeContainerIDhasslash3976797364/002/runc"}
+{"time":"2026-11-07T22:37:56.041577587Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunRejectsUnsafeContainerIDhasslash3976797364/002/runc","source":"download"}
+=== RUN   TestRunRejectsUnsafeContainerID/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+{"time":"2026-11-07T22:37:56.046987313Z","level":"INFO","msg":"downloading runtime binary","runtime":"runc","version":"test-version","url":"https://example.invalid/runc","path":"/home/chamber-test/tmp/TestRunRejectsUnsafeContainerIDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1308652033/002/runc"}
+{"time":"2026-11-07T22:37:56.047752226Z","level":"INFO","msg":"runtime binary ready","runtime":"runc","version":"test-version","path":"/home/chamber-test/tmp/TestRunRejectsUnsafeContainerIDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1308652033/002/runc","source":"download"}
+--- PASS: TestRunRejectsUnsafeContainerID (0.05s)
+    --- PASS: TestRunRejectsUnsafeContainerID/#00 (0.01s)
+    --- PASS: TestRunRejectsUnsafeContainerID/-starts-with-dash (0.01s)
+    --- PASS: TestRunRejectsUnsafeContainerID/.starts-with-dot (0.01s)
+    --- PASS: TestRunRejectsUnsafeContainerID/has/slash (0.01s)
+    --- PASS: TestRunRejectsUnsafeContainerID/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (0.01s)
+=== RUN   TestContainerLogMethodsRejectInvalidStream
+--- PASS: TestContainerLogMethodsRejectInvalidStream (0.00s)
+=== RUN   TestReadLogMissingFileHasLogNotFoundCode
+--- PASS: TestReadLogMissingFileHasLogNotFoundCode (0.00s)
+=== RUN   TestDeleteLogRemovesSelectedStream
+--- PASS: TestDeleteLogRemovesSelectedStream (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/runtime/internal/runc	13.512s
+=== RUN   TestValidateAcceptsSafeIDs
+=== RUN   TestValidateAcceptsSafeIDs/container-1
+=== RUN   TestValidateAcceptsSafeIDs/container_1
+=== RUN   TestValidateAcceptsSafeIDs/container.1
+=== RUN   TestValidateAcceptsSafeIDs/C1
+=== RUN   TestValidateAcceptsSafeIDs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+--- PASS: TestValidateAcceptsSafeIDs (0.00s)
+    --- PASS: TestValidateAcceptsSafeIDs/container-1 (0.00s)
+    --- PASS: TestValidateAcceptsSafeIDs/container_1 (0.00s)
+    --- PASS: TestValidateAcceptsSafeIDs/container.1 (0.00s)
+    --- PASS: TestValidateAcceptsSafeIDs/C1 (0.00s)
+    --- PASS: TestValidateAcceptsSafeIDs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (0.00s)
+=== RUN   TestValidateRejectsUnsafeIDs
+=== RUN   TestValidateRejectsUnsafeIDs/#00
+=== RUN   TestValidateRejectsUnsafeIDs/.
+=== RUN   TestValidateRejectsUnsafeIDs/..
+=== RUN   TestValidateRejectsUnsafeIDs/.starts-with-dot
+=== RUN   TestValidateRejectsUnsafeIDs/-starts-with-dash
+=== RUN   TestValidateRejectsUnsafeIDs/../escape
+=== RUN   TestValidateRejectsUnsafeIDs//absolute
+=== RUN   TestValidateRejectsUnsafeIDs/has/slash
+=== RUN   TestValidateRejectsUnsafeIDs/has_space
+=== RUN   TestValidateRejectsUnsafeIDs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+--- PASS: TestValidateRejectsUnsafeIDs (0.00s)
+    --- PASS: TestValidateRejectsUnsafeIDs/#00 (0.00s)
+    --- PASS: TestValidateRejectsUnsafeIDs/. (0.00s)
+    --- PASS: TestValidateRejectsUnsafeIDs/.. (0.00s)
+    --- PASS: TestValidateRejectsUnsafeIDs/.starts-with-dot (0.00s)
+    --- PASS: TestValidateRejectsUnsafeIDs/-starts-with-dash (0.00s)
+    --- PASS: TestValidateRejectsUnsafeIDs/../escape (0.00s)
+    --- PASS: TestValidateRejectsUnsafeIDs//absolute (0.00s)
+    --- PASS: TestValidateRejectsUnsafeIDs/has/slash (0.00s)
+    --- PASS: TestValidateRejectsUnsafeIDs/has_space (0.00s)
+    --- PASS: TestValidateRejectsUnsafeIDs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/shared/containerid	0.001s
+=== RUN   TestCodeIsStringAndError
+--- PASS: TestCodeIsStringAndError (0.00s)
+=== RUN   TestSDKErrorCodes
+=== RUN   TestSDKErrorCodes/runtime_install_failed
+=== RUN   TestSDKErrorCodes/invalid_container_id
+=== RUN   TestSDKErrorCodes/invalid_bundle_id
+=== RUN   TestSDKErrorCodes/invalid_image_layout
+=== RUN   TestSDKErrorCodes/invalid_bundle_mount
+=== RUN   TestSDKErrorCodes/canceled
+=== RUN   TestSDKErrorCodes/runtime_control_failed
+=== RUN   TestSDKErrorCodes/invalid_image_reference
+=== RUN   TestSDKErrorCodes/invalid_process_spec
+=== RUN   TestSDKErrorCodes/unsupported_host
+=== RUN   TestSDKErrorCodes/filesystem_failed
+--- PASS: TestSDKErrorCodes (0.00s)
+    --- PASS: TestSDKErrorCodes/runtime_install_failed (0.00s)
+    --- PASS: TestSDKErrorCodes/invalid_container_id (0.00s)
+    --- PASS: TestSDKErrorCodes/invalid_bundle_id (0.00s)
+    --- PASS: TestSDKErrorCodes/invalid_image_layout (0.00s)
+    --- PASS: TestSDKErrorCodes/invalid_bundle_mount (0.00s)
+    --- PASS: TestSDKErrorCodes/canceled (0.00s)
+    --- PASS: TestSDKErrorCodes/runtime_control_failed (0.00s)
+    --- PASS: TestSDKErrorCodes/invalid_image_reference (0.00s)
+    --- PASS: TestSDKErrorCodes/invalid_process_spec (0.00s)
+    --- PASS: TestSDKErrorCodes/unsupported_host (0.00s)
+    --- PASS: TestSDKErrorCodes/filesystem_failed (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/shared/errors	0.001s
+=== RUN   TestNewWorkspaceCreatesRootAndTempRoot
+--- PASS: TestNewWorkspaceCreatesRootAndTempRoot (0.02s)
+=== RUN   TestNewWorkspaceDefaultsTmpRootBelowOSTempDir
+--- PASS: TestNewWorkspaceDefaultsTmpRootBelowOSTempDir (0.00s)
+=== RUN   TestDefaultTmpRootAddsOptionalNameBelowUserTempRoot
+--- PASS: TestDefaultTmpRootAddsOptionalNameBelowUserTempRoot (0.00s)
+=== RUN   TestNewWorkspaceRejectsUnsafeExistingRoot
+--- PASS: TestNewWorkspaceRejectsUnsafeExistingRoot (0.00s)
+=== RUN   TestCheckPrivateDirectoryDoesNotCreateOrChangePaths
+--- PASS: TestCheckPrivateDirectoryDoesNotCreateOrChangePaths (0.00s)
+=== RUN   TestCheckPrivateDirectoryRejectsSymlinkPaths
+--- PASS: TestCheckPrivateDirectoryRejectsSymlinkPaths (0.00s)
+=== RUN   TestNewWorkspaceRecordsUnsafeExistingRootWhenPrivateDirsUnrequested
+--- PASS: TestNewWorkspaceRecordsUnsafeExistingRootWhenPrivateDirsUnrequested (0.00s)
+=== RUN   TestWorkspaceRejectsEscapingPaths
+--- PASS: TestWorkspaceRejectsEscapingPaths (0.00s)
+=== RUN   TestWorkspaceRejectsSymlinkEscape
+--- PASS: TestWorkspaceRejectsSymlinkEscape (0.00s)
+=== RUN   TestMkdirPrivateCreatesBelowRoot
+--- PASS: TestMkdirPrivateCreatesBelowRoot (0.00s)
+=== RUN   TestCreatePrivateCreatesBelowRoot
+--- PASS: TestCreatePrivateCreatesBelowRoot (0.00s)
+=== RUN   TestCreatePrivateFailsWhenFileExists
+--- PASS: TestCreatePrivateFailsWhenFileExists (0.00s)
+=== RUN   TestTempMethodsCreateBelowTmpRoot
+--- PASS: TestTempMethodsCreateBelowTmpRoot (0.00s)
+=== RUN   TestNewWorkspaceRecordsDirectoryFsyncUnsupportedWhenUnrequested
+--- PASS: TestNewWorkspaceRecordsDirectoryFsyncUnsupportedWhenUnrequested (0.00s)
+=== RUN   TestNewWorkspaceFailsWhenDirectoryFsyncRequiredAndUnsupported
+--- PASS: TestNewWorkspaceFailsWhenDirectoryFsyncRequiredAndUnsupported (0.00s)
+=== RUN   TestNewWorkspaceFailsWhenRequiredFileRenameProbeFails
+--- PASS: TestNewWorkspaceFailsWhenRequiredFileRenameProbeFails (0.00s)
+=== RUN   TestNewWorkspaceDoesNotFailWhenUnrequestedFileRenameProbeFails
+--- PASS: TestNewWorkspaceDoesNotFailWhenUnrequestedFileRenameProbeFails (0.00s)
+=== RUN   TestNewWorkspaceFailsWhenRequiredDirectoryRenameProbeFails
+--- PASS: TestNewWorkspaceFailsWhenRequiredDirectoryRenameProbeFails (0.00s)
+=== RUN   TestCreatePrivateDirectoryRejectsUnsafePaths
+--- PASS: TestCreatePrivateDirectoryRejectsUnsafePaths (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/shared/hostfs	0.052s
+=== RUN   TestRuleNameIsAccessibleThroughMethod
+--- PASS: TestRuleNameIsAccessibleThroughMethod (0.00s)
+=== RUN   TestRequireLinuxUsesStubbedGOOS
+--- PASS: TestRequireLinuxUsesStubbedGOOS (0.00s)
+=== RUN   TestRequireRootlessUserUsesStubbedEUID
+--- PASS: TestRequireRootlessUserUsesStubbedEUID (0.00s)
+=== RUN   TestRequireUserNamespacesEnabledReportsDisabledLimits
+--- PASS: TestRequireUserNamespacesEnabledReportsDisabledLimits (0.00s)
+=== RUN   TestRequireAppArmorAllowsUserNamespacesReportsRestriction
+--- PASS: TestRequireAppArmorAllowsUserNamespacesReportsRestriction (0.00s)
+=== RUN   TestRequireSubUIDMappingUsesStubbedUserAndFile
+--- PASS: TestRequireSubUIDMappingUsesStubbedUserAndFile (0.00s)
+=== RUN   TestRequireNewUIDMapUsesStubbedLookPath
+--- PASS: TestRequireNewUIDMapUsesStubbedLookPath (0.00s)
+=== RUN   TestProbeUserNamespaceUsesStubbedCommand
+--- PASS: TestProbeUserNamespaceUsesStubbedCommand (0.00s)
+=== RUN   TestRulesReturnNoMessagesWhenStubbedHostPasses
+--- PASS: TestRulesReturnNoMessagesWhenStubbedHostPasses (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/shared/hostprobe	0.004s
+=== RUN   TestNewJSONLoggerEmitsJSON
+--- PASS: TestNewJSONLoggerEmitsJSON (0.00s)
+=== RUN   TestPackageLevelHelpersUseCurrentLogger
+--- PASS: TestPackageLevelHelpersUseCurrentLogger (0.00s)
+=== RUN   TestNewLoggerSupportsTextFormat
+--- PASS: TestNewLoggerSupportsTextFormat (0.00s)
+=== RUN   TestConfigureAppliesExplicitConfigAndLeavesZeroConfigAlone
+--- PASS: TestConfigureAppliesExplicitConfigAndLeavesZeroConfigAlone (0.00s)
+=== RUN   TestConfigureAcceptsCustomLogger
+--- PASS: TestConfigureAcceptsCustomLogger (0.00s)
+=== RUN   TestNewLoggerRejectsUnsupportedLoggingConfig
+--- PASS: TestNewLoggerRejectsUnsupportedLoggingConfig (0.00s)
+=== RUN   TestSDKProductionCodeUsesSharedLogging
+--- PASS: TestSDKProductionCodeUsesSharedLogging (0.00s)
+=== RUN   TestSDKProductionCodeDoesNotConfigureProcessGlobalLogging
+--- PASS: TestSDKProductionCodeDoesNotConfigureProcessGlobalLogging (0.01s)
+=== RUN   TestSDKProductionCodeDoesNotExposePreparationMethods
+--- PASS: TestSDKProductionCodeDoesNotExposePreparationMethods (0.01s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/shared/logging	0.020s
+=== RUN   TestCommandSetsParentDeathSignal
+--- PASS: TestCommandSetsParentDeathSignal (0.00s)
+=== RUN   TestSetProcessGroupPreservesParentDeathSignal
+--- PASS: TestSetProcessGroupPreservesParentDeathSignal (0.00s)
+PASS
+ok  	github.com/donglin-wang/chamber/pkg/shared/subprocess	0.002s
+?   	github.com/donglin-wang/chamber/pkg/shared/testutil	[no test files]
+FAIL

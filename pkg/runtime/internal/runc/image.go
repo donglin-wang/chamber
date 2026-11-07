@@ -55,7 +55,9 @@ func (r *Runtime) RunImage(ctx context.Context, image chamberImage.Image, reques
 		Stderr:      request.Stderr,
 	})
 	if err != nil {
-		return nil, errors.Join(err, r.provisioner.Remove(context.Background(), bundle))
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), forcedDeleteWait)
+		defer cancel()
+		return nil, errors.Join(err, r.provisioner.Remove(cleanupCtx, bundle))
 	}
 	c := container.(*runcContainer)
 	c.provisioner = r.provisioner

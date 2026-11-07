@@ -4,6 +4,11 @@ Chamber is a Go SDK for point-and-shoot OCI container execution. The SDK under `
 
 **The current repo is experimental and interfaces are volatile.**
 
+See the [compiler example](examples/compile/README.md) for a complete application,
+[host setup](scripts/README.md) for distro preparation, and the
+[architecture](docs/architecture.md) and [measurements](docs/performance.md) for
+ownership, lifecycle evidence, and reproducible performance results.
+
 ## SDK Scope
 
 - `pkg/image`: public image contracts and config; `pkg/image/factory` creates image stores for pulling and building images under a caller-provided root. Returned images carry their local layout path, digest, and platform.
@@ -34,6 +39,14 @@ For each successful `RunImage` call:
 Shared images and cached binaries remain until the caller removes them. Callers also own cleanup after a process crash; there is no automatic crash recovery.
 
 The contexts passed to `RunImage` and `Run` control provisioning/launch work only. After either returns a `Container`, use its lifecycle methods to control execution. `Wait` with a canceled context attempts to force-delete the container; call `Delete` afterward to complete cleanup and handle any errors.
+
+`Run` and `RunImage` wait for runc's OCI initialization acknowledgment, including
+for workloads that exit immediately. The acknowledgment is not application
+readiness or proof of a successful final kernel exec. `Wait` cancellation uses
+a separate ten-second cleanup deadline; failures retain both cancellation and
+cleanup errors. Result `ExitCode` and `ExitedAt` are optional and remain unset
+when completion was not observed. `StartedAt` records initialization acknowledgment;
+`ExitedAt` records observed runtime completion. See [lifecycle details](docs/architecture.md).
 
 ## Requirements
 
@@ -145,6 +158,11 @@ GOCACHE=/tmp/chamber-go-cache go run cmd/local-test/main.go
 The local runner builds `Dockerfile.chamber` and calls `RunImage`. Chamber provisioning permits UID/GID mapping helpers with specific file capabilities within the outer container's user namespace. It clears no-new-privileges, adds `CAP_SETUID`/`CAP_SETGID` to the capability bounding set, and removes `/proc` masks and read-only path restrictions so nested containers can mount their own `/proc`. Effective and ambient capabilities stay unchanged. The image delegates 65,534 IDs starting at 2,000 to its `chamber` user, covering the BusyBox test image's UID/GID 65,534. The host allocation must expose IDs 2,000–67,533 through the outer container mapping. Images or processes requiring higher inner IDs need a larger allocation. `RunImage` owns the bundle; deleting the container removes it before the runner removes its temporary root.
 
 ## CircleCI
+
+The `test-host` matrix runs directly on CircleCI's native Ubuntu 24.04 and 26.04
+machine executors. It uses the restored [host setup](scripts/README.md), verifies
+repeatable ID allocation, and runs SDK tests and the compiler example as a fresh
+non-root account. These jobs do not launch an additional VM.
 
 [`.circleci/config.yml`](.circleci/config.yml) builds `Dockerfile.chamber` and runs its default command, `go test -count=1 -v -timeout=20m ./pkg/...`, with `CHAMBER_INTEGRATION=1` set by the image. Test output appears in the CircleCI job log, and a failing test fails the job.
 

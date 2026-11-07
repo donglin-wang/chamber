@@ -361,6 +361,9 @@ func (b Builder) buildkitdCommand(ctx context.Context, dirs buildDirectories) (*
 	args := []string{
 		"--state-dir", dirs.runDir,
 		"--net=host",
+		// A private PID namespace makes worker death terminate build payloads
+		// too, even if a payload ignores the forwarded parent-death SIGTERM.
+		"--pidns",
 		b.paths.buildkitd,
 		"--addr", buildkitAddress(dirs),
 		"--root", dirs.stateDir,

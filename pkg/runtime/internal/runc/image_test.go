@@ -143,12 +143,43 @@ func TestRunImageRollsBackLaunchFailureWithUncanceledContext(t *testing.T) {
 			if ctx.Err() != nil || actual != bundle {
 				t.Fatalf("cleanup context/bundle = %v/%#v", ctx.Err(), actual)
 			}
+			if _, ok := ctx.Deadline(); !ok {
+				t.Fatal("launch rollback has no deadline")
+			}
 			return cleanupErr
 		},
 	}}
 	_, err := rt.RunImage(ctx, chamberImage.Image{}, chamberRuntime.RunImageRequest{ContainerID: "requested-id"})
 	if !removed || !errors.Is(err, chamberErrors.ErrCanceled) || !errors.Is(err, cleanupErr) {
 		t.Fatalf("RunImage error = %v, removed=%v; want launch and cleanup failures", err, removed)
+	}
+}
+
+func TestRunImageRollsBackRuntimeInitializationFailure(t *testing.T) {
+	logDir := privateTempDir(t)
+	if err := os.WriteFile(filepath.Join(logDir, "no-ack"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	binary := writeFakeRunc(t, logDir, `
+case "$cmd" in
+run) echo 'invalid mount' >&2; exit 1 ;;
+delete) echo 'container does not exist' >&2; exit 1 ;;
+esac
+`)
+	rt := runtimeWithBinary(t, binary, privateTempDir(t))
+	bundle := chamberBundle.ProvisionedBundle{BundleID: "failed", BundlePath: runtimeBundlePath(t)}
+	rt.provisioner = testImageProvisioner{
+		provision: func(context.Context, chamberBundle.ProvisionRequest) (chamberBundle.ProvisionedBundle, error) {
+			return bundle, nil
+		},
+		remove: func(ctx context.Context, b chamberBundle.ProvisionedBundle) error { return os.RemoveAll(b.BundlePath) },
+	}
+	_, err := rt.RunImage(context.Background(), chamberImage.Image{}, chamberRuntime.RunImageRequest{})
+	if !errors.Is(err, chamberErrors.ErrRuntimeStartFailed) {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(bundle.BundlePath); !os.IsNotExist(err) {
+		t.Fatalf("launch failure retained the provisioned bundle: %v", err)
 	}
 }
 

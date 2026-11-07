@@ -1,0 +1,300 @@
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7492] Warning: the ifcfg-rh plugin is deprecated, please migrate connections to the keyfile format using "nmcli connection migrate"
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7498] dhcp: init: Using DHCP client 'internal'
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7499] manager: (lo): new Loopback device (/org/freedesktop/NetworkManager/Devices/1)
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Starting Network Manager Script Dispatcher Service...
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7506] device (lo): state change: unmanaged -> unavailable (reason 'connection-assumed', managed-type: 'external')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7509] device (lo): state change: unavailable -> disconnected (reason 'connection-assumed', managed-type: 'external')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7512] device (lo): Activation: starting connection 'lo' (448a6de5-047c-4c7d-9566-de25b87db12b)
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7516] manager: (eth0): new Ethernet device (/org/freedesktop/NetworkManager/Devices/2)
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7517] device (eth0): state change: unmanaged -> unavailable (reason 'managed', managed-type: 'external')
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Started Network Manager.
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Reached target Network.
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Starting Network Manager Wait Online...
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Starting GSSAPI Proxy Daemon...
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7542] bus-manager: acquired D-Bus service "org.freedesktop.NetworkManager"
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Started Network Manager Script Dispatcher Service.
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7575] device (lo): state change: disconnected -> prepare (reason 'none', managed-type: 'external')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7591] device (lo): state change: prepare -> config (reason 'none', managed-type: 'external')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7593] device (lo): state change: config -> ip-config (reason 'none', managed-type: 'external')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7602] device (eth0): carrier: link connected
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7622] device (lo): state change: ip-config -> ip-check (reason 'none', managed-type: 'external')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7639] device (eth0): state change: unavailable -> disconnected (reason 'carrier-changed', managed-type: 'full')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7642] policy: auto-activating connection 'System eth0' (5fb06bd0-0bb0-7ffb-45f1-d6edd65f3e03)
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7643] device (lo): state change: ip-check -> secondaries (reason 'none', managed-type: 'external')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7649] device (eth0): Activation: starting connection 'System eth0' (5fb06bd0-0bb0-7ffb-45f1-d6edd65f3e03)
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7649] device (lo): state change: secondaries -> activated (reason 'none', managed-type: 'external')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7652] device (lo): Activation: successful, device activated.
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7654] device (eth0): state change: disconnected -> prepare (reason 'none', managed-type: 'full')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7656] manager: NetworkManager state is now CONNECTING
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7656] device (eth0): state change: prepare -> config (reason 'none', managed-type: 'full')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7659] device (eth0): state change: config -> ip-config (reason 'none', managed-type: 'full')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7659] dhcp4 (eth0): activation: beginning transaction (timeout in 45 seconds)
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Started GSSAPI Proxy Daemon.
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: RPC security service for NFS client and server was skipped because of an unmet condition check (ConditionPathExists=/etc/krb5.keytab).
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Reached target NFS client services.
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Reached target Preparation for Remote File Systems.
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Reached target Remote File Systems.
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: TPM2 PCR Barrier (User) was skipped because of an unmet condition check (ConditionPathExists=/sys/firmware/efi/efivars/StubPcrKernelImage-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f).
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7675] dhcp4 (eth0): state changed new lease, address=192.168.5.15
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7680] policy: set 'System eth0' (eth0) as default for IPv4 routing and DNS
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7714] device (eth0): state change: ip-config -> ip-check (reason 'none', managed-type: 'full')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7728] device (eth0): state change: ip-check -> secondaries (reason 'none', managed-type: 'full')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7730] device (eth0): state change: secondaries -> activated (reason 'none', managed-type: 'full')
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7733] manager: NetworkManager state is now CONNECTED_SITE
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7736] device (eth0): Activation: successful, device activated.
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7742] manager: NetworkManager state is now CONNECTED_GLOBAL
+Nov 07 22:36:32 lima-chamber-rocky-9 NetworkManager[692]: <info>  [1794090992.7782] manager: startup complete
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Finished Network Manager Wait Online.
+Nov 07 22:36:32 lima-chamber-rocky-9 systemd[1]: Starting Cloud-init: Network Stage...
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: Cloud-init v. 24.4-8.el9.rocky.0.1 running 'init' at Sat, 07 Nov 2026 22:36:32 +0000. Up 7.01 seconds.
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +--------+------+------------------------------+---------------+--------+-------------------+
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: | Device |  Up  |           Address            |      Mask     | Scope  |     Hw-Address    |
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +--------+------+------------------------------+---------------+--------+-------------------+
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: |  eth0  | True |         192.168.5.15         | 255.255.255.0 | global | 52:55:55:25:22:fb |
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: |  eth0  | True | fe80::5055:55ff:fe25:22fb/64 |       .       |  link  | 52:55:55:25:22:fb |
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: |   lo   | True |          127.0.0.1           |   255.0.0.0   |  host  |         .         |
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: |   lo   | True |           ::1/128            |       .       |  host  |         .         |
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +--------+------+------------------------------+---------------+--------+-------------------+
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +-------+-------------+-------------+---------------+-----------+-------+
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: | Route | Destination |   Gateway   |    Genmask    | Interface | Flags |
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +-------+-------------+-------------+---------------+-----------+-------+
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: |   0   |   0.0.0.0   | 192.168.5.2 |    0.0.0.0    |    eth0   |   UG  |
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: |   1   | 192.168.5.0 |   0.0.0.0   | 255.255.255.0 |    eth0   |   U   |
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +-------+-------------+-------------+---------------+-----------+-------+
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +-------+-------------+---------+-----------+-------+
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: | Route | Destination | Gateway | Interface | Flags |
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +-------+-------------+---------+-----------+-------+
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: |   1   |  fe80::/64  |    ::   |    eth0   |   U   |
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: |   3   |  multicast  |    ::   |    eth0   |   U   |
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: ci-info: +-------+-------------+---------+-----------+-------+
+Nov 07 22:36:32 lima-chamber-rocky-9 cloud-init[753]: 2026-11-07 22:36:32,958 - schema.py[DEPRECATED]: Deprecated cloud-config provided: users.0.ssh-authorized-keys:  Deprecated in version 18.3. Use **ssh_authorized_keys** instead., users.0.uid:  Changed in version 22.3. The use of ``string`` type is deprecated. Use an ``integer`` instead.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: run-cloud\x2dinit-tmp-tmp__g2qx8w.mount: Deactivated successfully.
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: Generating public/private rsa key pair.
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: Your identification has been saved in /etc/ssh/ssh_host_rsa_key
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: Your public key has been saved in /etc/ssh/ssh_host_rsa_key.pub
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: The key fingerprint is:
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: SHA256:UyG3TbkPgpD0UwvAS2Mct3fOoo9Vvx3CdPKY/qjLI7M root@lima-chamber-rocky-9
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: The key's randomart image is:
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: +---[RSA 3072]----+
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |     ++++ + ..   |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |      Oo * *.    |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |     o ++.= o.   |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |      . .+.+o    |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |        S ..+= . |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |         o oo.B  |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |        . .  =.o |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |         *... oo.|
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |        .E=++oo..|
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: +----[SHA256]-----+
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: Generating public/private ecdsa key pair.
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: Your identification has been saved in /etc/ssh/ssh_host_ecdsa_key
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: Your public key has been saved in /etc/ssh/ssh_host_ecdsa_key.pub
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: The key fingerprint is:
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: SHA256:RSbsXtjqJVv4XuYCr7RrfmsV0WLELP18IPDAtuV8E8M root@lima-chamber-rocky-9
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: The key's randomart image is:
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: +---[ECDSA 256]---+
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |       ...=*.o   |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |        .++oX E  |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |       . +.B.* + |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |        o.+ + = .|
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |       .S+   o o |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |        * o .    |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |       ..O .o    |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |       .+.*+     |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |       o=*oo.    |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: +----[SHA256]-----+
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: Generating public/private ed25519 key pair.
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: Your identification has been saved in /etc/ssh/ssh_host_ed25519_key
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: Your public key has been saved in /etc/ssh/ssh_host_ed25519_key.pub
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: The key fingerprint is:
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: SHA256:bTluV8AiMSbI1QfP2/IhJuJHWgmiDCvqHHjYrWc8/n0 root@lima-chamber-rocky-9
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: The key's randomart image is:
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: +--[ED25519 256]--+
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |   . oo.=.       |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |    o  o.=..     |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |.   . . ..+ o    |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: | + . . . + = .   |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |o o   . S X o .  |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |+o . . = = = o   |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |+.o.. o . o o    |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: |o...=  o .E.     |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: | o.+.o. ..       |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[753]: +----[SHA256]-----+
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Finished Cloud-init: Network Stage.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Reached target Cloud-config availability.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Reached target Network is Online.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Starting Cloud-init: Config Stage...
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Starting Crash recovery kernel arming...
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Starting Notify NFS peers of a restart...
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Starting System Logging Service...
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Starting OpenSSH server daemon...
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Starting Permit User Sessions...
+Nov 07 22:36:33 lima-chamber-rocky-9 sm-notify[799]: Version 2.5.4 starting
+Nov 07 22:36:33 lima-chamber-rocky-9 sshd[801]: Server listening on 0.0.0.0 port 22.
+Nov 07 22:36:33 lima-chamber-rocky-9 sshd[801]: Server listening on :: port 22.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Started Notify NFS peers of a restart.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Started OpenSSH server daemon.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Finished Permit User Sessions.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Started Command Scheduler.
+Nov 07 22:36:33 lima-chamber-rocky-9 crond[804]: (CRON) STARTUP (1.5.7)
+Nov 07 22:36:33 lima-chamber-rocky-9 crond[804]: (CRON) INFO (Syslog will be used instead of sendmail.)
+Nov 07 22:36:33 lima-chamber-rocky-9 crond[804]: (CRON) INFO (RANDOM_DELAY will be scaled with factor 34% if used.)
+Nov 07 22:36:33 lima-chamber-rocky-9 crond[804]: (CRON) INFO (running with inotify support)
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Started Getty on tty1.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Started Serial Getty on hvc0.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Reached target Login Prompts.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Starting User Manager for UID 1000...
+Nov 07 22:36:33 lima-chamber-rocky-9 rsyslogd[800]: [origin software="rsyslogd" swVersion="8.2510.0-2.el9" x-pid="800" x-info="https://www.rsyslog.com"] start
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Started System Logging Service.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Reached target Multi-User System.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Starting Record Runlevel Change in UTMP...
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: pam_unix(systemd-user:session): session opened for user chamber-test(uid=1000) by chamber-test(uid=0)
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: systemd-update-utmp-runlevel.service: Deactivated successfully.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Finished Record Runlevel Change in UTMP.
+Nov 07 22:36:33 lima-chamber-rocky-9 rsyslogd[800]: imjournal: journal files changed, reloading...  [v8.2510.0-2.el9 try https://www.rsyslog.com/e/0 ]
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Queued start job for default target Main User Target.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Created slice User Application Slice.
+Nov 07 22:36:33 lima-chamber-rocky-9 rsyslogd[800]: imjournal: journal files changed, reloading...  [v8.2510.0-2.el9 try https://www.rsyslog.com/e/0 ]
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Started Mark boot as successful after the user session has run 2 minutes.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Started Daily Cleanup of User's Temporary Directories.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Reached target Paths.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Reached target Timers.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Starting D-Bus User Message Bus Socket...
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Starting Create User's Volatile Files and Directories...
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd-journald[568]: File /var/log/journal/f28240838f8d4a07afbd98586f210f1a/user-1000.journal corrupted or uncleanly shut down, renaming and replacing.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Finished Create User's Volatile Files and Directories.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Listening on D-Bus User Message Bus Socket.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Reached target Sockets.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Reached target Basic System.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Started User Manager for UID 1000.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Reached target Main User Target.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[808]: Startup finished in 78ms.
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[953]: Cloud-init v. 24.4-8.el9.rocky.0.1 running 'modules:config' at Sat, 07 Nov 2026 22:36:33 +0000. Up 7.54 seconds.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Finished Cloud-init: Config Stage.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Starting Cloud-init: Final Stage...
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: Cloud-init v. 24.4-8.el9.rocky.0.1 running 'modules:final' at Sat, 07 Nov 2026 22:36:33 +0000. Up 7.73 seconds.
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: + LIMA_CIDATA_MNT=/mnt/lima-cidata
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: ++ uname -s
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: + UNAME=Linux
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: + '[' Linux = Darwin ']'
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: + '[' Linux = FreeBSD ']'
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: + '[' Linux = Linux ']'
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: + LIMA_CIDATA_DEV=/dev/disk/by-label/cidata
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: + mkdir -p -m 700 /mnt/lima-cidata
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: + mount -o ro,mode=0700,dmode=0700,overriderockperm,exec,uid=0 /dev/disk/by-label/cidata /mnt/lima-cidata
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: + export LIMA_CIDATA_MNT
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: + exec /mnt/lima-cidata/boot.sh
+Nov 07 22:36:33 lima-chamber-rocky-9 kernel: ISO 9660 Extensions: IEEE_P1282
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: LIMA 2026-11-07T22:36:33+00:00| Plain mode. Skipping to run non-essential boot scripts. Provisioning scripts will be still executed. Guest agent will not be running.
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: LIMA 2026-11-07T22:36:33+00:00| Exiting with code 0
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1512]: #############################################################
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1513]: -----BEGIN SSH HOST KEY FINGERPRINTS-----
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1515]: 256 SHA256:RSbsXtjqJVv4XuYCr7RrfmsV0WLELP18IPDAtuV8E8M root@lima-chamber-rocky-9 (ECDSA)
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1517]: 256 SHA256:bTluV8AiMSbI1QfP2/IhJuJHWgmiDCvqHHjYrWc8/n0 root@lima-chamber-rocky-9 (ED25519)
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1519]: 3072 SHA256:UyG3TbkPgpD0UwvAS2Mct3fOoo9Vvx3CdPKY/qjLI7M root@lima-chamber-rocky-9 (RSA)
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1520]: -----END SSH HOST KEY FINGERPRINTS-----
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1521]: #############################################################
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: Cloud-init v. 24.4-8.el9.rocky.0.1 finished at Sat, 07 Nov 2026 22:36:33 +0000. Datasource DataSourceNoCloud [seed=/dev/vdb].  Up 7.82 seconds
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: Failed to write to /dev/console
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: ci-info: +++++++++++++++++++++++Authorized keys from /home/donglinwang.guest/.ssh/authorized_keys for user donglinwang++++++++++++++++++++++++
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: Failed to write to /dev/console
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: ci-info: +-------------+-------------------------------------------------------------------------------------------------+---------+---------+
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: Failed to write to /dev/console
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: ci-info: |   Keytype   |                                       Fingerprint (sha256)                                      | Options | Comment |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: Failed to write to /dev/console
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: ci-info: +-------------+-------------------------------------------------------------------------------------------------+---------+---------+
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: Failed to write to /dev/console
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: ci-info: | ssh-ed25519 | bf:b8:01:92:bb:ff:79:7a:f4:8a:12:e0:36:91:e5:d6:e9:bb:b7:90:3e:61:29:5f:8e:fe:ee:ac:4c:05:f3:48 |    -    |   lima  |
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: Failed to write to /dev/console
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: ci-info: +-------------+-------------------------------------------------------------------------------------------------+---------+---------+
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: Failed to write to /dev/console
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: <14>Nov  7 22:36:33 cloud-init: #############################################################
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: <14>Nov  7 22:36:33 cloud-init: -----BEGIN SSH HOST KEY FINGERPRINTS-----
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: <14>Nov  7 22:36:33 cloud-init: 256 SHA256:RSbsXtjqJVv4XuYCr7RrfmsV0WLELP18IPDAtuV8E8M root@lima-chamber-rocky-9 (ECDSA)
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: <14>Nov  7 22:36:33 cloud-init: 256 SHA256:bTluV8AiMSbI1QfP2/IhJuJHWgmiDCvqHHjYrWc8/n0 root@lima-chamber-rocky-9 (ED25519)
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: <14>Nov  7 22:36:33 cloud-init: 3072 SHA256:UyG3TbkPgpD0UwvAS2Mct3fOoo9Vvx3CdPKY/qjLI7M root@lima-chamber-rocky-9 (RSA)
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: <14>Nov  7 22:36:33 cloud-init: -----END SSH HOST KEY FINGERPRINTS-----
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: <14>Nov  7 22:36:33 cloud-init: #############################################################
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: -----BEGIN SSH HOST KEY KEYS-----
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBD1qWNWJiZzuxTaB6gJkfpvaVnK5EBxomtS7HGh24Uguyk78X1hoWKJAWv6+URXnnJCzyBiUz2dHi4Td3+1ZF2I= root@lima-chamber-rocky-9
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN+QuyFQmllgGuID91lKCBWnoW1Jy1wrtfFOCSLcYu16 root@lima-chamber-rocky-9
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCn7gsCVrcrO0V5WbeYfL8B6W/tJASaCh8X7MBGwTAW7Vn9SSZ+m8EZQhVZDJyFRHLwr/3vEAeCZukN2zgpnSZj7Lr9IcVGRvmp2qAZFzOVLmQr4wI7tqn/vRn90reEt8ywjkC20w2ReR/ndt+Mbo0+oYLo4Iwuh2PkHTGbPBzN5iVNCBSXaHJ0mbtIZdDb5E9XPQ1XeCE1l4PYoPi88G+hFQdbpygqmjquF9sAfV6zU7dSzLRV/txGUkCnxHHl6KtukeQ2iFDrWD9/xuOwZOToMKUZLFCA146lDiEkmXwDPokbmvqilxohcRt68Kk+qtks8KV/3Kgm5gV/crpJ/62Qnlww8WtH9t3anla2KhVVTyY85rGVO+t3lYrlVVY2RTjfcW9rHQnOAPnhnWgHj0MkDoIBOmW77uM5RaNpuKeCESQyhT6Lp3mDTUUGeCVLtbtEKV6tuHBTLczDB2zjJkmfdOa34JvobUTOIss5cokiiqUFG3+JuTW3TeG5KOEGE2s= root@lima-chamber-rocky-9
+Nov 07 22:36:33 lima-chamber-rocky-9 cloud-init[1486]: -----END SSH HOST KEY KEYS-----
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Finished Cloud-init: Final Stage.
+Nov 07 22:36:33 lima-chamber-rocky-9 systemd[1]: Reached target Cloud-init target.
+Nov 07 22:36:33 lima-chamber-rocky-9 kernel: block vda: the capability attribute has been deprecated.
+Nov 07 22:36:33 lima-chamber-rocky-9 sshd-session[1646]: Connection closed by 192.168.5.2 port 33146
+Nov 07 22:36:34 lima-chamber-rocky-9 kdumpctl[810]: kdump: kexec: loaded kdump kernel
+Nov 07 22:36:34 lima-chamber-rocky-9 kdumpctl[810]: kdump: Starting kdump: [OK]
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1]: Finished Crash recovery kernel arming.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1]: Startup finished in 711ms (kernel) + 3.998s (initrd) + 3.660s (userspace) = 8.371s.
+Nov 07 22:36:34 lima-chamber-rocky-9 sshd-session[1846]: Accepted publickey for donglinwang from 192.168.5.2 port 31436 ssh2: ED25519 SHA256:v7gBkrv/eXr0ihLgNpHl1um7t5A+YSlfjv7urEwF80g
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1]: Created slice User Slice of UID 501.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1]: Starting User Runtime Directory /run/user/501...
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd-logind[672]: New session 2 of user donglinwang.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1]: Finished User Runtime Directory /run/user/501.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1]: Starting User Manager for UID 501...
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: pam_unix(systemd-user:session): session opened for user donglinwang(uid=501) by donglinwang(uid=0)
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Queued start job for default target Main User Target.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Created slice User Application Slice.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Mark boot as successful after the user session has run 2 minutes was skipped because of an unmet condition check (ConditionUser=!@system).
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Started Daily Cleanup of User's Temporary Directories.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Reached target Paths.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Reached target Timers.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Starting D-Bus User Message Bus Socket...
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Starting Create User's Volatile Files and Directories...
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Finished Create User's Volatile Files and Directories.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Listening on D-Bus User Message Bus Socket.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Reached target Sockets.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Reached target Basic System.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Reached target Main User Target.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1850]: Startup finished in 32ms.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1]: Started User Manager for UID 501.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1]: Started Session 2 of User donglinwang.
+Nov 07 22:36:34 lima-chamber-rocky-9 sshd-session[1846]: pam_unix(sshd:session): session opened for user donglinwang(uid=501) by donglinwang(uid=0)
+Nov 07 22:36:34 lima-chamber-rocky-9 sudo[1899]: donglinwang : PWD=/home/donglinwang.guest ; USER=root ; COMMAND=/bin/cat /mnt/lima-cidata/param.env
+Nov 07 22:36:34 lima-chamber-rocky-9 sudo[1899]: pam_unix(sudo:session): session opened for user root(uid=0) by donglinwang(uid=501)
+Nov 07 22:36:34 lima-chamber-rocky-9 sudo[1899]: pam_unix(sudo:session): session closed for user root
+Nov 07 22:36:34 lima-chamber-rocky-9 sshd-session[1857]: Received disconnect from 192.168.5.2 port 31436:11: disconnected by user
+Nov 07 22:36:34 lima-chamber-rocky-9 sshd-session[1857]: Disconnected from user donglinwang 192.168.5.2 port 31436
+Nov 07 22:36:34 lima-chamber-rocky-9 sshd-session[1846]: pam_unix(sshd:session): session closed for user donglinwang
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1]: session-2.scope: Deactivated successfully.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd-logind[672]: Session 2 logged out. Waiting for processes to exit.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd-logind[672]: Removed session 2.
+Nov 07 22:36:34 lima-chamber-rocky-9 sshd-session[1902]: Accepted publickey for donglinwang from 192.168.5.2 port 48504 ssh2: ED25519 SHA256:v7gBkrv/eXr0ihLgNpHl1um7t5A+YSlfjv7urEwF80g
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd-logind[672]: New session 4 of user donglinwang.
+Nov 07 22:36:34 lima-chamber-rocky-9 systemd[1]: Started Session 4 of User donglinwang.
+Nov 07 22:36:34 lima-chamber-rocky-9 sshd-session[1902]: pam_unix(sshd:session): session opened for user donglinwang(uid=501) by donglinwang(uid=0)
+Nov 07 22:36:34 lima-chamber-rocky-9 sudo[1947]: donglinwang : PWD=/home/donglinwang.guest ; USER=root ; COMMAND=/bin/cat /mnt/lima-cidata/param.env
+Nov 07 22:36:34 lima-chamber-rocky-9 sudo[1947]: pam_unix(sudo:session): session opened for user root(uid=0) by donglinwang(uid=501)
+Nov 07 22:36:34 lima-chamber-rocky-9 sudo[1947]: pam_unix(sudo:session): session closed for user root
+Nov 07 22:36:34 lima-chamber-rocky-9 sudo[1991]: donglinwang : PWD=/home/donglinwang.guest ; USER=root ; COMMAND=/bin/cat /mnt/lima-cidata/param.env
+Nov 07 22:36:34 lima-chamber-rocky-9 sudo[1991]: pam_unix(sudo:session): session opened for user root(uid=0) by donglinwang(uid=501)
+Nov 07 22:36:34 lima-chamber-rocky-9 sudo[1991]: pam_unix(sudo:session): session closed for user root
+Nov 07 22:36:35 lima-chamber-rocky-9 sudo[2091]: donglinwang : PWD=/home/donglinwang.guest ; USER=root ; COMMAND=/bin/bash -s
+Nov 07 22:36:35 lima-chamber-rocky-9 sudo[2091]: pam_unix(sudo:session): session opened for user root(uid=0) by donglinwang(uid=501)
+Nov 07 22:36:37 lima-chamber-rocky-9 runuser[2157]: pam_unix(runuser:session): session opened for user chamber-test(uid=1000) by donglinwang(uid=0)
+Nov 07 22:36:37 lima-chamber-rocky-9 runuser[2157]: pam_unix(runuser:session): session closed for user chamber-test
+Nov 07 22:36:37 lima-chamber-rocky-9 chronyd[676]: Selected source 23.128.92.19 (2.rocky.pool.ntp.org)
+Nov 07 22:36:37 lima-chamber-rocky-9 chronyd[676]: System clock TAI offset set to 37 seconds
+Nov 07 22:36:38 lima-chamber-rocky-9 runuser[2173]: pam_unix(runuser:session): session opened for user chamber-test(uid=1000) by donglinwang(uid=0)
+Nov 07 22:36:38 lima-chamber-rocky-9 runuser[2173]: pam_unix(runuser:session): session closed for user chamber-test
+Nov 07 22:36:38 lima-chamber-rocky-9 runuser[2183]: pam_unix(runuser-l:session): session opened for user chamber-test(uid=1000) by donglinwang(uid=0)
+Nov 07 22:36:42 lima-chamber-rocky-9 systemd[1]: NetworkManager-dispatcher.service: Deactivated successfully.
+Nov 07 22:36:42 lima-chamber-rocky-9 irqbalance[670]: Cannot change IRQ 37 affinity: Operation not permitted
+Nov 07 22:36:42 lima-chamber-rocky-9 irqbalance[670]: IRQ 37 affinity is now unmanaged
+Nov 07 22:36:42 lima-chamber-rocky-9 irqbalance[670]: Cannot change IRQ 29 affinity: Operation not permitted
+Nov 07 22:36:42 lima-chamber-rocky-9 irqbalance[670]: IRQ 29 affinity is now unmanaged
+Nov 07 22:37:08 lima-chamber-rocky-9 systemd[1]: systemd-hostnamed.service: Deactivated successfully.
+Nov 07 22:37:43 lima-chamber-rocky-9 chronyd[676]: Selected source 142.4.192.253 (2.rocky.pool.ntp.org)
+Nov 07 22:38:38 lima-chamber-rocky-9 systemd[808]: Starting Mark boot as successful...
+Nov 07 22:38:38 lima-chamber-rocky-9 systemd[808]: Finished Mark boot as successful.
+Nov 07 22:39:34 lima-chamber-rocky-9 runuser[2183]: pam_unix(runuser-l:session): session closed for user chamber-test
+Nov 07 22:39:34 lima-chamber-rocky-9 sudo[2091]: pam_unix(sudo:session): session closed for user root
+Nov 07 22:39:34 lima-chamber-rocky-9 systemd[1]: Starting Hostname Service...
+Nov 07 22:39:34 lima-chamber-rocky-9 systemd[1]: Started Hostname Service.
+Nov 07 22:39:34 lima-chamber-rocky-9 sudo[3946]: donglinwang : PWD=/home/donglinwang.guest ; USER=root ; COMMAND=/bin/journalctl -b --no-pager -n 300
+Nov 07 22:39:34 lima-chamber-rocky-9 sudo[3946]: pam_unix(sudo:session): session opened for user root(uid=0) by donglinwang(uid=501)
