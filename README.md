@@ -207,15 +207,93 @@ within the outer container's user namespace. It clears
 no-new-privileges, adds `CAP_SETUID`/`CAP_SETGID` to the capability bounding set,
 and removes `/proc` masks and read-only path restrictions so nested containers
 can mount their own `/proc`. Effective and ambient capabilities stay unchanged.
-`cmd/ci` uses the same provisioning defaults through `RunImage`.
 The image delegates 65,534 IDs starting at 2,000 to its `chamber` user, covering
 the BusyBox test image's UID/GID 65,534. The host allocation must expose IDs
 2,000–67,533 through the outer container mapping. Images or processes requiring
 higher inner IDs need a larger allocation. `RunImage` owns the bundle; deleting
 the container removes it before the runner removes its temporary root.
 
-[`cmd/ci`](cmd/ci/README.md) is a standalone GitHub webhook receiver. It checks
-out the event's exact commit, builds the root `Dockerfile.chamber`, runs its
-default command, and links the GitHub commit status to live logs. It owns its
-SQLite-backed job queue and execution limits, per-job roots, interrupted-job
-recovery, and authenticated self-update. These policies remain outside the SDK.
+## CircleCI
+
+[`.circleci/config.yml`](.circleci/config.yml) builds `Dockerfile.chamber` and
+runs its default command, `go test -count=1 -v -timeout=20m ./pkg/...`, with
+`CHAMBER_INTEGRATION=1` set by the image. Test output appears in the CircleCI job
+log, and a failing test fails the job.
+
+The job uses a Linux VM with Docker installed. It disables Ubuntu's AppArmor
+restrictions on unprivileged user namespaces for that disposable VM so Chamber's
+host preflight permits rootless execution. It runs the test container with
+`--privileged` so nested rootless runc and BuildKit can create namespaces and
+mount filesystems. Tests run as the image's non-root `chamber` user. This grants
+privileges to the disposable CI test environment; SDK callers still use
+rootless execution. See CircleCI's
+[Linux VM guide](https://circleci.com/docs/guides/execute/using-linuxvm/).
+
+To run the same commands locally with a Linux Docker daemon:
+
+```sh
+docker build --progress=plain -f Dockerfile.chamber -t chamber-tests .
+docker run --rm --privileged chamber-tests
+```
+
+### Set up CircleCI from scratch
+
+1. Commit and push these repository changes, including `.circleci/config.yml`,
+   to the branch you will use for setup. CircleCI needs the file on GitHub before
+   it can run it. Merge the config into the default branch so future PR branches
+   inherit it.
+2. [Create a CircleCI account](https://circleci.com/signup/). For the GitHub App
+   setup described here, sign up with an email address, verify it, complete MFA
+   setup, and create a CircleCI organization. This can be an organization just
+   for you. See the [signup guide](https://circleci.com/docs/guides/getting-started/first-steps/).
+3. In CircleCI, choose **Create Project**, name it `chamber`, and name its
+   pipeline `packages`. Connect **GitHub Cloud**, install/authorize the
+   **CircleCI GitHub App** for the GitHub account that owns this repo, and grant
+   it access to `chamber`. Select the Chamber repository as both the checkout
+   source and config source, with config path `.circleci/config.yml`. Use the
+   existing config rather than generating a starter. See the
+   [project setup guide](https://circleci.com/docs/guides/getting-started/create-project/).
+4. In **Project Settings → Project Setup**, edit the pipeline's GitHub trigger
+   (or set it during project creation). Set **Run on** to
+   **PR opened or pushed to, default branch and tag pushes**. Use Chamber as the
+   event source. Replace the default **All pushes** trigger to avoid duplicate
+   builds. This preset runs when a PR opens or reopens and whenever commits are
+   pushed to an open PR from a branch in this repository, including draft PRs.
+   It also builds default-branch pushes. The config has no tag filter, so tag
+   pushes do not run the test job.
+   Trigger selection is a CircleCI project setting; adding YAML alone does not
+   configure it. See the
+   [trigger options](https://circleci.com/docs/guides/orchestrate/github-trigger-event-options/).
+5. Open a PR from a branch containing the config. Confirm that CircleCI runs
+   `test-packages` and GitHub shows its result. Push another commit to the same
+   PR and confirm a new run appears for that commit.
+6. Optional: after the first run, open GitHub **Settings → Rules → Rulesets**
+   (or branch protection), require status checks for your default branch, and
+   select the CircleCI check that actually appeared on the PR. This makes
+   passing tests a merge requirement.
+
+This job pulls public images and tools and requires no custom secrets, registry
+push credentials, webhook server, or self-hosted runner. CircleCI provides the
+repository checkout through its GitHub App integration.
+
+### Include pull requests from forks
+
+CircleCI's GitHub App pipelines do not automatically build forked PRs. If
+"all PR pushes" includes contributors' forks, use a **GitHub OAuth** project
+instead, with the same `.circleci/config.yml`:
+
+1. In CircleCI **User Settings → Account Integrations**, follow the link
+   **Received instructions from the CircleCI Support team to authorize a GitHub
+   OAuth app?** and authorize GitHub. This creates a `github/<owner>` CircleCI
+   organization. See [organization setup](https://circleci.com/docs/guides/getting-started/create-an-organization/).
+2. Select that organization, choose **Set up a project**, select Chamber, and
+   use the existing `.circleci/config.yml` from your setup branch.
+3. In that project's **Project Settings → Advanced**, enable **Only build pull
+   requests** and **Build forked pull requests**. Leave **Pass secrets to builds
+   from forked pull requests** off; the package tests do not need secrets.
+4. Use this OAuth pipeline as the required GitHub check and disable any earlier
+   GitHub App trigger to avoid duplicate runs. Verify both opening a forked PR
+   and pushing another commit to it.
+
+The fork setting applies to OAuth pipelines, not the GitHub App setup above.
+See CircleCI's [pull request build settings](https://circleci.com/docs/guides/integration/pull-request-build-settings/).

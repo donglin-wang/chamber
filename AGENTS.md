@@ -24,8 +24,8 @@ store lookup or manual provisioner setup.
 - Do not add shared-root concurrency management, operation records, leases,
   recovery controllers, distributed scheduling, or background services to the
   SDK. Application-level policies belong in embedding applications.
-- `cmd/ci` is an SDK consumer and automation example. Its webhook
-  admission limits, per-run roots, and retention are application policy.
+- `.circleci/config.yml` builds and runs `Dockerfile.chamber` to validate the SDK.
+  Keep CI orchestration in CircleCI rather than adding an application to the SDK.
 
 ## Linux and Host Execution
 
@@ -161,7 +161,7 @@ For public API changes, audit every affected caller in the same turn:
 - Search with `rg` for changed and removed types, fields, methods, and names.
 - Compile affected downstream packages using
   `GOCACHE=/tmp/chamber-go-cache GOOS=linux go test -c`.
-- Include `cmd/ci` for changes to runtime, bundle, image, process
+- Include `cmd/local-test` for changes to runtime, bundle, image, process
   environment, logs/results, filesystem roots, or host execution.
 - Include relevant factories and concrete adapters for root SDK changes.
 - Update every result-field caller when a field's meaning or type changes.

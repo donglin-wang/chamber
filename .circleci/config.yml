@@ -1,0 +1,35 @@
+version: 2.1
+
+jobs:
+  test-packages:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: medium
+    steps:
+      - checkout
+      - run:
+          name: Allow rootless user namespaces on the CI VM
+          command: |
+            # Chamber's host preflight checks these Ubuntu AppArmor settings.
+            # Change only the disposable VM used for this job.
+            for setting in \
+              kernel.apparmor_restrict_unprivileged_userns \
+              kernel.apparmor_restrict_unprivileged_unconfined; do
+              if sysctl "$setting" >/dev/null 2>&1; then
+                sudo sysctl -w "$setting=0"
+              fi
+            done
+      - run:
+          name: Build the package test image
+          command: docker build --progress=plain -f Dockerfile.chamber -t chamber-tests .
+      - run:
+          name: Run package and integration tests
+          no_output_timeout: 25m
+          # Nested runc and BuildKit need namespace and mount access. The image
+          # still runs Go tests as its non-root chamber user.
+          command: docker run --rm --privileged chamber-tests
+
+workflows:
+  packages:
+    jobs:
+      - test-packages
