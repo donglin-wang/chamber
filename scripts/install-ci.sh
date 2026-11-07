@@ -35,8 +35,7 @@ service_dir=$HOME/.config/systemd/user
 mkdir -p "$config_dir" "$service_dir/chamber-ci.service.d" "$HOME/.local/bin"
 staging=$(mktemp -d "$HOME/.local/bin/.chamber-ci.XXXXXX")
 trap 'rm -rf -- "$staging"' EXIT
-# Use the installed toolchain; an older Go must not download a replacement.
-GOTOOLCHAIN=local go -C "$repo_dir" build -o "$staging/chamber-ci" ./cmd/ci
+go -C "$repo_dir" build -o "$staging/chamber-ci" ./cmd/ci
 install -m 0755 "$staging/chamber-ci" "$HOME/.local/bin/chamber-ci"
 
 if [[ ! -e $config_dir/config.json ]]; then

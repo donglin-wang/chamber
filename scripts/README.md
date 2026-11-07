@@ -1,11 +1,17 @@
 # CI installation
 
-Debian is implemented. From your checkout in the normal SSH account, provision
-the host and switch to the dedicated CI account:
+Debian is implemented. There are two accounts: your normal SSH administrator
+(usually `admin` on Debian EC2) prepares the host; `chamber-ci` installs and
+runs CI without sudo.
+
+## 1. Prepare the host as your SSH administrator
+
+Run from your existing Chamber checkout. Go 1.26.4 or newer must already be
+installed somewhere the CI account can access, such as `/usr/local/go`.
+The scripts do not install Go.
 
 ```sh
 sudo ./scripts/setup-host.sh
-sudo -iu chamber-ci
 ```
 
 Host setup installs Debian packages and creates `chamber-ci` using `useradd`,
@@ -13,15 +19,24 @@ which automatically allocates unused ranges of one million subordinate UIDs
 and GIDs. It enables user namespaces and user lingering for boot and logout
 survival. Existing accounts and allocations are preserved. Reruns reuse the
 CI account if its first UID and GID allocations are already large enough.
-An optional username selects a different dedicated account:
+Optional: to use a different CI account name, replace the command above with
+`sudo ./scripts/setup-host.sh my-ci`, and use `my-ci` in the switch command below.
+Run this alternative as your SSH administrator, before switching accounts.
+
+## 2. Switch from your SSH administrator to the CI account
 
 ```sh
-sudo ./scripts/setup-host.sh my-ci
+sudo -iu chamber-ci
 ```
 
-In the CI account, obtain a checkout owned by that account. Install Go 1.26.4
-or newer yourself and make it available on this account's PATH. For a Go
-installation under `/usr/local/go`, the commands are:
+You are now `chamber-ci`. All remaining installation commands run as this user,
+which has no sudo privileges and does not need them. Use `exit` to return to
+your SSH administrator if you later need host administration.
+
+## 3. Install CI as the CI account
+
+Obtain a checkout owned by this account and put the existing Go installation
+on PATH. For Go installed under `/usr/local/go`:
 
 ```sh
 export PATH="/usr/local/go/bin:$PATH"
@@ -32,13 +47,16 @@ cd ~/chamber
 
 User installation uses the existing Go on PATH to build this checkout and
 installs the canonical `cmd/ci/ci.service`. A PATH drop-in includes that Go
-executable's directory for self-updates. The build disables automatic Go
-toolchain downloads; an incompatible installed version fails the build.
+executable's directory for self-updates. The build uses your Go toolchain
+configuration, including Go's normal automatic toolchain selection.
 Existing config and secrets are preserved. It refuses to replace a running CI
 binary; use CI self-update for normal updates. It does not change the login
 shell PATH.
+
 The installer connects to the CI user's systemd manager without requiring
 an SSH login as that user.
+
+## 4. Configure and start CI as the CI account
 
 Edit `~/.config/chamber-ci/config.json`: set `public_url`, repository names, and
 the trusted update source. Paths are absolute; the generated `work_root` is
@@ -54,8 +72,8 @@ curl --fail http://127.0.0.1:8080/health
 XDG_RUNTIME_DIR=/run/user/$(id -u) journalctl --user -u chamber-ci -f
 ```
 
-Put HTTPS in front of the loopback listener and allow public inbound traffic
-only to the proxy, keeping port 8080 private. Configure GitHub's JSON webhook
+Use your SSH administrator account to configure an HTTPS proxy and the EC2
+security group; keep port 8080 private. Configure GitHub's JSON webhook
 at `https://YOUR_DOMAIN/webhooks/chamber` (or your chosen repository key), using
 the generated secret and push/pull request events. See
 [the CI guide](../cmd/ci/README.md) for credentials, logs, and self-update.
