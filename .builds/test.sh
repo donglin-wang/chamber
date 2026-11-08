@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Run from the checkout root on a disposable SourceHut Linux VM.
+set -euo pipefail
+
+[[ $# == 0 || ( $# == 1 && $1 == --nested ) ]] || {
+    echo "Usage: bash .builds/test.sh [--nested]" >&2
+    exit 2
+}
+
+sudo ./scripts/setup-host.sh --allow-unrestricted-userns chamber-test
+
+sudo install -d -o chamber-test -g chamber-test /home/chamber-test/source
+tar --exclude=.git -cf - . |
+    sudo -u chamber-test tar -C /home/chamber-test/source -xf -
+
+sudo -iu chamber-test bash -s -- "$@" <<'TEST'
+set -euo pipefail
+export PATH=/usr/local/bin:/usr/bin:/bin
+export GOTOOLCHAIN=auto
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+# Nested mapping helpers need file capabilities; /tmp may be mounted nosuid.
+export TMPDIR="$HOME/tmp"
+mkdir -p "$TMPDIR"
+cd "$HOME/source"
+
+go version
+CHAMBER_INTEGRATION=1 go test -count=1 -v -timeout=20m ./...
+
+if [[ ${1:-} == --nested ]]; then
+    go run ./cmd/local-test
+fi
+TEST

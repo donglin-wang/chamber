@@ -1,0 +1,15 @@
+image: ubuntu/24.04
+packages:
+  - golang
+  - gcc
+  - ca-certificates
+  - curl
+  - git
+environment:
+  GOTOOLCHAIN: auto
+sources:
+  - https://git.sr.ht/~donglin-wang/chamber
+tasks:
+  - test: |
+      cd chamber
+      bash .builds/test.sh

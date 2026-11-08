@@ -157,6 +157,25 @@ GOCACHE=/tmp/chamber-go-cache go run cmd/local-test/main.go
 
 The local runner builds `Dockerfile.chamber` and calls `RunImage`. Chamber provisioning permits UID/GID mapping helpers with specific file capabilities within the outer container's user namespace. It clears no-new-privileges, adds `CAP_SETUID`/`CAP_SETGID` to the capability bounding set, and removes `/proc` masks and read-only path restrictions so nested containers can mount their own `/proc`. Effective and ambient capabilities stay unchanged. The image delegates 65,534 IDs starting at 2,000 to its `chamber` user, covering the BusyBox test image's UID/GID 65,534. The host allocation must expose IDs 2,000–67,533 through the outer container mapping. Images or processes requiring higher inner IDs need a larger allocation. `RunImage` owns the bundle; deleting the container removes it before the runner removes its temporary root.
 
+## SourceHut
+
+The manifests in [`.builds/`](.builds/) run the integration suite directly on
+Debian Trixie, Fedora (`latest`), and Ubuntu 24.04 VMs. Debian also runs
+`cmd/local-test` to check execution inside the container built from
+`Dockerfile.chamber`.
+
+Each job installs Go, then uses [`.builds/test.sh`](.builds/test.sh) and the
+existing [host setup](scripts/README.md) to create a separate unprivileged test
+account. Host setup uses sudo and permits disabling AppArmor's user-namespace
+restrictions on the disposable VM; SDK tests run as the test account. Temporary
+files stay under that account's home so nested mapping helpers can retain file
+capabilities. Go automatically selects a toolchain compatible with `go.mod`.
+
+Push these files to `https://git.sr.ht/~donglin-wang/chamber` to submit builds
+automatically. SourceHut selects the pushed revision for the repository in each
+manifest's `sources` list. CI requires a SourceHut subscription; these builds
+use public sources and do not require custom secrets.
+
 ## CircleCI
 
 The `test-host` matrix runs directly on CircleCI's native Ubuntu 24.04 and 26.04
