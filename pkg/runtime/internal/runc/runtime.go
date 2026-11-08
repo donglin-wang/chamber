@@ -28,6 +28,7 @@ import (
 )
 
 const (
+	logSource      = "runtime/runc"
 	runtimeName    = chamberRuntime.RuntimeNameRunc
 	defaultVersion = "v1.5.0"
 
@@ -156,10 +157,11 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 			return fmt.Errorf("%w: make local runtime binary executable: %w", chamberErrors.ErrRuntimeInstallFailed, err)
 		}
 		chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
+			"source", logSource,
 			"runtime", runtimeName,
 			"version", r.binary.version,
 			"path", r.binaryPath,
-			"source", "local",
+			"binary_source", "local",
 		)
 		return nil
 	}
@@ -188,15 +190,17 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 			return fmt.Errorf("%w: make existing runtime binary executable: %w", chamberErrors.ErrRuntimeInstallFailed, err)
 		}
 		chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
+			"source", logSource,
 			"runtime", runtimeName,
 			"version", binary.version,
 			"path", binaryPath,
-			"source", "cache",
+			"binary_source", "cache",
 		)
 		return nil
 	}
 
 	chamberLogging.InfoWith(r.logger, ctx, "downloading runtime binary",
+		"source", logSource,
 		"runtime", runtimeName,
 		"version", binary.version,
 		"url", binary.url,
@@ -207,10 +211,11 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 	}
 
 	chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
+		"source", logSource,
 		"runtime", runtimeName,
 		"version", binary.version,
 		"path", binaryPath,
-		"source", "download",
+		"binary_source", "download",
 	)
 	return nil
 }
@@ -246,6 +251,7 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 		return nil, fmt.Errorf("%w: inspect runtime container ID: %w", chamberErrors.ErrFilesystemFailed, err)
 	}
 	chamberLogging.InfoWith(r.logger, ctx, "starting runtime container",
+		"source", logSource,
 		"container_id", containerID,
 		"bundle_path", request.BundlePath,
 		"state_root", stateRoot,
@@ -315,6 +321,7 @@ func (r *Runtime) Run(ctx context.Context, request chamberRuntime.RunRequest) (c
 		return nil, errors.Join(err, deleteErr)
 	}
 	chamberLogging.InfoWith(r.logger, ctx, "started runtime container",
+		"source", logSource,
 		"container_id", containerID,
 		"pid", cmd.Process.Pid,
 	)
@@ -726,6 +733,7 @@ func (c *runcContainer) Signal(ctx context.Context, signal os.Signal) error {
 		return err
 	}
 	chamberLogging.InfoWith(c.logger, ctx, "signaling runtime container",
+		"source", logSource,
 		"container_id", c.id,
 		"signal", signal,
 	)
@@ -769,6 +777,7 @@ func (c *runcContainer) Delete(ctx context.Context, force bool) error {
 	}
 	args = append(args, c.id)
 	chamberLogging.InfoWith(c.logger, ctx, "deleting runtime container",
+		"source", logSource,
 		"container_id", c.id,
 		"force", force,
 	)

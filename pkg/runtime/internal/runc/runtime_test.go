@@ -1,8 +1,10 @@
 package runc
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +19,7 @@ import (
 	chamberRuntime "github.com/donglin-wang/chamber/pkg/runtime"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
+	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 )
 
 func TestNewPreparesRuntimeDirectories(t *testing.T) {
@@ -88,6 +91,7 @@ func TestNewDefaultsToRuncAdapterName(t *testing.T) {
 }
 
 func TestNewUsesConfiguredLocalRuntimePath(t *testing.T) {
+	var logs bytes.Buffer
 	content := []byte("local runc")
 	runtimePath := filepath.Join(privateTempDir(t), "runc")
 	if err := os.WriteFile(runtimePath, content, 0600); err != nil {
@@ -103,6 +107,7 @@ func TestNewUsesConfiguredLocalRuntimePath(t *testing.T) {
 		RuntimeRoot: privateTempDir(t),
 		RuntimePath: runtimePath,
 		Name:        "runc",
+		Logging:     chamberLogging.Config{Logger: chamberLogging.NewJSONLogger(&logs, nil)},
 	}, withHTTPClient(client))
 
 	descriptor := runtime.Descriptor()
@@ -113,6 +118,13 @@ func TestNewUsesConfiguredLocalRuntimePath(t *testing.T) {
 		t.Fatalf("download requests = %d, want 0", requests)
 	}
 	assertFileContentAndMode(t, runtimePath, content, 0755)
+	var entry map[string]any
+	if err := json.Unmarshal(logs.Bytes(), &entry); err != nil {
+		t.Fatalf("decode log: %v", err)
+	}
+	if entry["msg"] != "runtime binary ready" || entry["source"] != "runtime/runc" || entry["binary_source"] != "local" {
+		t.Fatalf("log = %#v, want runtime/runc source and local binary_source", entry)
+	}
 }
 
 func TestNewRejectsWrongDigest(t *testing.T) {

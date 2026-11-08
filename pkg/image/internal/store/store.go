@@ -25,6 +25,8 @@ import (
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+const logSource = "image/store"
+
 type Store struct {
 	config     chamberImage.Config
 	workspace  *hostfs.Workspace
@@ -157,6 +159,7 @@ func (s *Store) Pull(ctx context.Context, request chamberImage.PullRequest) (cha
 		s.mu.Unlock()
 		if err == nil {
 			chamberLogging.InfoWith(s.logger, ctx, "reused image",
+				"source", logSource,
 				"image_ref", existing.Reference,
 				"digest", existing.Digest,
 				"size_bytes", existing.SizeBytes,
@@ -175,6 +178,7 @@ func (s *Store) Pull(ctx context.Context, request chamberImage.PullRequest) (cha
 	defer os.RemoveAll(tmp)
 
 	chamberLogging.InfoWith(s.logger, ctx, "pulling image",
+		"source", logSource,
 		"image_ref", canonicalReference,
 		"layout_path", s.layoutRoot,
 		"platform_os", platform.OS,
@@ -413,11 +417,12 @@ func (s *Store) commitLayout(ctx context.Context, request commitRequest) (chambe
 		return chamberImage.Image{}, err
 	}
 	chamberLogging.InfoWith(s.logger, ctx, "committed image",
+		"source", logSource,
 		"image_ref", img.Reference,
 		"digest", img.Digest,
 		"layout_path", s.layoutRoot,
 		"size_bytes", img.SizeBytes,
-		"source", string(img.Source),
+		"image_source", string(img.Source),
 	)
 	return img, nil
 }

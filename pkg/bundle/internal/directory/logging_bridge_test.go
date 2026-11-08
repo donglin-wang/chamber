@@ -28,6 +28,9 @@ func TestApexBridgeRedirectsToSharedLogger(t *testing.T) {
 	if entry["library"] != "umoci" {
 		t.Fatalf("library = %v, want umoci", entry["library"])
 	}
+	if entry["source"] != "bundle/directory" {
+		t.Fatalf("source = %v, want bundle/directory", entry["source"])
+	}
 	if entry["digest"] != "sha256:abc" {
 		t.Fatalf("digest = %v, want sha256:abc", entry["digest"])
 	}

@@ -102,4 +102,9 @@ func main() {
 }
 ```
 
+Host logs use `msg` for the event message or subprocess output line and `source`
+for the implementation: `image/store`, `image/buildkit`, `bundle/directory`, or
+`runtime/runc`. BuildKit output also includes `process` and `stream`. Image and
+runtime binary origins use `image_source` and `binary_source` respectively.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development and testing.

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	chamberImage "github.com/donglin-wang/chamber/pkg/image"
 	chamberErrors "github.com/donglin-wang/chamber/pkg/shared/errors"
 	"github.com/donglin-wang/chamber/pkg/shared/hostfs"
+	chamberLogging "github.com/donglin-wang/chamber/pkg/shared/logging"
 	"github.com/donglin-wang/chamber/pkg/shared/testutil"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -19,7 +21,10 @@ import (
 const busyboxReference = "index.docker.io/library/busybox:latest"
 
 func TestStorePullCommitsToSharedLayoutAndReusesMetadata(t *testing.T) {
-	store, root := newShortRootTestStore(t, chamberImage.Config{})
+	var logs bytes.Buffer
+	store, root := newShortRootTestStore(t, chamberImage.Config{
+		Logging: chamberLogging.Config{Logger: chamberLogging.NewJSONLogger(&logs, nil)},
+	})
 	registry := testutil.NewFakeRegistry(t)
 	reference, expectedDigest := registry.PushRandomImage(t, "library/app", "latest")
 
@@ -62,6 +67,19 @@ func TestStorePullCommitsToSharedLayoutAndReusesMetadata(t *testing.T) {
 	}
 	if !cached.CreatedAt.Equal(img.CreatedAt) || !cached.UpdatedAt.Equal(img.UpdatedAt) {
 		t.Fatalf("cached timestamps changed: got %v/%v want %v/%v", cached.CreatedAt, cached.UpdatedAt, img.CreatedAt, img.UpdatedAt)
+	}
+	decoder := json.NewDecoder(&logs)
+	for _, msg := range []string{"pulling image", "committed image", "reused image"} {
+		var entry map[string]any
+		if err := decoder.Decode(&entry); err != nil {
+			t.Fatalf("decode log: %v", err)
+		}
+		if entry["msg"] != msg || entry["source"] != "image/store" {
+			t.Fatalf("log = %#v, want msg %q with image/store source", entry, msg)
+		}
+		if msg == "committed image" && entry["image_source"] != "pulled" {
+			t.Fatalf("image_source = %v, want pulled", entry["image_source"])
+		}
 	}
 }
 

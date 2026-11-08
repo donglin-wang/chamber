@@ -27,7 +27,7 @@ func (apexHandler) HandleLog(entry *apexlog.Entry) error {
 
 	ctx := context.Background()
 	level := slogLevel(entry.Level)
-	logger := chamberLogging.Logger().With("library", "umoci")
+	logger := chamberLogging.Logger().With("source", logSource, "library", "umoci")
 	handler := logger.Handler()
 	if !handler.Enabled(ctx, level) {
 		return nil

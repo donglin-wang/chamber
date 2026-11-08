@@ -34,6 +34,8 @@ import (
 	"github.com/opencontainers/umoci/oci/layer"
 )
 
+const logSource = "bundle/directory"
+
 var _ chamberBundle.Provisioner = (*Provisioner)(nil)
 
 type Provisioner struct {
@@ -105,6 +107,7 @@ func (p *Provisioner) Provision(
 	bundleRoot := p.config.Root
 	finalBundle := filepath.Join(bundleRoot, request.BundleID)
 	chamberLogging.InfoWith(p.logger, ctx, "provisioning bundle",
+		"source", logSource,
 		"bundle_id", request.BundleID,
 		"image_ref", imageRef,
 		"image_layout", request.ImageLayout,
@@ -177,6 +180,7 @@ func (p *Provisioner) Provision(
 		BundlePath: finalBundle,
 	}
 	chamberLogging.InfoWith(p.logger, ctx, "provisioned bundle",
+		"source", logSource,
 		"bundle_id", provisioned.BundleID,
 		"bundle_path", provisioned.BundlePath,
 	)
@@ -215,6 +219,7 @@ func (p *Provisioner) Remove(ctx context.Context, bundle chamberBundle.Provision
 	}
 
 	chamberLogging.InfoWith(p.logger, ctx, "removing bundle",
+		"source", logSource,
 		"bundle_id", bundle.BundleID,
 		"bundle_path", bundlePath,
 	)
@@ -225,6 +230,7 @@ func (p *Provisioner) Remove(ctx context.Context, bundle chamberBundle.Provision
 		return err
 	}
 	chamberLogging.InfoWith(p.logger, ctx, "removed bundle",
+		"source", logSource,
 		"bundle_id", bundle.BundleID,
 		"bundle_path", bundlePath,
 	)

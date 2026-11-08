@@ -437,25 +437,31 @@ func TestProcessOutputBufferCapturesAndLogsLines(t *testing.T) {
 	if _, err := writer.Write([]byte("first line\npartial")); err != nil {
 		t.Fatalf("Write(first) error = %v", err)
 	}
-	if _, err := writer.Write([]byte(" line\n")); err != nil {
+	if _, err := writer.Write([]byte(" line\n\n  \r\nlast \"quoted\" line")); err != nil {
 		t.Fatalf("Write(second) error = %v", err)
 	}
 	writer.Flush()
 
-	if got := captured.String(); got != "first line\npartial line\n" {
+	if got := captured.String(); got != "first line\npartial line\n\n  \r\nlast \"quoted\" line" {
 		t.Fatalf("captured output = %q, want complete original output", got)
 	}
-	output := logs.String()
-	for _, want := range []string{
-		`"msg":"buildkit process output"`,
-		`"process":"buildctl"`,
-		`"stream":"stderr"`,
-		`"line":"first line"`,
-		`"line":"partial line"`,
-	} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("logs missing %s in %s", want, output)
+	decoder := json.NewDecoder(bytes.NewReader(logs.Bytes()))
+	for _, want := range []string{"first line", "partial line", `last "quoted" line`} {
+		var entry map[string]any
+		if err := decoder.Decode(&entry); err != nil {
+			t.Fatalf("decode log: %v", err)
 		}
+		if entry["msg"] != want || entry["source"] != "image/buildkit" ||
+			entry["process"] != "buildctl" || entry["stream"] != "stderr" {
+			t.Fatalf("log = %#v, want msg %q with BuildKit source/process/stream", entry, want)
+		}
+		if _, ok := entry["line"]; ok {
+			t.Fatalf("log contains obsolete line field: %#v", entry)
+		}
+	}
+	var extra map[string]any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		t.Fatalf("extra log = %#v, error = %v, want EOF", extra, err)
 	}
 
 	writer.SuppressLogs()

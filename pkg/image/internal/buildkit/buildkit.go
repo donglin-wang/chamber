@@ -23,6 +23,7 @@ import (
 )
 
 const (
+	logSource          = "image/buildkit"
 	defaultSnapshotter = "native"
 	readinessTimeout   = 20 * time.Second
 	readinessInterval  = 100 * time.Millisecond
@@ -617,9 +618,9 @@ func (w *processLogWriter) emitLocked() {
 	if strings.TrimSpace(line) == "" {
 		return
 	}
-	chamberLogging.InfoWith(w.logger, w.ctx, "buildkit process output",
+	chamberLogging.InfoWith(w.logger, w.ctx, line,
+		"source", logSource,
 		"process", w.process,
 		"stream", w.stream,
-		"line", line,
 	)
 }
