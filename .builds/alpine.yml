@@ -1,0 +1,21 @@
+image: alpine/latest
+packages:
+  - go
+  - gcc
+  - musl-dev
+  - bash
+  - sudo
+  - openrc
+  - ca-certificates
+  - curl
+  - git
+  - tar
+environment:
+  GOTOOLCHAIN: auto
+sources:
+  - https://git.sr.ht/~donglin-wang/chamber
+tasks:
+  - test: |
+      sudo rc-service cgroups start
+      cd chamber
+      bash .builds/test.sh

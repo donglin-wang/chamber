@@ -1,0 +1,16 @@
+image: debian/trixie
+packages:
+  - golang
+  - gcc
+  - ca-certificates
+  - curl
+  - git
+  - tar
+environment:
+  GOTOOLCHAIN: auto
+sources:
+  - https://git.sr.ht/~donglin-wang/chamber
+tasks:
+  - test: |
+      cd chamber
+      bash .builds/test.sh

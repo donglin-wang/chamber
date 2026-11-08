@@ -1,7 +1,7 @@
 # Rootless Linux host preparation
 
 `setup-host.sh` restores the host setup from commit `c18f4d1`, without the removed
-CI application installer. Its package adapters cover Debian, Ubuntu, Fedora,
+CI application installer. Its package adapters cover Alpine, Debian, Ubuntu, Fedora,
 Rocky Linux 10+, and AlmaLinux 10+. Setup checks that `unshare` supports the
 required mapping flags; older Rocky/AlmaLinux 9 packages do not. AlmaLinux 10
 shares the package adapter but has not been separately validated.
@@ -25,11 +25,17 @@ hosts. Without it the script stops before changing a restricted host. SELinux
 remains enabled on Fedora/Rocky/AlmaLinux.
 
 The script installs distro mapping helpers, creates an unprivileged account with
-one million subordinate UIDs/GIDs, enables user namespaces and user lingering,
-and verifies namespace creation. It never rewrites an existing account's ID
-allocations or grants sudo access. Reruns require the account's first ranges to
-be large enough. Choose another account if an existing account has shorter ranges.
+one million subordinate UIDs/GIDs, enables user namespaces, and verifies namespace
+creation. SDK execution does not require systemd user services or a D-Bus daemon;
+BuildKit creates its own private runtime directory. The script never rewrites an
+existing account's ID allocations or grants sudo access. Reruns require the
+account's first ranges to be large enough. Choose another account if an existing
+account has shorter ranges.
 Install Go separately at the version required by `go.mod`; setup does not install Go.
+On Alpine, install Bash first (`apk add bash`) to run the setup script. Its adapter
+installs shadow account/mapping tools and util-linux namespace tools.
+Enable cgroups with `rc-update add cgroups` and `rc-service cgroups start` as root
+before running containers.
 
 Switch with `sudo -iu chamber`. All SDK operations and tests run as that user,
 with a user-owned checkout on a local Linux filesystem:
@@ -48,6 +54,11 @@ the SDK suite and compiler example without sudo. There is no nested VM launcher.
 CircleCI Cloud's [hosted Linux VM images](https://circleci.com/docs/guides/execute/linux-vm-support-policy/)
 are Ubuntu-based; native Debian/Fedora/Rocky jobs require self-hosted runners.
 The existing nested-container SDK job remains separate.
+
+SourceHut runs `.builds/test.sh` on Alpine, Debian, Ubuntu, and Fedora VMs. Each
+manifest installs Go and compiler prerequisites, then uses the shared host setup
+and runs `cmd/local-test` as a fresh unprivileged account. The Alpine manifest
+also installs Bash, sudo, and musl headers, and starts the OpenRC cgroups service.
 
 Debian 13 may mount `/tmp` with `nosuid`. Keep bundle roots and temporary roots on
 a filesystem that permits file capabilities when using nested mapping helpers.

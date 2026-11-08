@@ -3,5 +3,5 @@
 install_host_packages() {
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        ca-certificates curl git uidmap util-linux dbus-user-session
+        ca-certificates curl git uidmap util-linux
 }
