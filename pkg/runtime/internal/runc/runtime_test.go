@@ -589,10 +589,69 @@ esac
 		if result.ExitCode == nil || *result.ExitCode != 7 {
 			t.Fatalf("Container.Wait() call %d exit code = %v, want 7", i+1, result.ExitCode)
 		}
+		if result.StartedAt == nil || result.ExitedAt == nil || result.ExitedAt.Before(*result.StartedAt) {
+			t.Fatalf("invalid observed lifecycle timestamps: %+v", result)
+		}
+		// A returned snapshot must not let a caller alter subsequent Wait results.
+		*result.ExitCode = 99
+		*result.StartedAt = time.Now().Add(time.Hour)
+		*result.ExitedAt = time.Time{}
 	}
 
 	if _, err := os.Stat(filepath.Join(logDir, "unused")); !os.IsNotExist(err) {
 		t.Fatalf("unused marker stat error = %v, want not exist", err)
+	}
+}
+
+func TestRunRejectsRuntimeInitializationFailure(t *testing.T) {
+	logDir := privateTempDir(t)
+	if err := os.WriteFile(filepath.Join(logDir, "no-ack"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	binary := writeFakeRunc(t, logDir, `
+case "$cmd" in
+run) echo 'mount failed during OCI initialization' >&2; exit 1 ;;
+delete) echo 'container does not exist' >&2; exit 1 ;;
+esac
+`)
+	rt := runtimeWithBinary(t, binary, privateTempDir(t))
+	container, err := rt.Run(context.Background(), chamberRuntime.RunRequest{ContainerID: "init-fails", BundlePath: runtimeBundlePath(t)})
+	if container != nil || !errors.Is(err, chamberErrors.ErrRuntimeStartFailed) || !strings.Contains(err.Error(), "mount failed") {
+		t.Fatalf("Run = %v, %v", container, err)
+	}
+}
+
+func TestWaitCancellationBoundsStuckDeleteAndLeavesOutcomeUnknown(t *testing.T) {
+	logDir := privateTempDir(t)
+	binary := writeFakeRunc(t, logDir, `
+case "$cmd" in
+run) while [ ! -f "$logdir/release" ]; do sleep 0.01; done ;;
+delete) exec sleep 60 ;;
+esac
+`)
+	rt := runtimeWithBinary(t, binary, privateTempDir(t))
+	container, err := rt.Run(context.Background(), chamberRuntime.RunRequest{ContainerID: "stuck-delete", BundlePath: runtimeBundlePath(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.WriteFile(filepath.Join(logDir, "release"), nil, 0600)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, _ = container.Wait(ctx)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	started := time.Now()
+	result, err := container.Wait(ctx)
+	if !errors.Is(err, chamberErrors.ErrCanceled) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Wait error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > forcedDeleteWait+3*time.Second {
+		t.Fatalf("cancellation cleanup exceeded its deadline: %v", elapsed)
+	}
+	if result.Status != chamberRuntime.ContainerResultStatusCanceled || result.ExitCode != nil || result.ExitedAt != nil || result.StartedAt == nil {
+		t.Fatalf("unobserved process outcome was fabricated: %+v", result)
 	}
 }
 
@@ -1315,6 +1374,14 @@ func writeFakeRunc(t *testing.T, logDir string, body string) string {
 set -eu
 logdir=` + shellQuote(logDir) + `
 cmd="$3"
+if [ "$cmd" = run ] && [ "${4:-}" = --pid-file ]; then
+    pidfile="$5"
+    set -- --root "$2" run "$6"
+    if [ ! -f "$logdir/no-ack" ]; then
+        printf '%s' "$$" > "$pidfile.tmp"
+        mv "$pidfile.tmp" "$pidfile"
+    fi
+fi
 
 write_args() {
 	path="$1"
