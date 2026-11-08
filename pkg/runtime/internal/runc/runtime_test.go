@@ -125,6 +125,9 @@ func TestNewUsesConfiguredLocalRuntimePath(t *testing.T) {
 	if entry["msg"] != "runtime binary ready" || entry["source"] != "runtime/runc" || entry["binary_source"] != "local" {
 		t.Fatalf("log = %#v, want runtime/runc source and local binary_source", entry)
 	}
+	if _, ok := entry["runtime"]; ok {
+		t.Fatalf("log contains redundant runtime field: %#v", entry)
+	}
 }
 
 func TestNewRejectsWrongDigest(t *testing.T) {

@@ -54,9 +54,12 @@ need. Keep rootless privilege boundaries explicit.
   subprocess output line in `msg`, without a separate `line` field. Each logging
   implementation defines a short `logSource` string constant in its own package,
   using `<package>/<implementation>` (for example, `image/buildkit`), and includes
-  it as `source` on every log, including bridged library logs. Keep subprocess
-  `process` and `stream` as separate fields. Use specific origin fields such as
-  `image_source` and `binary_source` so `source` always identifies the implementation.
+  it as `source` on every log, including bridged library logs. Omit redundant
+  implementation or fixed library labels such as `runtime: runc` or `library: umoci`.
+  Keep subprocess `process` and `stream` as separate fields when they distinguish
+  output within an implementation, such as BuildKit's `buildkitd` and `buildctl`.
+  Use specific origin fields such as `image_source` and `binary_source` so `source`
+  always identifies the implementation.
 - All process spawning under `pkg/` uses the shared subprocess helper for Linux
   `Pdeathsig` protection unless an explicit reason for opting out is documented.
 - Use `hostfs.Workspace` for managed binaries and download staging. Preserve pinned

@@ -158,7 +158,6 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 		}
 		chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
 			"source", logSource,
-			"runtime", runtimeName,
 			"version", r.binary.version,
 			"path", r.binaryPath,
 			"binary_source", "local",
@@ -191,7 +190,6 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 		}
 		chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
 			"source", logSource,
-			"runtime", runtimeName,
 			"version", binary.version,
 			"path", binaryPath,
 			"binary_source", "cache",
@@ -201,7 +199,6 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 
 	chamberLogging.InfoWith(r.logger, ctx, "downloading runtime binary",
 		"source", logSource,
-		"runtime", runtimeName,
 		"version", binary.version,
 		"url", binary.url,
 		"path", binaryPath,
@@ -212,7 +209,6 @@ func (r *Runtime) installBinary(ctx context.Context) error {
 
 	chamberLogging.InfoWith(r.logger, ctx, "runtime binary ready",
 		"source", logSource,
-		"runtime", runtimeName,
 		"version", binary.version,
 		"path", binaryPath,
 		"binary_source", "download",

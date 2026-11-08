@@ -25,8 +25,8 @@ func TestApexBridgeRedirectsToSharedLogger(t *testing.T) {
 	if entry["msg"] != "unpack layer" {
 		t.Fatalf("msg = %v, want unpack layer", entry["msg"])
 	}
-	if entry["library"] != "umoci" {
-		t.Fatalf("library = %v, want umoci", entry["library"])
+	if _, ok := entry["library"]; ok {
+		t.Fatalf("log contains redundant library field: %#v", entry)
 	}
 	if entry["source"] != "bundle/directory" {
 		t.Fatalf("source = %v, want bundle/directory", entry["source"])
