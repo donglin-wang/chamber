@@ -12,4 +12,4 @@ sources:
 tasks:
   - test: |
       cd chamber
-      bash .builds/test.sh --nested
+      bash .builds/test.sh

@@ -159,10 +159,10 @@ The local runner builds `Dockerfile.chamber` and calls `RunImage`. Chamber provi
 
 ## SourceHut
 
-The manifests in [`.builds/`](.builds/) run the integration suite directly on
-Debian Trixie, Fedora (`latest`), and Ubuntu 24.04 VMs. Debian also runs
-`cmd/local-test` to check execution inside the container built from
-`Dockerfile.chamber`.
+The manifests in [`.builds/`](.builds/) run `go run ./cmd/local-test` on
+Debian Trixie, Fedora (`latest`), and Ubuntu 24.04 VMs. The runner builds
+`Dockerfile.chamber` and executes the integration suite inside its Debian-based
+container on each host distribution.
 
 Each job installs Go, then uses [`.builds/test.sh`](.builds/test.sh) and the
 existing [host setup](scripts/README.md) to create a separate unprivileged test
