@@ -20,6 +20,7 @@ account=${1:-chamber}
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . /etc/os-release
 case $ID in
+    alpine) . "$script_dir/distros/alpine.sh" ;;
     debian) . "$script_dir/distros/debian.sh" ;;
     ubuntu) . "$script_dir/distros/ubuntu.sh" ;;
     fedora|rocky|almalinux) . "$script_dir/distros/redhat.sh" ;;
