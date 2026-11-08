@@ -5,6 +5,7 @@ packages:
   - ca-certificates
   - curl
   - git
+  - tar
 environment:
   GOTOOLCHAIN: auto
 sources:
