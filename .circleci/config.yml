@@ -24,7 +24,6 @@ jobs:
             sudo -iu chamber-test bash -s \<<'TEST'
             set -euo pipefail
             export PATH=/opt/chamber-go/bin:/usr/local/bin:/usr/bin:/bin
-            export XDG_RUNTIME_DIR=/run/user/$(id -u)
             cd "$HOME/source"
             go run ./cmd/local-test
             TEST

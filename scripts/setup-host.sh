@@ -71,6 +71,5 @@ if $allow_unrestricted_userns; then
     done
 fi
 sysctl -p /etc/sysctl.d/99-chamber.conf
-loginctl enable-linger "$account"
 runuser -u "$account" -- unshare -Ur true
 echo "Host ready for $account. Go must be installed separately; SDK operations run without sudo."

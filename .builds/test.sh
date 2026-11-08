@@ -12,7 +12,6 @@ sudo -iu chamber-test bash -s <<'TEST'
 set -euo pipefail
 export PATH=/usr/local/bin:/usr/bin:/bin
 export GOTOOLCHAIN=auto
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
 # Nested mapping helpers need file capabilities; /tmp may be mounted nosuid.
 export TMPDIR="$HOME/tmp"
 mkdir -p "$TMPDIR"

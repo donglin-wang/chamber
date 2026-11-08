@@ -25,10 +25,12 @@ hosts. Without it the script stops before changing a restricted host. SELinux
 remains enabled on Fedora/Rocky/AlmaLinux.
 
 The script installs distro mapping helpers, creates an unprivileged account with
-one million subordinate UIDs/GIDs, enables user namespaces and user lingering,
-and verifies namespace creation. It never rewrites an existing account's ID
-allocations or grants sudo access. Reruns require the account's first ranges to
-be large enough. Choose another account if an existing account has shorter ranges.
+one million subordinate UIDs/GIDs, enables user namespaces, and verifies namespace
+creation. SDK execution does not require systemd user services or a D-Bus daemon;
+BuildKit creates its own private runtime directory. The script never rewrites an
+existing account's ID allocations or grants sudo access. Reruns require the
+account's first ranges to be large enough. Choose another account if an existing
+account has shorter ranges.
 Install Go separately at the version required by `go.mod`; setup does not install Go.
 
 Switch with `sudo -iu chamber`. All SDK operations and tests run as that user,
