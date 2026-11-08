@@ -57,7 +57,7 @@ func run(ctx context.Context) (code int, err error) {
 	image, err := store.Build(ctx, chamberImage.BuildRequest{
 		Reference:      "chamber.local/local-test:latest",
 		ContextPath:    project,
-		DockerfilePath: filepath.Join(project, "Dockerfile.chamber"),
+		DockerfilePath: filepath.Join(project, "Dockerfile.test"),
 	})
 	if err != nil {
 		return 1, err

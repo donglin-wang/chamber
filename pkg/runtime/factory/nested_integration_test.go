@@ -26,7 +26,7 @@ func TestNestedContainersIntegration(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "sdk")
 	source := t.TempDir()
 	// End the inner allocation below 65,535 so this test also fits inside
-	// Dockerfile.chamber's package-test container mapping.
+	// Dockerfile.test's package-test container mapping.
 	dockerfile := `FROM debian:trixie-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends uidmap util-linux libcap2-bin \
@@ -57,7 +57,7 @@ unshare --user --map-root-user --map-users=2000,1,60000 --map-groups=2000,1,6000
  echo nested-containers-ok
 '
 `
-	for name, data := range map[string]string{"Dockerfile.chamber": dockerfile, "check-nested.sh": script} {
+	for name, data := range map[string]string{"Dockerfile.test": dockerfile, "check-nested.sh": script} {
 		if err := os.WriteFile(filepath.Join(source, name), []byte(data), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -67,7 +67,7 @@ unshare --user --map-root-user --map-users=2000,1,60000 --map-groups=2000,1,6000
 		t.Fatal(err)
 	}
 	image, err := store.Build(ctx, chamberImage.BuildRequest{
-		Reference: "chamber.local/nested:test", ContextPath: source, DockerfilePath: filepath.Join(source, "Dockerfile.chamber"),
+		Reference: "chamber.local/nested:test", ContextPath: source, DockerfilePath: filepath.Join(source, "Dockerfile.test"),
 	})
 	if err != nil {
 		t.Fatal(err)

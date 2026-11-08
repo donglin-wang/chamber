@@ -11,7 +11,7 @@ The common path is pull or build an `image.Image`, construct a runtime, call `Ru
 - `Run` accepts a ready OCI bundle. That bundle remains caller-owned.
 - Callers own root placement, coordination of shared roots and IDs, application cancellation policy, cleanup after crashes, and image/cache retention.
 - Do not add shared-root concurrency management, operation records, leases, recovery controllers, distributed scheduling, or background services to the SDK. Application-level policies belong in embedding applications.
-- `.circleci/config.yml` builds and runs `Dockerfile.chamber` to validate the SDK. Keep CI orchestration in CircleCI rather than adding an application to the SDK.
+- `.circleci/config.yml` builds and runs `Dockerfile.test` to validate the SDK. Keep CI orchestration in CircleCI rather than adding an application to the SDK.
 
 ## Linux and Host Execution
 

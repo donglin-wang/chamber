@@ -155,13 +155,13 @@ To run the package suite inside a container on that Linux host:
 GOCACHE=/tmp/chamber-go-cache go run cmd/local-test/main.go
 ```
 
-The local runner builds `Dockerfile.chamber` and calls `RunImage`. Chamber provisioning permits UID/GID mapping helpers with specific file capabilities within the outer container's user namespace. It clears no-new-privileges, adds `CAP_SETUID`/`CAP_SETGID` to the capability bounding set, and removes `/proc` masks and read-only path restrictions so nested containers can mount their own `/proc`. Effective and ambient capabilities stay unchanged. The image delegates 65,534 IDs starting at 2,000 to its `chamber` user, covering the BusyBox test image's UID/GID 65,534. The host allocation must expose IDs 2,000–67,533 through the outer container mapping. Images or processes requiring higher inner IDs need a larger allocation. `RunImage` owns the bundle; deleting the container removes it before the runner removes its temporary root.
+The local runner builds `Dockerfile.test` and calls `RunImage`. Chamber provisioning permits UID/GID mapping helpers with specific file capabilities within the outer container's user namespace. It clears no-new-privileges, adds `CAP_SETUID`/`CAP_SETGID` to the capability bounding set, and removes `/proc` masks and read-only path restrictions so nested containers can mount their own `/proc`. Effective and ambient capabilities stay unchanged. The image delegates 65,534 IDs starting at 2,000 to its `chamber` user, covering the BusyBox test image's UID/GID 65,534. The host allocation must expose IDs 2,000–67,533 through the outer container mapping. Images or processes requiring higher inner IDs need a larger allocation. `RunImage` owns the bundle; deleting the container removes it before the runner removes its temporary root.
 
 ## SourceHut
 
 The manifests in [`.builds/`](.builds/) run `go run ./cmd/local-test` on
 Debian Trixie, Fedora (`latest`), and Ubuntu 24.04 VMs. The runner builds
-`Dockerfile.chamber` and executes the integration suite inside its Debian-based
+`Dockerfile.test` and executes the integration suite inside its Debian-based
 container on each host distribution.
 
 Each job installs Go, then uses [`.builds/test.sh`](.builds/test.sh) and the
@@ -183,14 +183,14 @@ machine executors. It uses the restored [host setup](scripts/README.md), verifie
 repeatable ID allocation, and runs SDK tests and the compiler example as a fresh
 non-root account. These jobs do not launch an additional VM.
 
-[`.circleci/config.yml`](.circleci/config.yml) builds `Dockerfile.chamber` and runs its default command, `go test -count=1 -v -timeout=20m ./pkg/...`, with `CHAMBER_INTEGRATION=1` set by the image. Test output appears in the CircleCI job log, and a failing test fails the job.
+[`.circleci/config.yml`](.circleci/config.yml) builds `Dockerfile.test` and runs its default command, `go test -count=1 -v -timeout=20m ./pkg/...`, with `CHAMBER_INTEGRATION=1` set by the image. Test output appears in the CircleCI job log, and a failing test fails the job.
 
 The job uses a Linux VM with Docker installed. It disables Ubuntu's AppArmor restrictions on unprivileged user namespaces for that disposable VM so Chamber's host preflight permits rootless execution. It runs the test container with `--privileged` so nested rootless runc and BuildKit can create namespaces and mount filesystems. Tests run as the image's non-root `chamber` user. This grants privileges to the disposable CI test environment; SDK callers still use rootless execution. See CircleCI's [Linux VM guide](https://circleci.com/docs/guides/execute/using-linuxvm/).
 
 To run the same commands locally with a Linux Docker daemon:
 
 ```sh
-docker build --progress=plain -f Dockerfile.chamber -t chamber-tests .
+docker build --progress=plain -f Dockerfile.test -t chamber-tests .
 docker run --rm --privileged chamber-tests
 ```
 
